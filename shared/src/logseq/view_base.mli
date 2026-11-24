@@ -264,6 +264,7 @@ val asset_preview_path : Model.logseq_model -> string
 val composer_expanded_ : Model.logseq_model -> bool
 val composer_draft : Model.logseq_model -> string
 val composer_autofocus_ : Model.logseq_model -> bool
+val composer_reference_active_ : Model.logseq_model -> bool
 val outliner_task_status_option_identifier : Model.task_status -> string
 val first_flashcard : Model.logseq_model -> Model.flashcard option
 val flashcards_empty_ : Model.logseq_model -> bool

@@ -11,52 +11,18 @@ let task_effect_active key (current : Model.logseq_model) =
     | Model.NodePropertyEffect (_, id, _) | Model.LoadPropertyValuesEffect (_, id, _) -> id = key
     | _ -> false) (current.pending_effects @ current.in_flight_effects)
 
-let task_dates_dialog model_source send : t =
-  let close () = ignore (send Model.CloseTaskDates) in
-  reactive (function
-    | None -> box []
-    | Some (editor : Model.task_date_editor) ->
-      custom @@ fun context parent ->
-      let key = editor.task_date_key in
-      let graph = editor.task_date_graph in
-      let blocks = editor.task_date_targets in
-      let editing = editor.task_date_editing in
-      let name, field_label, _ =
-        List.find (fun (name, _, _) -> name = editor.task_date_field) task_date_fields in
+let task_date_sheet (context : Lui_ui.ui_context) parent ~model_source ~name ~targets
+    ~saved_dates ~ready ~waiting ~feedback ~close ~submit =
+      let _, field_label, _ = List.find (fun (field, _, _) -> field = name) task_date_fields in
       let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
       let state initial = Signal.state context.ui_scheduler initial in
       let current = Signal.sample model_source in
       let tr = View_base.tr current in
-      let waiting = own (Signal.map (task_effect_active key) model_source) in
-      let feedback = own (Signal.map (fun (current : Model.logseq_model) ->
-        List.find_map (fun (id, _, error) -> if key = id then error else None) current.result_view_feedback) model_source) in
-      let loaded = own (Signal.map (fun (current : Model.logseq_model) ->
-        match List.assoc_opt key current.property_value_catalogs with
-        | Some data -> (match journal_task_field "targets" (Yojson.Basic.from_string data) with
-          | `List targets -> Some targets | _ -> None)
-        | None -> None) model_source) in
-      let saved_dates = own (Signal.map (Option.fold ~none:[] ~some:(fun targets ->
-        List.map (journal_task_field name) targets |> List.sort_uniq compare)) loaded) in
-      let submit value =
-        match Signal.sample loaded with
-        | Some targets when not (Signal.sample waiting) ->
-          let current = Signal.sample model_source in
-          let collapsed = match editing, current.outliner_edit_scope with
-            | Some uuid, Some (scope, target) when target = uuid && scope = View_rows.journal_task_scope uuid ->
-              `List (List.map (fun name -> `String name) (Model.journal_tasks_collapsed current))
-            | _ -> `Null in
-          let payload = Yojson.Basic.to_string (`Assoc [
-            "action", `String "saveTaskDates"; "graphId", `String graph;
-            "editingUuid", Option.fold ~none:`Null ~some:(fun uuid -> `String uuid) editing;
-            "agendaCollapsedSections", collapsed;
-            "targets", `List targets; "changes", `Assoc [name, value]]) in
-          ignore (send (Model.SubmitNodeProperty (key, payload)))
-        | _ -> () in
       if Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost then begin
         let node = Lui_ui.extension context "native-task-date-sheet" in
         attach context parent node;
         let invalid = state false in
-        let dates = own (Signal.map2 (fun saved loaded -> saved, Option.is_some loaded) saved_dates loaded) in
+        let dates = own (Signal.map2 (fun saved ready -> saved, ready) saved_dates ready) in
         let error = own (Signal.map2 (fun error invalid ->
           let error = if invalid then Some (tr "Choose a valid date and time") else Option.map tr error in
           Option.fold ~none:`Null ~some:(fun error -> `String error) error)
@@ -74,7 +40,7 @@ let task_dates_dialog model_source send : t =
           ]))) dates status) in
         Lui_ui.extension_property_signal context node "payload" payload;
         let apply value =
-          if Option.is_some (Signal.sample loaded) && not (Signal.sample waiting) then begin
+          if Signal.sample ready && not (Signal.sample waiting) then begin
             Signal.set invalid false;
             if Signal.sample saved_dates = [value] then close () else submit value
           end in
@@ -151,15 +117,15 @@ let task_dates_dialog model_source send : t =
         ~on_dismiss:(fun _ -> close ()) [
           list ~grow:1.0 ~style:`inset_grouped [
             list_section [
-              if_list_section_item ~test:(Signal.constant context.ui_scheduler (List.length blocks > 1))
+              if_list_section_item ~test:(Signal.constant context.ui_scheduler (targets > 1))
                 (list_section_item [text ~value:(View_base.tr_named current "{1} blocks selected"
-                  (string_of_int (List.length blocks))) ~style_class:"footnote" []]);
+                  (string_of_int targets)) ~style_class:"footnote" []]);
               list_section_item [reactive (function
-                | Some _ -> controls
-                | None -> column [
+                | true -> controls
+                | false -> column [
                   if_ ~test:waiting (spinner ~accessibility_identifier:"task-dates.loading" []);
                   error_message;
-                ]) loaded];
+                ]) ready];
             ];
           ];
           (if Lui_ui.host context = KotlinHost then row ~main:`space_between ~padding:12 [
@@ -167,8 +133,70 @@ let task_dates_dialog model_source send : t =
              button ~text:(tr "Save") ~disabled_signal:disabled ~accessibility_identifier:"task-dates.save"
                ~on_press:(fun _ -> save ()) []]
            else toolbar ~label:(tr "Task dates") ~style_class:"navigation-actions" [cancel; save_button]);
-        ]))
+        ])
+
+let task_dates_dialog model_source send : t =
+  let close () = ignore (send Model.CloseTaskDates) in
+  reactive (function
+    | None -> box []
+    | Some (editor : Model.task_date_editor) ->
+      custom @@ fun context parent ->
+      let key = editor.task_date_key in
+      let graph = editor.task_date_graph in
+      let blocks = editor.task_date_targets in
+      let editing = editor.task_date_editing in
+      let name = editor.task_date_field in
+      let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
+      let waiting = own (Signal.map (task_effect_active key) model_source) in
+      let feedback = own (Signal.map (fun (current : Model.logseq_model) ->
+        List.find_map (fun (id, _, error) -> if key = id then error else None) current.result_view_feedback) model_source) in
+      let loaded = own (Signal.map (fun (current : Model.logseq_model) ->
+        match List.assoc_opt key current.property_value_catalogs with
+        | Some data -> (match journal_task_field "targets" (Yojson.Basic.from_string data) with
+          | `List targets -> Some targets | _ -> None)
+        | None -> None) model_source) in
+      let saved_dates = own (Signal.map (Option.fold ~none:[] ~some:(fun targets ->
+        List.map (journal_task_field name) targets |> List.sort_uniq compare)) loaded) in
+      let submit value =
+        match Signal.sample loaded with
+        | Some targets when not (Signal.sample waiting) ->
+          let current = Signal.sample model_source in
+          let collapsed = match editing, current.outliner_edit_scope with
+            | Some uuid, Some (scope, target) when target = uuid && scope = View_rows.journal_task_scope uuid ->
+              `List (List.map (fun name -> `String name) (Model.journal_tasks_collapsed current))
+            | _ -> `Null in
+          let payload = Yojson.Basic.to_string (`Assoc [
+            "action", `String "saveTaskDates"; "graphId", `String graph;
+            "editingUuid", Option.fold ~none:`Null ~some:(fun uuid -> `String uuid) editing;
+            "agendaCollapsedSections", collapsed;
+            "targets", `List targets; "changes", `Assoc [name, value]]) in
+          ignore (send (Model.SubmitNodeProperty (key, payload)))
+        | _ -> () in
+      let ready = own (Signal.map Option.is_some loaded) in
+      task_date_sheet context parent ~model_source ~name ~targets:(List.length blocks)
+        ~saved_dates ~ready ~waiting ~feedback ~close ~submit)
     (Signal.map (fun (current : Model.logseq_model) -> current.task_date_editor) model_source)
+
+let composer_task_date_dialog model_source send : t =
+  let close () = ignore (send Model.CloseComposerTaskDate) in
+  let choose name value = ignore (send (Model.SetComposerTaskDate (name, value))) in
+  reactive (function
+    | None -> box []
+    | Some name ->
+      custom @@ fun context parent ->
+      let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
+      let constant value = Signal.constant context.Lui_ui.ui_scheduler value in
+      let saved_dates = own (Signal.map (fun (current : Model.logseq_model) ->
+        [match List.assoc_opt name current.composer_task_dates with
+         | Some value -> `Int value | None -> `Null]) model_source) in
+      let submit = function
+        | `Int value -> choose name (Some value)
+        | `Assoc ["day", `Int day] ->
+          choose name (Some (Int64.to_int (Dev_query.Date_time_util.journal_day_to_local_ms day)))
+        | _ -> choose name None in
+      task_date_sheet context parent ~model_source ~name ~targets:1 ~saved_dates
+        ~ready:(constant true) ~waiting:(constant false) ~feedback:(constant None) ~close ~submit)
+    (Signal.map (fun (current : Model.logseq_model) -> current.composer_task_date_field) model_source)
 
 let code_language row =
     try match Yojson.Basic.from_string row.Model.markup_json with
@@ -1366,9 +1394,10 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
   ]
 
 let outliner_autocomplete_row (context : Lui_ui.ui_context)
+    ?(choose_action = fun value -> Model.ChooseOutlinerAutocomplete value)
     ~node_labels candidate_source send : t =
   let candidate = Signal.sample candidate_source in
-  let choose () = ignore (send (Model.ChooseOutlinerAutocomplete
+  let choose () = ignore (send (choose_action
     (Signal.sample candidate_source : Model.outliner_autocomplete_candidate).candidate_value)) in
   let reference_label = custom @@ fun context parent ->
     let node = Lui_ui.extension context "outliner-block-content" in
@@ -1485,6 +1514,27 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source send : 
               (text ~value:(View_base.tr (Signal.sample model_source) "No results") ~foreground:"muted-foreground" ~padding:16 []);
           ]];
       ])
+
+let composer_reference_bar (context : Lui_ui.ui_context) model_source send : t =
+  let tr = View_base.tr (Signal.sample model_source) in
+  column ~gap:2 ~padding:8 ~height:220 ~max_height:220 ~cross:`stretch ~main:`start
+    ~accessibility_identifier:"toolbar.composer.references" [
+    row ~grow:0.0 ~main:`space_between ~cross:`center [
+      text ~value:(tr "Pages") ~font_size:"13" ~foreground:"muted-foreground" ~padding_horizontal:8 [];
+      button ~text:(tr "Close") ~variant:`ghost ~height:36 ~label:(tr "Close suggestions")
+        ~accessibility_identifier:"button.composer.references.dismiss"
+        ~on_press:(fun _ -> ignore (send Model.DismissComposerReference)) []];
+    scroll ~height:164 ~max_height:164 ~style_class:"outliner-autocomplete" [
+      column ~gap:2 ~cross:`stretch [
+        keyed ~source:(reactive (fun (current : Model.logseq_model) -> current.composer_reference_candidates) model_source)
+          ~key:(fun (c : Model.outliner_autocomplete_candidate) -> c.candidate_value) ~cmp:String.compare
+          ~mount:(fun source -> outliner_autocomplete_row context
+            ~choose_action:(fun value -> Model.ChooseComposerReference value)
+            ~node_labels:true source send);
+        if_ ~test:(reactive (fun (current : Model.logseq_model) -> current.composer_reference_candidates = []) model_source)
+          (text ~value:(tr "No results") ~foreground:"muted-foreground" ~padding:16 []);
+      ]];
+  ]
 
 let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
     : t =

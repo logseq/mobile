@@ -232,6 +232,9 @@ val replace_range : string -> int -> int -> string -> string
 val candidate_label :
   outliner_context -> outliner_candidate list -> string -> string option
 val reference_token_end : string -> int -> int
+val node_completion_context : outliner_context -> string -> outliner_context
+val node_completion_text : outliner_context -> string -> string
+val complete_node_text : string -> int -> string -> (string * int) option
 val complete :
   outliner_context ->
   editor_draft ->

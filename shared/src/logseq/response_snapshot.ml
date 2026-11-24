@@ -477,6 +477,15 @@ let core_projection fields =
   in
   { Model.tag_choices_update = (match List.assoc_opt "composerTagChoices" fields with
       | Some (`List choices) -> Some (List.filter_map sidebar_page choices) | _ -> None);
+    reference_candidates_update = (match List.assoc_opt "composerReferences" fields with
+      | Some (`Assoc _ as value) ->
+        let fields = object_fields value in
+        Option.map (fun query -> query, List.mapi
+          (fun candidate_index (candidate : Model.outliner_autocomplete_candidate) ->
+            { candidate with Model.candidate_index })
+          (filter_map_option autocomplete_candidate (list_member "candidates" fields)))
+          (string_member "query" fields)
+      | _ -> None);
     graph_name = string_member "graphName" fields;
     selected_graph_id = string_member "selectedGraphId" fields;
     journal_title_format = string_member "journalTitleFormat" fields;

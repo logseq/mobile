@@ -311,6 +311,33 @@ let structural_outliner_delta anchored before_context before_state
   in
   (blocks, deleted, splices)
 
+let candidate_markup_json context (candidate : Outliner.outliner_candidate) =
+  match context.Outliner.db with
+  | Some db when Ref_text.is_uuid candidate.value ->
+    let title = Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid candidate.value))
+      (Graph_read.entity_title (fun text -> Ok text) db)
+      |> Option.value ~default:candidate.label in
+    ["markup", Markup.to_yojson (Graph_read.title_markup (fun text -> Ok text) db title)]
+  | _ -> []
+
+let reference_candidates_json context query =
+  let request = { Outliner.kind = Outliner.Node; query } in
+  let candidates = Outliner.autocomplete_candidates context request in
+  let context = Outliner.node_completion_context context query in
+  let seen = Hashtbl.create 16 in
+  Wire.json_list
+    (List.filter_map
+       (fun (candidate : Outliner.outliner_candidate) ->
+         let value = Outliner.node_completion_text context candidate.value in
+         if Hashtbl.mem seen value then None
+         else begin
+           Hashtbl.add seen value ();
+           Some (Wire.json_object
+             (["label", `String candidate.label; "value", `String value]
+              @ candidate_markup_json context candidate))
+         end)
+       candidates)
+
 let outliner_candidates_json context state =
   Wire.json_list
     (match Outliner.autocomplete state with
@@ -318,13 +345,7 @@ let outliner_candidates_json context state =
        let groups = Hashtbl.create 9 in
        List.map
          (fun (candidate : Outliner.outliner_candidate) ->
-           let markup = match context.Outliner.db with
-             | Some db when Ref_text.is_uuid candidate.value ->
-               let title = Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid candidate.value))
-                 (Graph_read.entity_title (fun text -> Ok text) db)
-                 |> Option.value ~default:candidate.label in
-               ["markup", Markup.to_yojson (Graph_read.title_markup (fun text -> Ok text) db title)]
-             | _ -> [] in
+           let markup = candidate_markup_json context candidate in
            let group = if request.kind <> Outliner.Command || String.trim request.query <> "" then None
              else Option.bind (Editor_command.group candidate.value) (fun group ->
                if Hashtbl.mem groups group then None

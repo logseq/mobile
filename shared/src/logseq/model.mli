@@ -232,6 +232,7 @@ type outline_row_splice =
 
 type core_projection =
   { tag_choices_update : sidebar_page list option
+  ; reference_candidates_update : (string * outliner_autocomplete_candidate list) option
   ; graph_name : string option
   ; selected_graph_id : string option
   ; journal_title_format : string option
@@ -287,6 +288,7 @@ type composer_submission =
   ; capture_status : task_status option
   ; capture_tags : sidebar_page list
   ; capture_graph_id : string option
+  ; capture_dates : (string * int) list
   }
 
 type logseq_effect =
@@ -297,6 +299,7 @@ type logseq_effect =
   | LoadResultRowsEffect of int * string * string
   | SetJournalTitleFormatEffect of int * string
   | LoadComposerTagsEffect of int * string option
+  | LoadComposerReferencesEffect of int * string
   | SendTaggedCaptureEffect of int * composer_submission
   | SendCaptureEffect of int * string
   | SendAssetEffect of int * composer_asset * sidebar_page list * string option
@@ -479,6 +482,10 @@ type logseq_model =
   ; composer_tags_loading : bool
   ; composer_assets : composer_asset list
   ; composer_autofocus : bool
+  ; composer_task_dates : (string * int) list
+  ; composer_task_date_field : string option
+  ; composer_reference_query : string option
+  ; composer_reference_candidates : outliner_autocomplete_candidate list
   ; capture_confirmation : int option
   ; pending_effects : logseq_effect list
   ; in_flight_effects : logseq_effect list
@@ -569,6 +576,11 @@ type logseq_action =
   | OpenTaskStatusPicker
   | CloseTaskStatusPicker
   | ChooseTaskStatus of string
+  | OpenComposerTaskDate of string
+  | CloseComposerTaskDate
+  | SetComposerTaskDate of string * int option
+  | ChooseComposerReference of string
+  | DismissComposerReference
   | ClearTaskStatus
   | RequestAppNode of string
   | ResolveAppNode of string * bool

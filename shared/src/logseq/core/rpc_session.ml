@@ -1510,9 +1510,13 @@ let send_tagged session input fields =
     let* uuid = Rpc.required_string fields "uuid" in
     let* now = Rpc.optional_int fields "now" in
     let* status = Rpc.optional_status_payload input in
+    let* scheduled = Rpc.optional_int fields "scheduled" in
+    let* deadline = Rpc.optional_int fields "deadline" in
     let now = Option.value ~default:(now_ms ()) now in
     let text = String.trim text in
     if text = "" then Error "Enter text to capture" else
+    if status = None && (scheduled <> None || deadline <> None) then
+      Error "Choose a task status before setting task dates" else
     let* operations = capture_operations session uuid text now None in
     match operations with
     | [] -> Error "The capture is unavailable"
@@ -1531,6 +1535,11 @@ let send_tagged session input fields =
           Ok (Ops.Atomic [intent; Ops.Set_property {Ops.uuid; attr = "logseq.property/status";
             expected = Effects.stored_status_value db uuid;
             value = Some (Effects.status_reference status)}]) in
+      let date_changes = List.filter_map (fun (attr, value) ->
+        Option.map (fun value -> {Ops.attr; expected = None; value = Some (Ops.Int_value value)}) value)
+        ["logseq.property/scheduled", scheduled; "logseq.property/deadline", deadline] in
+      let intent = if date_changes = [] then intent
+        else Ops.Atomic [intent; Ops.Set_properties {Ops.uuid; updated_at = None; changes = date_changes}] in
       Ok {operation with Ops.intent = intent}
   in
   match prepared with
@@ -1546,6 +1555,14 @@ let composer_tags session =
   Rpc.success (`Assoc ["selectedGraphId", (match (state session).config with Some config -> `String config.graph_id | None -> `Null);
     "composerTagChoices", `List (List.map (fun (tag : Model.entity_summary) ->
       `Assoc ["uuid", `String tag.uuid; "title", `String tag.title]) tags)])
+
+let composer_references session fields =
+  match Rpc.required_string fields "query" with
+  | Error message -> Rpc.failure "invalid_params" message
+  | Ok query ->
+    Rpc.success (`Assoc ["selectedGraphId", (match (state session).config with Some config -> `String config.graph_id | None -> `Null);
+      "composerReferences", `Assoc ["query", `String query;
+        "candidates", Rpc.reference_candidates_json (outliner_context session) query]])
 
 let send_task session input fields =
   match
@@ -2870,6 +2887,7 @@ let rec dispatch session action payload =
       success session (`Assoc ["searchIndexReady", `Bool ready])
     | Error message -> Rpc.failure "invalid_search_maintenance" message)
   | "composerTags" -> composer_tags session
+  | "composerReferences" -> object_action (fun _ fields -> composer_references session fields)
   | "sendTagged" -> object_action (send_tagged session)
   | "send" -> send_message session payload
   | "sendTask" -> object_action (send_task session)
