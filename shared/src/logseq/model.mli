@@ -577,6 +577,7 @@ type logseq_action =
   | OpenTaskStatusPicker
   | CloseTaskStatusPicker
   | ChooseTaskStatus of string
+  | ToggleComposerTodo
   | OpenComposerTaskDate of string
   | CloseComposerTaskDate
   | SetComposerTaskDate of string * int option

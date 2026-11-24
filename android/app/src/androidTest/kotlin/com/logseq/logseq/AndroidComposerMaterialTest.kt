@@ -15,6 +15,8 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertTouchHeightIsEqualTo
 import androidx.compose.ui.test.assertTouchWidthIsEqualTo
@@ -154,12 +156,13 @@ class AndroidComposerMaterialTest {
         composer()
         val draft = "中文 📝\nSecond line\n"
         ui.onNodeWithTag("field.composer").performTextInput(draft)
-        ui.onNodeWithTag("button.task-status").performClick()
-        ui.onNodeWithText("Todo").performClick()
+        val status = ui.onNodeWithTag("button.task-status")
+        status.performClick()
+        status.assertIsSelected()
         ui.onNodeWithTag("surface.composer.dismiss").performClick()
         ui.onNodeWithTag("button.composer.expand").performClick()
         ui.onNodeWithTag("field.composer").assertTextEquals(draft)
-        ui.onNodeWithTag("button.task-status").performClick()
-        ui.onNodeWithText("Clear task status").assertExists()
+        status.performClick()
+        status.assertIsNotSelected()
     }
 }

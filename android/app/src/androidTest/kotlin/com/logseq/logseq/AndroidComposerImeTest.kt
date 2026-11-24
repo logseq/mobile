@@ -134,18 +134,15 @@ class AndroidComposerImeTest {
         keyboardImage?.recycle()
         keyboardImage = null
         val original = originalDraft ?: return
-        if (node { it.text?.toString() == "File" || it.text?.toString() == "Todo" } != null) back()
+        if (node { it.text?.toString() == "File" } != null) back()
         val composer = waitFor {
             it.viewIdResourceName == "field.composer" || it.viewIdResourceName == "button.composer.expand"
         }
         if (composer.viewIdResourceName == "button.composer.expand") click("button.composer.expand")
-        click("button.task-status")
-        waitFor { it.text?.toString() == "Todo" }
-        val clear = node { it.text?.toString() == "Clear task status" }
-        if (clear != null) tap(bounds(clear)) else back()
-        // Material popups finish dismissal asynchronously; restore through the
-        // underlying editor only after its accessibility actions are exposed.
-        waitUntil { node { it.text?.toString() == "Todo" } == null }
+        if (waitFor { it.viewIdResourceName == "button.task-status" }.isSelected) {
+            click("button.task-status")
+        }
+        waitUntil { node { it.viewIdResourceName == "button.task-status" }?.isSelected != true }
         setDraft(original)
         if (wasCollapsed) click("surface.composer.dismiss")
     }
@@ -154,7 +151,7 @@ class AndroidComposerImeTest {
         waitUntil { field().isFocused }
         assertTrue("The real software keyboard stays visible", imeShown())
         assertTrue("The original input retains focus", field().isFocused)
-        assertEquals("The composer does not jump when a menu opens", expected, bounds(field()))
+        assertEquals("The composer does not jump when the task button is pressed", expected, bounds(field()))
         assertEquals(draft, field().text?.toString())
     }
 
@@ -181,15 +178,10 @@ class AndroidComposerImeTest {
         } finally { current.recycle() }
     }
 
-    @Test fun statusMenuKeepsTheRealKeyboardAndComposerPosition() {
+    @Test fun statusToggleKeepsTheRealKeyboardAndComposerPosition() {
         val before = bounds(field())
         click("button.task-status")
-        waitFor { it.text?.toString() == "Todo" }
-        // A touch-modal native popup owns accessibility focus until it closes.
-        assertTrue("The real software keyboard stays visible while the menu is open", imeShown())
-        assertMenuAboveIme("Canceled")
-        choose("Todo")
-        waitUntil { node { it.text?.toString() == "Todo" } == null }
+        waitUntil { node { it.viewIdResourceName == "button.task-status" }?.isSelected == true }
         assertInputKept(before)
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_X)
         waitUntil { field().text?.toString() == draft + "x" }
@@ -206,27 +198,21 @@ class AndroidComposerImeTest {
         assertInputKept(before)
     }
 
-    @Test fun outsideMenuTapPreservesTheKeyboardAndDraft() {
-        val before = bounds(field())
-        click("button.task-status")
-        waitFor { it.text?.toString() == "Todo" }
-        tap(before)
-        waitUntil { node { it.text?.toString() == "Todo" } == null }
-        assertInputKept(before)
-    }
-
-    @Test fun openingAMenuDoesNotForceAnAlreadyHiddenKeyboardToOpen() {
+    @Test fun taskToggleAndAttachmentMenuDoNotForceAHiddenKeyboardOpen() {
         back()
         waitUntil { !imeShown() }
         val before = bounds(field())
-        for ((trigger, label) in listOf("button.task-status" to "Todo", "button.attachment" to "File")) {
-            click(trigger)
-            waitFor { it.text?.toString() == label }
-            assertTrue("A menu does not force the keyboard open", !imeShown())
-            back()
-            waitUntil { node { it.text?.toString() == label } == null }
-            assertEquals(before, bounds(field()))
-        }
+        click("button.task-status")
+        waitUntil { node { it.viewIdResourceName == "button.task-status" }?.isSelected == true }
+        assertTrue("The task toggle does not force the keyboard open", !imeShown())
+        click("button.task-status")
+        waitUntil { node { it.viewIdResourceName == "button.task-status" }?.isSelected != true }
+        click("button.attachment")
+        waitFor { it.text?.toString() == "File" }
+        assertTrue("A menu does not force the keyboard open", !imeShown())
+        back()
+        waitUntil { node { it.text?.toString() == "File" } == null }
+        assertEquals(before, bounds(field()))
     }
 
     @Test fun statusSelectionPreservesTheInputCaret() {
@@ -235,8 +221,7 @@ class AndroidComposerImeTest {
             putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, 6)
         }))
         click("button.task-status")
-        choose("Todo")
-        waitUntil { node { it.text?.toString() == "Todo" } == null }
+        waitUntil { node { it.viewIdResourceName == "button.task-status" }?.isSelected == true }
         waitUntil { field().isFocused }
         assertTrue(imeShown())
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_X)

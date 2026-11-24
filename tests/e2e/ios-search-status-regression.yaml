@@ -10,7 +10,6 @@ appId: com.logseq.logseq
     id: "button.composer.expand"
 - tapOn:
     id: "button.task-status"
-- tapOn: "Todo"
 - tapOn:
     id: "field.composer"
 - inputText: "Search task __LOGSEQ_E2E_RUN_ID__"
