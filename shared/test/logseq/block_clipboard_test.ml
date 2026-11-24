@@ -336,7 +336,29 @@ let cut_exports_blocks_before_removing_them () = R.with_runtime (fun session run
   check ~msg:"Cut removes the source subtree" (not (List.mem Q.alpha remaining || List.mem child remaining));
   check ~msg:"Cut leaves unselected siblings" (List.mem Q.beta remaining))
 
+let copy_image_uses_native_clipboard_assets () = R.with_runtime (fun session runtime _ ->
+  check_ok (Graph_runtime.stage runtime {
+    Pending_ops.operation_id = Graph_runtime.fresh_uuid ();
+    base_t = 42; state = Pending_ops.Queued;
+    intent = Pending_ops.Create_asset {
+      uuid = child; title = "Photo.png"; page_uuid = Q.page; parent_uuid = Q.page;
+      order = "az"; created_at = 1234; asset_type = "png"; asset_size = 12;
+      asset_checksum = "image-checksum"; transcript = None;
+    };
+  });
+  let response = event session ["type", `String "blockToolbar"; "uuid", `String child; "action", `String "copy"] in
+  success response;
+  let commands = Q.items "outlinerCommands" (member "result" response) in
+  let images = List.find_opt (fun command -> member "type" command = `String "setClipboardImages") commands in
+  check_eq ~msg:"Copy exports the native image encoding and block identity"
+    (Option.map (fun command -> member "images" (member "imageClipboard" command)) images)
+    (Some (`List [`Assoc ["uuid", `String child; "assetType", `String "png"]]));
+  check ~msg:"Copy leaves the original image block in the graph"
+    (List.mem child (ids (Graph_runtime.blocks_for_page runtime Q.page)));
+  ignore (copy session [child; Q.alpha]))
+
 let cases = [
+  case "Copy on an image block exports an image asset" copy_image_uses_native_clipboard_assets;
   case "Cut copies a subtree before removing it" cut_exports_blocks_before_removing_them;
   case "Quote paste retains paragraphs and Markdown in one block" quote_paste_preserves_paragraphs_inside_one_block;
   case "pasted code and math never create reference pages" pasted_literal_blocks_do_not_create_reference_pages;

@@ -21,9 +21,12 @@ internal class AndroidGraphAssetLoader(
 ) {
     private val client = OkHttpClient()
 
-    suspend fun load(uuid: String, assetType: String): String {
+    suspend fun load(uuid: String, assetType: String, expectedGraphId: String? = null): String {
         val metadata = JSONObject().put("uuid", uuid).put("assetType", assetType)
         val prepared = call("prepareAssetDownload", metadata)
+        if (expectedGraphId != null && prepared.getString("graphId") != expectedGraphId) {
+            throw kotlinx.coroutines.CancellationException()
+        }
         prepared.optString("localPath").takeIf(String::isNotEmpty)?.let { return it }
         val pending = prepared.getJSONObject("request")
         val file = download(Request.Builder().url(pending.getString("url"))

@@ -50,6 +50,7 @@ internal class LogseqRuntime(
     private val scope = CoroutineScope(parentScope.coroutineContext + runtimeJob)
     private var ownsCore = false
     private var widgetRefreshJob: Job? = null
+    private var clipboardImageJob: Job? = null
     private var widgetRefreshPending = false
 
     val platformServices = AndroidPlatformServices(activity)
@@ -946,11 +947,13 @@ internal class LogseqRuntime(
 
     private suspend fun handleOutlinerCommandBatch(batch: OutlinerPlatformCommandBatch) {
         for (command in batch.commands) {
+            if (command.type.startsWith("setClipboard")) clipboardImageJob?.cancel()
             when (command.type) {
                 "haptic" -> performHaptic(command.style)
                 "confirmDelete" -> confirmDeletion(command.uuids)
                 "setClipboardText" -> platformServices.copyText(command.text.orEmpty())
                 "setClipboardBlocks" -> com.logseq.logseq.AndroidBlockClipboard.copy(activity, command.text.orEmpty())
+                "setClipboardImages" -> command.imageClipboard?.let(::copyImages)
                 "setClipboardReferences" -> platformServices.copyText(
                     command.uuids.joinToString("\n") { "[[$it]]" }
                 )
@@ -963,6 +966,23 @@ internal class LogseqRuntime(
                 "takePhoto" -> presentAttachment("camera", command.uuid)
                 "recordAudio" -> presentAudioRecording(command.uuid)
                 "focusBlock" -> Unit // autofocus handles it in the retained editor
+            }
+        }
+    }
+
+    private fun copyImages(clipboard: OutlinerPlatformCommand.ImageClipboard) {
+        val timestamp = platformServices.clipboardTimestamp()
+        clipboardImageJob = scope.launch {
+            try {
+                val paths = clipboard.images.map { image ->
+                    graphAssetLoader.load(image.uuid, image.assetType, clipboard.graphId)
+                }
+                platformServices.copyImages(paths, replacing = timestamp)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                reportError(error)
+                LogseqDialogs.notifyError(error.message ?: "The image could not be copied")
             }
         }
     }

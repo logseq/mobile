@@ -1,5 +1,6 @@
 package com.logseq.logseq
 
+import android.content.ClipboardManager
 import android.graphics.Bitmap
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Box
@@ -190,6 +191,30 @@ class AndroidRichContentTest {
             ui.runOnIdle {
                 assertEquals(listOf("rich-block" to file.path), previews)
                 assertTrue(events.filterIsInstance<LuiEvent.Extension>().isEmpty())
+            }
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test fun imageCopyWritesAReadableImageClip() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val file = File.createTempFile("copied-image", ".png", context.cacheDir)
+        try {
+            val bitmap = Bitmap.createBitmap(2, 3, Bitmap.Config.ARGB_8888)
+            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+            render("[]")
+            ui.runOnIdle {
+                val platform = AndroidPlatformServices(context)
+                platform.copyImages(listOf(file.path), replacing = platform.clipboardTimestamp())
+                val clipboard = context.getSystemService(ClipboardManager::class.java)
+                val clip = requireNotNull(clipboard.primaryClip)
+                assertTrue(clip.description.hasMimeType("image/png"))
+                val item = clip.getItemAt(0)
+                val contents = context.contentResolver.openInputStream(requireNotNull(item.uri))?.use { it.readBytes() }
+                assertTrue(file.readBytes().contentEquals(contents))
+                assertEquals(null, item.text)
             }
         } finally {
             file.delete()

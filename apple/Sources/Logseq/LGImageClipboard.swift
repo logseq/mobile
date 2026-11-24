@@ -9,6 +9,27 @@ enum LGImageClipboard {
         let title: String
     }
 
+    @MainActor static func write(_ urls: [URL], replacing changeCount: Int) async throws {
+        guard !urls.isEmpty else { return }
+        let items = try await Task.detached(priority: .userInitiated) {
+            try urls.map { url in
+                let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+                      CGImageSourceGetCount(source) > 0,
+                      let identifier = CGImageSourceGetType(source) as String?,
+                      UTType(identifier)?.conforms(to: .image) == true else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                return [identifier: data]
+            }
+        }.value
+        try Task.checkCancellation()
+        let pasteboard = UIPasteboard.general
+        if pasteboard.changeCount == changeCount {
+            pasteboard.items = items
+        }
+    }
+
     @MainActor static func images() -> [Image] {
         // Each item may expose several encodings of the same photo. Preserve
         // item order, choosing one original representation per image.

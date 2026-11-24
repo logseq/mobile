@@ -393,6 +393,12 @@ let outliner_command_json (command : Effects.outliner_platform_command) =
       ("confirmDelete", "uuids", Wire.json_strings uuids)
     | Effects.Set_clipboard_blocks text ->
       ("setClipboardBlocks", "text", `String text)
+    | Effects.Set_clipboard_images (graph, images) ->
+      ("setClipboardImages", "imageClipboard", `Assoc [
+        "graphId", `String graph;
+        "images", `List (List.map (fun (uuid, kind) ->
+          `Assoc ["uuid", `String uuid; "assetType", `String kind]) images);
+      ])
     | Effects.Set_clipboard_text text ->
       ("setClipboardText", "text", `String text)
     | Effects.Set_clipboard_references uuids ->

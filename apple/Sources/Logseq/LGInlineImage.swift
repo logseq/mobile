@@ -15,7 +15,7 @@ import SwiftUI
         }
     }
 
-    static func load(uuid: String, assetType: String, feedbackTitle: String? = nil,
+    static func load(uuid: String, assetType: String, expectedGraphId: String? = nil, feedbackTitle: String? = nil,
                      callCore: (LogseqRPCRequest) async -> String = { await LogseqCore.callAsync($0) },
                      downloadFile: (URLRequest) async throws -> (URL, URLResponse) = {
                          try await URLSession.shared.download(for: $0)
@@ -34,6 +34,7 @@ import SwiftUI
             return result
         }
         let prepared = try await call("prepareAssetDownload", metadata)
+        if let expectedGraphId, prepared.graphId != expectedGraphId { throw CancellationError() }
         if let path = prepared.localPath { return URL(fileURLWithPath: path) }
         if let feedbackTitle {
             return try await LGFileDownloadFeedback.shared.download(title: feedbackTitle) {
