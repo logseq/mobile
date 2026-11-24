@@ -1431,6 +1431,39 @@ let journal_task_dates_partition_and_recover () = R.with_runtime (fun _ runtime 
   check_eq (uuids "planned" other) [];
   check_eq (member "error" (project ~force:true ())) (`Bool false))
 
+let block_selection_toggles_with_haptic_feedback () = R.with_runtime (fun session _ _ ->
+  let block_event kind uuid = event session kind ["uuid", `String uuid] in
+  let check_selection response uuids =
+    let selected = items "selectedBlockIds" (state response) |> List.map text |> List.sort String.compare in
+    check_eq selected (List.sort String.compare uuids);
+    let haptics = List.filter (fun value -> member "type" value = `String "haptic")
+        (items "outlinerCommands" response) in
+    check_eq (List.map (member "style") haptics) [`String "selection"] in
+  let swipe = block_event "toggleBlockSelection" and tap = block_event "tapBlock" in
+  check_selection (swipe Q.alpha) [Q.alpha];
+  check_selection (tap Q.beta) [Q.alpha; Q.beta];
+  check_selection (swipe Q.alpha) [Q.beta];
+  check_selection (tap Q.beta) [];
+  check_selection (swipe Q.beta) [Q.beta];
+  check_selection (swipe Q.beta) [];
+  let ordinary_tap = tap Q.alpha in
+  check_eq (items "outlinerCommands" ordinary_tap) [];
+  check_eq (member "uuid" (draft ordinary_tap)) (`String Q.alpha))
+
+let block_menu_targets_the_pressed_selection () = R.with_runtime (fun session _ _ ->
+  let select uuid = ignore (event session "toggleBlockSelection" ["uuid", `String uuid]) in
+  let copy uuid =
+    let response = event session "blockToolbar" ["uuid", `String uuid; "action", `String "copyReference"] in
+    match List.find_opt (fun command -> member "type" command = `String "setClipboardReferences")
+        (items "outlinerCommands" response) with
+    | Some command -> items "uuids" command |> List.map text |> List.sort String.compare
+    | None -> fail "Expected the copy reference command" in
+  select Q.alpha;
+  check_eq ~msg:"a menu on another block targets that block" (copy Q.beta) [Q.beta];
+  select Q.beta;
+  check_eq ~msg:"a menu on a selected block applies to the selection"
+    (copy Q.beta) (List.sort String.compare [Q.alpha; Q.beta]))
+
 let selected_task_dates_require_all_task_objects () = R.with_runtime (fun session runtime conn ->
   let task uuid = put uuid "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Task")) in
   rebase runtime conn [task Q.alpha;
@@ -1692,6 +1725,8 @@ let cases = [
   case "editor date buttons follow Task membership" editor_task_date_buttons_follow_task_membership;
   case "journal task buckets recover from query failure" journal_task_dates_partition_and_recover;
   case "selected date actions require all Task objects" selected_task_dates_require_all_task_objects;
+  case "block selection toggles with haptic feedback" block_selection_toggles_with_haptic_feedback;
+  case "block menu targets the pressed selection" block_menu_targets_the_pressed_selection;
   case "journal Doing tasks follow status and due dates" journal_doing_tasks_follow_status_and_due_dates;
   case "journal tasks use a bounded date window" journal_tasks_use_a_bounded_date_window;
   case "journal tasks omit blocks from today's journal" journal_tasks_omit_blocks_from_today;

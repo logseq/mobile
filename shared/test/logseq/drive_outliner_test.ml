@@ -203,12 +203,27 @@ let handle (host : Drive_host.host) model = function
         :: Drive_host.resolved id
       | None -> Model.DequeueEffect id :: Drive_host.resolved id)
   | Model.EditorOutlinerEventEffect (id, payload) ->
+    let fields = Drive_host.json_fields payload in
+    let uuid = Drive_host.json_string fields "uuid" in
     Some
       (match
-         ( Drive_host.json_string (Drive_host.json_fields payload) "type"
-         , model.Model.outliner_editing )
+         (Drive_host.json_string fields "type", uuid, model.Model.outliner_editing)
        with
-      | Some "dismissAutocomplete", Some editing ->
+      | Some "toggleBlockSelection", Some uuid, _ ->
+        let selected = model.Model.outliner_selected_block_ids in
+        let selected = if List.mem uuid selected then List.filter ((<>) uuid) selected else uuid :: selected in
+        Model.DequeueEffect id
+        :: Drive_host.current_graph_projection host model ~extra:(fun projection ->
+               {projection with Model.projection_outliner_selected_block_ids = selected})
+        :: Drive_host.resolved id
+      | Some "blockToolbar", Some uuid, _ when Drive_host.json_string fields "action" = Some "delete" ->
+        let selected = model.Model.outliner_selected_block_ids in
+        let selected = if List.mem uuid selected then [] else selected in
+        Model.DequeueEffect id
+        :: Drive_host.current_graph_projection host model ~extra:(fun projection ->
+               {projection with Model.projection_outliner_selected_block_ids = selected})
+        :: Drive_host.resolved id
+      | Some "dismissAutocomplete", _, Some editing ->
         host.Drive_host.completion_dismissed <- true;
         Model.DequeueEffect id
         :: Drive_host.current_graph_projection host model ~extra:(fun projection ->

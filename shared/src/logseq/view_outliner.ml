@@ -666,6 +666,12 @@ let native_outliner_row ~allow_drag ~trailing_inset model_source retained_source
       "youtubeURL", `String (View_base.outliner_row_youtube_target row);
       "completed", `Bool (View_base.outliner_row_completed_ row);
       "selected", `Bool retained.is_selected;
+      "selectionMode", `Bool (View_base.outliner_selection_active_ current);
+      "selectionMember", `Bool (View_base.row_selected_ current row);
+      "isTask", metadata_member "isTask" row;
+      "menuLabels", `Assoc (List.map (fun label -> label, `String (View_base.tr current label))
+        ["Open block"; "Scheduled"; "Deadline"; "Status"; "Copy"; "Cut"; "Copy reference"; "Copy URL";
+         "Move"; "Move up"; "Move down"; "Outdent"; "Indent"; "Delete"; "Select"; "Unselect"]);
       "editing", `Bool (View_rows.retained_row_editing_ retained);
       "allowsDrag", `Bool allow_drag;
       "trailingInset", `Int trailing_inset;
@@ -702,6 +708,13 @@ let native_outliner_row ~allow_drag ~trailing_inset model_source retained_source
        | _ -> ())
     | ExtensionEvent (_, _, "collapse", _) -> ignore (send (Model.ToggleOutlinerCollapsed (Signal.sample row_source).row_uuid))
     | ExtensionEvent (_, _, "long-press", _) -> ignore (send (Model.LongPressOutlinerBlock (Signal.sample row_source).row_uuid))
+    | ExtensionEvent (_, _, "menu-action", values) ->
+      let row = Signal.sample row_source in
+      (match String_map.find_opt "payload" values with
+       | Some (StringValue ("scheduled" | "deadline" as field)) when metadata_member "isTask" row = `Bool true ->
+         ignore (send (Model.OpenBlockTaskDate (row.row_uuid, field)))
+       | Some (StringValue action) -> ignore (send (Model.PerformOutlinerBlockAction (row.row_uuid, action)))
+       | _ -> ())
     | ExtensionEvent (_, _, "set-priority", values) ->
       (match String_map.find_opt "priority" values with
        | Some (StringValue priority) -> ignore (send (Model.SetOutlinerTaskPriority ((Signal.sample row_source).row_uuid, priority)))
@@ -1216,51 +1229,59 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
             ]);
         ]
     else
-      let button_width (current : Model.logseq_model) =
-            if current.viewport_width >= Model.wide_content_breakpoint then 58
-            else if current.viewport_width >= 390 then 50 else 46 in
-      reactive ~equal:(fun before after -> button_width before = button_width after) (fun current ->
-      let apple_button ?on_press ?min_width icon label identifier action : toolbar_el =
+      reactive ~equal:(fun before after ->
+        before.Model.task_statuses = after.Model.task_statuses && before.language = after.language) (fun current ->
+      let apple_button ?on_press icon label identifier action : toolbar_el =
           let label = View_base.tr current label in
-          let width = if min_width = None then Some (button_width current) else None in
-          Lui_elements.toolbar_button ?width ?min_width ~icon ~variant:`ghost ~height:46
-          ~icon_placement:`top ~label
+          Lui_elements.toolbar_icon_button ~width:44 ~icon ~variant:`ghost ~height:44 ~size:`icon ~label
           ~accessibility_identifier:identifier
           ~on_press:(Option.value on_press ~default:(fun () ->
             ignore (send (Model.PerformOutlinerToolbarAction action))))
-          ~text:label []
+          []
       in
       let apple_tag_button =
         apple_button ~on_press:open_picker (`app "toolbar-tag") tag_label
           "button.outliner.selection.tag" ""
       in
+      let status_menu = if_toolbar ~test:task_selection
+        (toolbar_menu ~icon:(`app "task-todo") ~label:(View_base.tr current "Status")
+          ~accessibility_identifier:"button.outliner.selection.status"
+          (List.map (fun (status : Model.task_status) ->
+             dropdown_menu_item ~text:status.title ~icon:(View_base.icon_of_wire_name (View_base.task_status_icon_name status))
+               ~accessibility_identifier:("button.outliner.selection.status." ^ status.uuid)
+               ~on_press:(fun () -> ignore (send (Model.SetSelectedOutlinerTaskStatus status.uuid))) [])
+             current.task_statuses)) in
+      let menu_item ?(variant = `ghost) icon label action =
+        dropdown_menu_item ~icon:(`app icon) ~variant ~text:(View_base.tr current label)
+          ~accessibility_identifier:("button.outliner.selection.menu." ^ action)
+          ~on_press:(fun () -> ignore (send (Model.PerformOutlinerToolbarAction action))) [] in
+      let more = toolbar_menu ~icon:(`app "more-horiz") ~label:(View_base.tr current "More actions")
+        ~accessibility_identifier:"button.outliner.selection.more" [
+          menu_item ~variant:`destructive "toolbar-delete" "Delete" "delete";
+          menu_item "toolbar-copy" "Copy" "copy";
+          menu_item "toolbar-cut" "Cut" "cut";
+          dropdown_menu_submenu ~text:(View_base.tr current "Move") ~icon:(`app "toolbar-move-up") [
+            menu_item "toolbar-move-up" "Move up" "moveUp";
+            menu_item "toolbar-move-down" "Move down" "moveDown";
+          ];
+          menu_item "toolbar-copy-reference" "Copy reference" "copyReference";
+          menu_item "toolbar-copy-url" "Copy URL" "copyURL";
+        ] in
       toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Outliner selection")
            ~accessibility_identifier:"toolbar.outliner.selection"
-           ~style_class:"scroll-leading"
-           ~toolbar_gap:2 ~placement:`bottom
+           ~style_class:"scroll-leading" ~toolbar_gap:2 ~placement:`bottom
         ([
           apple_button (`app "toolbar-copy") "Copy"
             "button.outliner.selection.copy" "copy";
           apple_tag_button;
+          status_menu;
         ] @ date_buttons (fun icon label id on_press ->
-          apple_button ~on_press ~min_width:(button_width current) icon label id "") @ [
+          apple_button ~on_press icon label id "") @ [
           apple_button (`app "toolbar-outdent") "Outdent"
             "button.outliner.selection.outdent" "outdent";
           apple_button (`app "toolbar-indent") "Indent"
             "button.outliner.selection.indent" "indent";
-          apple_button (`app "toolbar-delete") "Delete"
-            "button.outliner.selection.delete" "delete";
-          apple_button (`app "toolbar-copy-reference") "Copy reference"
-            "button.outliner.selection.copyReference" "copyReference";
-          apple_button (`app "toolbar-copy-url") "Copy URL"
-            "button.outliner.selection.copyURL" "copyURL";
-          Lui_elements.toolbar_button ~icon:(`app "toolbar-unselect") ~variant:`ghost ~width:52
-            ~height:46 ~icon_placement:`top ~label:(View_base.tr (Signal.sample model_source) "Unselect")
-            ~accessibility_identifier:"button.outliner.selection.unselect"
-            ~on_press:(fun _ ->
-              ignore
-                (send (Model.PerformOutlinerToolbarAction "unselect")))
-            ~text:(View_base.tr (Signal.sample model_source) "Unselect") [];
+          more;
         ])) model_source
   in
   stack [

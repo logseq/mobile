@@ -2207,7 +2207,7 @@ let outliner_editor_extension_contract_is_pinned () =
 let outliner_block_content_extension_contract_is_pinned () =
   check_eq ~msg:"the rich block renderer must match the LG wire schema"
     (Lui_extension.fingerprint (View.outliner_block_content_schema ()))
-    "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
+    "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
 
 let native_navigation_stack_extension_contract_is_pinned () =
   let schema =
@@ -2223,7 +2223,7 @@ let native_navigation_stack_extension_contract_is_pinned () =
     ~msg:"native navigation must share one pinned LG and Swift wire contract"
     fingerprint
     (Some
-       "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]")
+       "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,16:selection-active:bool:optional:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]")
 
 let native_search_presentation_extension_contract_is_pinned () =
   let schema =
@@ -10144,7 +10144,7 @@ let kotlin_outliner_markers_match_ios_visual_metrics () =
 
 let ios_rows_use_one_native_layout_and_keep_typed_actions () =
   check_eq (Lui_extension.fingerprint (View.outliner_block_row_schema ()))
-    "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:remove-tag[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],12:set-priority[8:priority:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[18:caret-utf16-offset:int:optional,4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]";
+    "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:remove-tag[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],11:menu-action[7:payload:string:required],12:set-priority[8:priority:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[18:caret-utf16-offset:int:optional,4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]";
   let application = App.create (ios_backend ()) in
   let row = { (outline_row "native-row" "Native title") with
     Model.depth = 3; has_children = true;
@@ -10285,38 +10285,36 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
   check_eq ~msg:"selection exposes main's stable toolbar identifier"
     (property_string renderer toolbar Lui_protocol.AccessibilityIdentifier)
     "toolbar.outliner.selection";
-  check_eq
-    ~msg:
-      "selection keeps its trailing action and main inset on narrow \
-       screens"
-    (property_string renderer toolbar Lui_protocol.StyleClass)
-    "scroll-leading";
   check_eq ~msg:"selection actions keep main's automation identifiers"
     (property_string renderer copy_button
        Lui_protocol.AccessibilityIdentifier)
     "button.outliner.selection.copy";
   List.iter
-    (fun (index, icon, caption) ->
+    (fun (index, icon) ->
        let button = List.nth selection_buttons index in
        check_eq ~msg:"selection actions retain main's iconography"
          (property_string renderer button Lui_protocol.InlineIconName)
          icon;
-       check_eq ~msg:"selection actions retain main's captions"
-         (property_string renderer button Lui_protocol.TextValue)
-         caption;
-       check_eq ~msg:"selection actions retain main's fixed widths"
+       check_eq ~msg:"selection actions display icons without captions"
+         (property renderer button Lui_protocol.TextValue)
+         None;
+       check_eq ~msg:"selection actions retain a 44-point hit target"
          (property_int renderer button Lui_protocol.WidthValue)
-         (if index = 7 then 52 else 50))
+         44)
     [
-      (0, "app:toolbar-copy", "Copy");
-      (1, "app:toolbar-tag", "Tag");
-      (2, "app:toolbar-outdent", "Outdent");
-      (3, "app:toolbar-indent", "Indent");
-      (4, "app:toolbar-delete", "Delete");
-      (5, "app:toolbar-copy-reference", "Copy reference");
-      (6, "app:toolbar-copy-url", "Copy URL");
-      (7, "app:toolbar-unselect", "Unselect");
+      (0, "app:toolbar-copy");
+      (1, "app:toolbar-tag");
+      (2, "app:toolbar-outdent");
+      (3, "app:toolbar-indent");
     ];
+  let menu = List.hd (List.rev selection_buttons) in
+  check_eq ~msg:"the trailing control is the selection menu"
+    (property_string renderer menu Lui_protocol.AccessibilityIdentifier)
+    "button.outliner.selection.more";
+  check ~msg:"Cut is reachable in the menu"
+    (descendant_with_identifier renderer menu "button.outliner.selection.menu.cut" <> -1);
+  let done_button = descendant_with_identifier renderer navigation "button.outliner.selection.done" in
+  check ~msg:"the navigation bar offers Done during selection" (done_button <> -1);
   check_eq ~msg:"selection replaces Capture"
     (descendant_with_identifier renderer chrome "surface.composer.root")
     (-1);
@@ -10342,12 +10340,12 @@ let typed_toolbars_keep_reactive_width_and_labels () =
     let find identifier =
       descendant_with_identifier renderer (Lui_app.root_node application) identifier in
     snapshot None [row.row_uuid] [row];
-    List.iter (fun (viewport, width) ->
+    List.iter (fun viewport ->
       send application (Model.ApplyViewportWidth viewport);
       flush application;
-      Alcotest.(check int) "typed selection actions keep responsive widths" width
+      Alcotest.(check int) "icon-only selection actions keep a 44-point target" 44
         (property_int renderer (find "button.outliner.selection.copy") Lui_protocol.WidthValue))
-      [375, 46; 393, 50; 768, 58; 375, 46];
+      [375; 393; 768; 375];
     let editing = Some {Model.editing_uuid = row.row_uuid; editing_is_task = None; editing_title = row.row_title; caret_utf16_offset = 0} in
     let done_status = Some {Model.uuid = "done"; ident = None; title = "Done";
       icon_type = None; icon_id = None; icon_color = None} in

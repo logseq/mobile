@@ -1,4 +1,4 @@
-# Long-press selects a block and reveals the full selection toolbar.
+# A swipe reveals the quick selection actions. Delete is in the block menu.
 # Delete clears the selection and leaves the block in place. The confirm
 # dialog is presented by the native host, outside this shared view.
 expect prop:accessibility-identifier=button.graph-add
@@ -7,15 +7,13 @@ type prop:accessibility-identifier=field.graph-name "Drive Graph"
 press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
 wait prop:accessibility-identifier=outliner.block.journal-block-1
-ext ext:outliner-block-row outliner-block-row long-press '{"uuid":"journal-block-1"}'
+ext ext:outliner-block-row outliner-block-row toggle-selection '{"uuid":"journal-block-1"}'
 wait prop:accessibility-identifier=toolbar.outliner.selection
 expect prop:accessibility-identifier=button.outliner.selection.copy
 expect prop:accessibility-identifier=button.outliner.selection.tag
 expect prop:accessibility-identifier=button.outliner.selection.outdent
 expect prop:accessibility-identifier=button.outliner.selection.indent
-expect prop:accessibility-identifier=button.outliner.selection.delete
-expect prop:accessibility-identifier=button.outliner.selection.copyReference
-expect prop:accessibility-identifier=button.outliner.selection.copyURL
-press prop:accessibility-identifier=button.outliner.selection.delete
+expect-absent prop:accessibility-identifier=button.outliner.selection.delete
+ext ext:outliner-block-row outliner-block-row menu-action '{"payload":"delete"}'
 expect-absent prop:accessibility-identifier=toolbar.outliner.selection
 expect text:"First seeded block"

@@ -7,6 +7,9 @@ import android.net.Uri
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.Image
@@ -17,8 +20,10 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -63,6 +68,7 @@ import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.toAndroidDragEvent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
@@ -71,6 +77,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -93,6 +100,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.logseq.logseq.AndroidAudioPlayer
+import kotlin.math.abs
 import com.logseq.logseq.runtime.AndroidLaunchMetrics
 import dev.lui.LuiExtensionContext
 import dev.lui.luiThemeColor
@@ -167,6 +175,11 @@ internal fun OutlinerBlockContent(
     val linkOnly = remember(markupJson) { isLinkOnlyMarkup(markupJson) }
     val currentContext by rememberUpdatedState(context)
     val selectBlock: () -> Unit = { currentContext.emit("drag-start", "uuid" to uuid) }
+    var swipeOffset by remember(uuid) { mutableFloatStateOf(0f) }
+    var swiping by remember(uuid) { mutableStateOf(false) }
+    val displayedSwipeOffset by animateFloatAsState(
+        swipeOffset, animationSpec = if (swiping) snap() else spring(), label = "blockSwipeOffset",
+    )
 
     var rowHeightPx by remember { mutableIntStateOf(0) }
     var rowPosition by remember { mutableStateOf(Offset.Zero) }
@@ -231,6 +244,37 @@ internal fun OutlinerBlockContent(
                 AndroidLaunchMetrics.report("journals_ui_ready")
             }
             .background(hoverColor, RoundedCornerShape(8.dp))
+            .pointerInput(uuid) {
+                val swipeDistance = 44.dp.toPx()
+                val resistanceStart = 72.dp.toPx()
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ ->
+                        val travel = change.position - down.position
+                        if (abs(travel.x) > abs(travel.y) * 1.5f) change.consume()
+                    } ?: return@awaitEachGesture
+                    var distance = down.position.x - start.position.x
+                    val leftSwipe = distance > 0
+                    swiping = leftSwipe
+                    try {
+                        val released = horizontalDrag(start.id) { change ->
+                            distance -= change.positionChange().x
+                            if (leftSwipe) {
+                                val travel = distance.coerceAtLeast(0f)
+                                swipeOffset = minOf(travel, resistanceStart) +
+                                    ((travel - resistanceStart).coerceAtLeast(0f) * 0.22f).coerceAtMost(32.dp.toPx())
+                            }
+                            change.consume()
+                        }
+                        if (released && leftSwipe && distance >= swipeDistance) {
+                            currentContext.emit("toggle-selection", "uuid" to uuid)
+                        }
+                    } finally {
+                        swiping = false
+                        swipeOffset = 0f
+                    }
+                }
+            }
             .then(if (linkOnly) Modifier else Modifier.pointerInput(uuid) {
                 detectTapGestures(
                     onTap = {
@@ -247,7 +291,7 @@ internal fun OutlinerBlockContent(
     Box(
         modifier = rowModifier,
     ) {
-        Column {
+        Column(Modifier.graphicsLayer { translationX = -displayedSwipeOffset }) {
             if (isAsset) {
                 ProjectedAsset(
                     uuid = uuid,
@@ -288,7 +332,7 @@ internal fun OutlinerBlockContent(
 internal fun isLinkOnlyMarkup(encoded: String): Boolean = try {
     val values = JSONArray(encoded)
     values.length() == 1 && values.optJSONObject(0)?.optString("type") in
-        setOf("nodeReference", "url", "pageReference")
+        setOf("link", "nodeReference", "url", "pageReference")
 } catch (_: Throwable) {
     false
 }

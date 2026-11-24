@@ -20,6 +20,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -167,6 +169,17 @@ class AndroidRichContentTest {
         render("""[{"type":"text","text":"Tap to edit"}]""")
         ui.onNodeWithText("Tap to edit").performTouchInput { click() }
         ui.runOnIdle { assertEquals(listOf("edit"), events.filterIsInstance<LuiEvent.Extension>().map { it.name }) }
+    }
+
+    @Test fun onlyLeftSwipesToggleBlockSelection() {
+        render("""[{"type":"text","text":"Selectable block"}]""")
+        val block = ui.onNodeWithTag("outliner-block-content-rich-block")
+        block.performTouchInput { swipeRight() }
+        repeat(2) { block.performTouchInput { swipeLeft() } }
+        ui.runOnIdle {
+            assertEquals(List(2) { "toggle-selection" to "rich-block" },
+                events.filterIsInstance<LuiEvent.Extension>().map { it.name to it.values["uuid"] })
+        }
     }
 
     @Test fun holdingALinkOnlyBlockEntersEditingInsteadOfOpeningIt() {

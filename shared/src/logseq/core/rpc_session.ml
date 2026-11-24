@@ -741,7 +741,8 @@ let outliner_action_context session context message =
   let current = (state session).outliner_state in
   let targets = Outliner.interaction_targets current |> Outliner.Sset.elements in
   let targets = match message with
-    | Outliner.Tap_block uuid | Tap_block_at (uuid, _) | Long_press_block uuid | Toggle_collapsed uuid | Zoom_in uuid -> uuid :: targets
+    | Outliner.Tap_block uuid | Tap_block_at (uuid, _) | Long_press_block uuid
+    | Toggle_block_selection uuid | Block_toolbar (uuid, _) | Toggle_collapsed uuid | Zoom_in uuid -> uuid :: targets
     | Drop_blocks value -> value.target_uuid :: targets
     | Set_task_status value -> value.status_uuid :: targets
     | Set_task_priority value -> value.priority_uuid :: targets

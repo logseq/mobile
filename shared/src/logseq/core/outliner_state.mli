@@ -50,6 +50,7 @@ type outliner_toolbar =
   | New_block
   | Line_break
   | Copy
+  | Cut
   | Delete
   | Copy_reference
   | Copy_url
@@ -90,6 +91,8 @@ type outliner_message =
   | Tap_block of string
   | Tap_block_at of string * int
   | Long_press_block of string
+  | Toggle_block_selection of string
+  | Block_toolbar of string * outliner_toolbar
   | Paste_content of Block_clipboard.content
   | Text_pasted of outliner_text
   | Text_changed of outliner_text

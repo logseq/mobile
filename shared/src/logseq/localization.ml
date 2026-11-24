@@ -5606,6 +5606,11 @@ let dictionaries = [
     ("Connected", "已连接");
     ("Copy URL", "复制链接");
     ("Copy reference", "复制引用");
+    ("Cut", "剪切");
+    ("More actions", "更多操作");
+    ("Move", "移动");
+    ("Open block", "打开块");
+    ("Select", "选择");
     ("Core log", "核心日志");
     ("Created in the last month", "最近一个月内创建");
     ("Creating graph…", "正在创建图谱…");

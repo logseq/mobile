@@ -652,8 +652,15 @@ let active_overflow_menu model_source send : t =
            model_source property (fun () -> Signal.set editing None)) (Signal.value editing));
    ]))
 
-let main_header_connection model_source send : t =
-  stack
+let header_selection_active context current =
+  Lui_ui.host context = SwiftUIHost
+  && match View_base.active_node_projection current with
+     | Some route -> route.Model.node_outliner_selected_block_ids <> []
+     | None -> View_base.bottom_chrome_selection_ current
+
+let main_header_connection model_source send : t = custom @@ fun context parent ->
+  let selecting = Signal.map (header_selection_active context) model_source in
+  let controls = stack
     [
       if_
         ~test:
@@ -667,7 +674,15 @@ let main_header_connection model_source send : t =
                     ~on_press:(press send Model.OpenJournalCalendar) []);
                if_ ~test:(Signal.map View_base.active_page_actions_visible_ model_source)
                  (active_overflow_menu model_source send)]));
-    ]
+    ] in
+  mount context ?parent (reactive (fun selecting ->
+    if selecting then
+      icon_button ~icon:(`app "selection-done") ~variant:`ghost ~size:`icon ~width:44 ~height:44
+        ~style_class:"system-toolbar-icon"
+        ~label:(View_base.tr (Signal.sample model_source) "Done")
+        ~accessibility_identifier:"button.outliner.selection.done"
+        ~on_press:(press send (Model.PerformOutlinerToolbarAction "unselect")) []
+    else controls) selecting)
 
 let native_node_destination ~source:title_source content : t =
  custom @@ fun context parent ->
@@ -864,6 +879,8 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
      (Signal.map View_base.bool_wire_value composer_dismissal_source);
    Lui_ui.extension_property_signal context node "title"
      (Signal.map View_base.string_wire_value title_source);
+   Lui_ui.extension_property_signal context node "selection-active"
+     (Signal.map (fun current -> BoolValue (header_selection_active context current)) model_source);
    Lui_ui.on_event context node (fun input_event ->
        ignore
          (View_base.handle_native_navigation_event input_event send));

@@ -147,6 +147,8 @@ let outliner_block_content_schema () =
     [
       Lui_extension.event "drag-start"
         [ Lui_extension.event_field "uuid" StringScalar true ];
+      Lui_extension.event "toggle-selection"
+        [ Lui_extension.event_field "uuid" StringScalar true ];
       Lui_extension.event "drop"
         [
           Lui_extension.event_field "uuid" StringScalar true;
@@ -175,6 +177,8 @@ let outliner_block_row_schema () =
      Lui_extension.event "remove-tag" [uuid];
      Lui_extension.event "collapse" [uuid]; Lui_extension.event "long-press" [uuid];
      Lui_extension.event "drag-start" [uuid];
+     Lui_extension.event "toggle-selection" [uuid];
+     Lui_extension.event "menu-action" [Lui_extension.event_field "payload" StringScalar true];
      Lui_extension.event "drop" [uuid; Lui_extension.event_field "placement" StringScalar true];
      Lui_extension.event "set-priority" [Lui_extension.event_field "priority" StringScalar true];
      Lui_extension.event "set-status" [uuid; Lui_extension.event_field "count" IntScalar true]]
@@ -188,6 +192,7 @@ let native_navigation_stack_schema () =
     [
       Lui_extension.property "depth" IntScalar true None;
       Lui_extension.property "back-depth" IntScalar true None;
+      Lui_extension.property "selection-active" BoolScalar false None;
       Lui_extension.property "bottom-occupies-layout-space" BoolScalar true
         None;
       Lui_extension.property "composer-dismissal-enabled" BoolScalar true
