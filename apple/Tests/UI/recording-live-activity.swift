@@ -16,13 +16,6 @@ import UIKit
         precondition(state.transcript.hasSuffix("👩🏽‍💻 "), "The latest transcription was discarded")
         precondition(attributes.timerRange.upperBound.timeIntervalSince(attributes.startedAt) == 600)
 
-        let coordinator = LGPlatformPresentationCoordinator()
-        precondition(coordinator.presentAttachment("audio", targetBlockID: "original"))
-        let request = coordinator.attachmentRequestID
-        precondition(coordinator.presentAttachment("audio", targetBlockID: "second"))
-        precondition(coordinator.attachmentRequestID == request && coordinator.attachmentTargetBlockID == "original",
-                     "Returning from the lock screen replaced the active recording")
-
         let card = RecordingActivityCard(attributes: attributes, state: .init(
             elapsedSeconds: 8, isRecording: true,
             transcript: "Just out for a walk. Looks like someone’s opening a small café down the street."
@@ -35,7 +28,7 @@ import UIKit
         guard let image = renderer.uiImage?.pngData() else { preconditionFailure("Recording activity did not render") }
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         try image.write(to: documents.appendingPathComponent("recording-live-activity.png"))
-        print("PASS: lock-screen card renders, payload is bounded, and returning preserves the recording target")
+        print("PASS: lock-screen card renders and the payload is bounded")
 
         precondition(ActivityAuthorizationInfo().areActivitiesEnabled, "Live Activities must be enabled for this runtime check")
         let live = RecordingLiveActivity()

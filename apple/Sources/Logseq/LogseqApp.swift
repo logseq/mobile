@@ -802,6 +802,7 @@ public struct LogseqRootView : View {
             initialWidgetURLAwaitingDelivery = nil
             return
         }
+        // The lock-screen activity brings the existing recording back into view.
         if url.scheme == "logseq", url.host == "audio", presentationCoordinator.attachmentService == .audio {
             return
         }

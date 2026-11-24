@@ -52,8 +52,6 @@ public final class LGPlatformPresentationCoordinator {
         guard let service = LGAttachmentService(rawValue: rawValue) else {
             return false
         }
-        // Returning from a lock-screen activity must keep the current capture.
-        if service == .audio, attachmentService == .audio { return true }
         attachmentRequestID = UUID()
         attachmentService = service
         attachmentTargetBlockID = targetBlockID
@@ -312,7 +310,6 @@ struct LGPlatformPresentationHost: ViewModifier {
                 .presentationCornerRadius(32)
             }
             .sheet(isPresented: presentationBinding(for: .audio)) {
-                let request = coordinator.attachmentRequest
                 AudioRecorderSheet(
                     targetBlockID: request.targetBlockID
                 ) { asset, targetBlockID, transcript in
@@ -322,6 +319,7 @@ struct LGPlatformPresentationHost: ViewModifier {
                     ), targetBlockID: targetBlockID, transcript: transcript)
                     coordinator.completeAttachment(requestID: request.id)
                 }
+                .id(request.id)
                 .modifier(LGSheetSurface())
             }
             #endif
