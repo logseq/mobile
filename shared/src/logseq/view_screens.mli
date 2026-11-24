@@ -37,7 +37,7 @@ val main_header_leading :
   (Model.logseq_action -> bool) -> Lui_elements.t
 val main_header_title :
   Lui_ui.ui_context -> Model.logseq_model Signal.signal -> Lui_elements.t
-val main_header_sync :
+val main_header_primary_action :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t

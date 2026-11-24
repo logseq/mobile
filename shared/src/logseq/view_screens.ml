@@ -416,7 +416,7 @@ let graph_loading_feedback (context : Lui_ui.ui_context) model_source : t
       ~accessibility_identifier:"journals.loading"
       [ spinner ~accessibility_identifier:"spinner.graph-loading" [] ]
 
-let uses_ios_flashcard_toolbar context =
+let uses_ios_native_header context =
   Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost
 
 let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
@@ -429,7 +429,7 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
       if_
         ~test:(Signal.map View_base.flashcards_destination_ model_source)
         (View_flashcards.flashcard_screen
-           ~uses_header:(uses_ios_flashcard_toolbar context || Lui_ui.host context = KotlinHost)
+           ~uses_header:(uses_ios_native_header context || Lui_ui.host context = KotlinHost)
            model_source send);
       if_
         ~test:(Signal.map View_base.graphs_destination_ model_source)
@@ -501,12 +501,41 @@ let main_header_title (context : Lui_ui.ui_context) model_source : t =
          model_source)
     ~style_class:"headline navigation-title" ~accessibility_identifier:"title.main" []
 
-let main_header_sync (context : Lui_ui.ui_context) model_source send : t =
+let journal_calendar_control model_source send =
+  icon_button ~icon:(`app "calendar") ~label:(View_base.tr (Signal.sample model_source) "Go to journal")
+    ~variant:`ghost ~size:`icon ~width:44 ~height:44
+    ~accessibility_identifier:"button.journal-calendar"
+    ~on_press:(press send Model.OpenJournalCalendar) []
+
+let open_sync_status model_source send () =
+  let current = Signal.sample model_source in
+  ignore (send (if current.Model.authentication_state = "signedIn" then Model.OpenSyncDetails else Model.SignIn))
+
+let journal_overflow_menu model_source send =
+  box ~width:44 ~height:44 [
+    menu ~icon:(`app "more-horiz") ~style_class:"capsule"
+      ~label:(View_base.tr (Signal.sample model_source) "More")
+      ~accessibility_identifier:"button.journals.more" [
+        dropdown_menu_item ~icon:(`app "status-dot")
+          ~foreground_signal:(Signal.map View_base.sync_indicator_foreground model_source)
+          ~text_signal:(Signal.map View_base.sync_indicator_label model_source)
+          ~accessibility_identifier_signal:(Signal.map View_base.sync_accessibility_identifier model_source)
+          ~on_press:(open_sync_status model_source send) []
+      ]
+  ]
+
+let ios_journal_header context current =
+  uses_ios_native_header context && View_base.journal_home_visible_ current
+
+let main_header_primary_action (context : Lui_ui.ui_context) model_source send : t =
   stack
     [
+      if_ ~test:(Signal.map (ios_journal_header context) model_source)
+        (journal_calendar_control model_source send);
       if_
         ~test:
-          (Signal.map View_base.connection_control_visible_ model_source)
+          (Signal.map (fun current -> View_base.connection_control_visible_ current
+            && not (ios_journal_header context current)) model_source)
         (View_base.with_label_signal
            (Signal.map View_base.sync_indicator_label model_source)
            (icon_button ~label:(View_base.tr (Signal.sample model_source) "Sync status")
@@ -518,12 +547,7 @@ let main_header_sync (context : Lui_ui.ui_context) model_source send : t =
               ~accessibility_identifier_signal:
                 (Signal.map View_base.sync_accessibility_identifier
                    model_source)
-              ~on_press:(fun _ ->
-                let current = Signal.sample model_source in
-                ignore (send
-                  (if current.Model.authentication_state = "signedIn"
-                   then Model.OpenSyncDetails
-                   else Model.SignIn)))
+              ~on_press:(fun _ -> open_sync_status model_source send ())
               []));
     ]
 
@@ -679,11 +703,11 @@ let main_header_connection model_source send : t = custom @@ fun context parent 
           (Signal.map View_base.connection_control_visible_ model_source)
         (custom @@ fun context parent ->
           mount context ?parent (stack [
-               if_ ~test:(Signal.map View_base.connection_settings_visible_ model_source)
-                 (icon_button ~icon:(`app "calendar") ~label:(View_base.tr (Signal.sample model_source) "Go to journal")
-                    ~variant:`ghost ~size:`icon ~width:44 ~height:44
-                    ~accessibility_identifier:"button.journal-calendar"
-                    ~on_press:(press send Model.OpenJournalCalendar) []);
+               if_ ~test:(Signal.map (fun current -> View_base.connection_settings_visible_ current
+                 && not (ios_journal_header context current)) model_source)
+                 (journal_calendar_control model_source send);
+               if_ ~test:(Signal.map (ios_journal_header context) model_source)
+                 (journal_overflow_menu model_source send);
                if_ ~test:(Signal.map View_base.active_page_actions_visible_ model_source)
                  (active_overflow_menu model_source send)]));
     ] in
@@ -835,7 +859,7 @@ let android_main_header context model_source send =
       if selecting then round_action (selection_done model_source send)
       else box ~corner_radius:22 ~background:"glass" ~padding_horizontal:6
         [row ~cross:`center ~gap:4 [
-          main_header_sync context model_source send;
+          main_header_primary_action context model_source send;
           main_header_connection model_source send;
         ]]) (Signal.map header_selection_active model_source);
   ] in
@@ -923,7 +947,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
      ignore
        (mount context ~parent:node (main_header_leading context model_source send));
      let title_slot =
-       if uses_ios_flashcard_toolbar context then
+       if uses_ios_native_header context then
          let viewport = Signal.map (fun (current : Model.logseq_model) -> current.viewport_width) model_source in
          let width = Signal.map (fun viewport ->
            (* Leave space for the sidebar toggle, two trailing actions, and bar margins. *)
@@ -944,7 +968,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
        else main_header_title context model_source in
      ignore (mount context ~parent:node title_slot);
      ignore
-       (mount context ~parent:node (main_header_sync context model_source send));
+       (mount context ~parent:node (main_header_primary_action context model_source send));
      ignore
        (mount context ~parent:node (main_header_connection model_source send));
      ignore

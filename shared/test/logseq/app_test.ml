@@ -2567,6 +2567,7 @@ let kotlin_loading_and_errors_use_material_feedback_surfaces () =
 let graph_and_sync_actions_update_retained_status_in_place () =
   let application = App.create (ios_backend ()) in
   start application;
+  send application (Model.ApplyAuthentication ("signedIn", None));
   send application (Model.SelectGraph "Work");
   flush application;
   let renderer = Lui_app.runtime application in
@@ -2576,12 +2577,9 @@ let graph_and_sync_actions_update_retained_status_in_place () =
   let sidebar_control =
     List.nth (children renderer (List.nth chrome 1)) 0
   in
-  let sync_control =
-    List.nth (children renderer (List.nth chrome 3)) 0
-  in
-  let connection_control =
-    List.nth (children renderer (List.nth chrome 4)) 0
-  in
+  let calendar = descendant_with_identifier renderer (List.nth chrome 3) "button.journal-calendar" in
+  let more = descendant_with_identifier renderer (List.nth chrome 4) "button.journals.more" in
+  let find_sync id = descendant_with_identifier renderer more id in
   send application Model.BeginSync;
   flush application;
   List.iter
@@ -2589,31 +2587,38 @@ let graph_and_sync_actions_update_retained_status_in_place () =
        check_eq ~msg:"journal header actions keep semantic ghost styling"
          (property_string renderer control Lui_protocol.VariantValue)
          "ghost")
-    [ sidebar_control; sync_control ];
-  check ~msg:"the journal trailing action opens the calendar"
-    (descendant_with_identifier renderer connection_control "button.journal-calendar" <> -1);
+    [ sidebar_control; calendar ];
+  let sync_control = find_sync "sync.connected" in
+  check_eq ~msg:"the trailing More menu contains a native sync status item"
+    (node renderer sync_control) (Some Lui_protocol.MenuItem);
+  check_eq (property_string renderer sync_control Lui_protocol.InlineIconName) "app:status-dot";
+  check_eq (property_string renderer sync_control Lui_protocol.ForegroundValue) "warning-foreground";
   let graph_switch = descendant_with_identifier renderer title "button.graph-switch" in
   check_eq ~msg:"the journal root uses the selected graph as its header title"
     (property_string renderer graph_switch Lui_protocol.TextValue)
     "Work";
   check_eq ~msg:"begin sync exposes progress"
-    (property_string renderer sync_control Lui_protocol.AccessibilityLabel)
+    (property_string renderer sync_control Lui_protocol.TextValue)
     "Syncing";
   check_eq ~msg:"sync changes retain the native status node"
-    (List.nth (children renderer (List.nth chrome 3)) 0)
+    (find_sync "sync.connected")
     sync_control;
   send application Model.SyncSucceeded;
   flush application;
   check_eq ~msg:"success is visible"
-    (property_string renderer sync_control Lui_protocol.AccessibilityLabel)
+    (property_string renderer sync_control Lui_protocol.TextValue)
     "Synced";
+  check_eq (property_string renderer sync_control Lui_protocol.ForegroundValue) "success-foreground";
   send application (Model.SyncFailed "Network unavailable");
   flush application;
   check_eq ~msg:"the compact control matches main's failure label"
-    (property_string renderer sync_control Lui_protocol.AccessibilityLabel)
+    (property_string renderer (find_sync "sync.failed") Lui_protocol.TextValue)
     "Sync failed";
-  dispatch application (Lui_protocol.Press
-    (descendant_with_identifier renderer connection_control "button.journal-calendar"));
+  dispatch application (Lui_protocol.Press (find_sync "sync.failed"));
+  flush application;
+  check ~msg:"the menu item opens sync details" (App.model application).sync_details_open;
+  send application Model.CloseSyncDetails;
+  dispatch application (Lui_protocol.Press calendar);
   flush application;
   check ~msg:"the calendar action reaches native presentation"
     (List.exists (function Model.PresentJournalCalendarEffect _ -> true | _ -> false)

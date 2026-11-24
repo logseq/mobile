@@ -60,9 +60,6 @@ import LogseqModel
                     && frames[$0].map { !$0.isEmpty && $0.intersects(window.bounds) } == true
             }
         }
-        func syncNode() -> Int? {
-            ["sync.connected", "sync.disconnected", "sync.failed"].compactMap(node).first
-        }
 
         func saveScreenshot(_ name: String) throws {
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
@@ -135,7 +132,7 @@ import LogseqModel
             let relevant = views(window).compactMap { view -> String? in
                 let name = String(describing: type(of: view))
                 let identifier = view.accessibilityIdentifier ?? ""
-                guard name.contains("Bar") || identifier.hasPrefix("sync.") || identifier == "button.journal-calendar" else { return nil }
+                guard name.contains("Bar") || ["button.journals.more", "button.journal-calendar"].contains(identifier) else { return nil }
                 return "\(name) id=\(identifier) frame=\(view.convert(view.bounds, to: window)) hidden=\(view.isHidden) alpha=\(view.alpha)"
             }
             let sceneDetails = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.map { current in
@@ -173,16 +170,16 @@ import LogseqModel
             if #available(iOS 27.1, *) {
                 vertical = host.view.traitCollection.verticalBarEdge != .unspecified
             } else { vertical = false }
-            let reported = syncNode().flatMap { sync in
-                node("button.journal-calendar").flatMap { calendar in
-                    frames[sync].flatMap { first in frames[calendar].map { (first, $0) } }
+            let reported = node("button.journal-calendar").flatMap { calendar in
+                node("button.journals.more").flatMap { more in
+                    frames[calendar].flatMap { first in frames[more].map { (first, $0) } }
                 }
             }
             guard let (first, second) = nativeControlFrames(vertical: vertical) ?? reported,
                   first.width > 0, first.height > 0, second.width > 0, second.height > 0 else {
                 let relevant = backend.rootIDs.flatMap(descendants).compactMap { id -> String? in
                     guard let identifier = backend.model(id: id)?.property(.accessibilityIdentifier)?.stringValue,
-                          identifier.hasPrefix("sync.") || identifier == "button.journal-calendar" else { return nil }
+                          ["button.journals.more", "button.journal-calendar"].contains(identifier) else { return nil }
                     return "\(identifier)[\(id)]=\(String(describing: frames[id]))"
                 }.joined(separator: " ")
                 let availability = "nodes=\(relevant) totalFrames=\(frames.count) bounds=\(window.bounds)"
