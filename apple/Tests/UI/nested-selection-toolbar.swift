@@ -136,7 +136,7 @@ import UIKit
             try await wait("Copy must use the shared toolbar pipeline") { performed.last == "copy" }
             try await wait("Copy clears the destination's selection") { find("toolbar.outliner.selection") == nil }
             try toggleSelection()
-            try await wait("Selection must reopen after copying") { find("button.outliner.selection.done") != nil }
+            try await wait("Selection must reopen after copying") { find("toolbar.outliner.selection") != nil }
             try backend.performPress(node: find("button.outliner.selection.done")!)
             try await wait("Unselect must reach the active destination") { performed.last == "unselect" }
             try await wait("Unselect removes native selection chrome") { find("toolbar.outliner.selection") == nil }

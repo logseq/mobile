@@ -688,8 +688,11 @@ let main_header_connection model_source send : t = custom @@ fun context parent 
                if_ ~test:(Signal.map View_base.active_page_actions_visible_ model_source)
                  (active_overflow_menu model_source send)]));
     ] in
-  mount context ?parent (reactive (fun selecting ->
-    if selecting then selection_done model_source send else controls) selecting)
+  if Lui_ui.host context = SwiftUIHost then
+    mount context ?parent (stack [box [controls]; box [selection_done model_source send]])
+  else
+    mount context ?parent (reactive (fun selecting ->
+      if selecting then selection_done model_source send else controls) selecting)
 
 let native_node_destination ~source:title_source content : t =
  custom @@ fun context parent ->
