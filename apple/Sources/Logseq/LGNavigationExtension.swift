@@ -804,17 +804,19 @@ private struct LGNavigationContent: View {
         verticalToolbar && !selectionActive && hasCollapsedComposer && captureActionIDs.count == 4
     }
 
-    private var flashcardsToolbar: (container: Int, title: Int, add: Int, graph: Int)? {
+    private var rootTitleContent: Int? {
         guard let toolbarStartIndex,
               let titleSlot = childID(at: toolbarStartIndex + 1) else { return nil }
         let _ = context.measureStamp(of: titleSlot)
-        let slots = context.childIDs(of: titleSlot)
-        guard slots.count == 2,
-              context.extensionIdentifier(of: slots[0]) == LGNavigationExtension.flashcardsToolbarIdentifier else { return nil }
-        let container = slots[0]
+        return context.childIDs(of: titleSlot).first
+    }
+
+    private var flashcardsToolbar: (container: Int, title: Int, add: Int)? {
+        guard let container = rootTitleContent,
+              context.extensionIdentifier(of: container) == LGNavigationExtension.flashcardsToolbarIdentifier else { return nil }
         let children = context.childIDs(of: container)
         guard children.count == 3 else { return nil }
-        return (container, children[0], children[1], slots[1])
+        return (container, children[0], children[1])
     }
 
 
@@ -1033,10 +1035,8 @@ private struct LGNavigationContent: View {
                             ToolbarItem(placement: .principal) {
                                 if let search, searchVisible {
                                     searchStatusTitle(search.statusTitle)
-                                } else if let flashcardsToolbar {
-                                    flashcardsHeader(deck: flashcardsToolbar.title, graph: flashcardsToolbar.graph)
                                 } else {
-                                    graphSwitchTitle
+                                    rootHeaderTitle
                                 }
                             }
                         }
@@ -1109,17 +1109,6 @@ private struct LGNavigationContent: View {
         rootTransform?(rootContent) ?? rootContent
     }
 
-    private func flashcardsHeader(deck: Int, graph: Int) -> some View {
-        HStack(spacing: 8) {
-            context.nodeView(of: deck)
-                .font(.headline)
-                .lineLimit(1)
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-            graphSwitchMenu(graph)
-        }
-    }
-
     private func searchStatusTitle(_ title: String) -> some View {
         Text(title)
             .font(.headline)
@@ -1137,20 +1126,22 @@ private struct LGNavigationContent: View {
             .disabled(selectionActive)
     }
 
-    private var graphSwitchTitle: some View {
-        VStack(spacing: 0) {
-            if let toolbarStartIndex,
-               let titleSlot = childID(at: toolbarStartIndex + 1),
-               let graphSwitch = context.childIDs(of: titleSlot).first {
-                graphSwitchMenu(graphSwitch)
-            }
-            if !contextualTitle.isEmpty {
-                Text(verbatim: contextualTitle)
-                    .lineLimit(1)
-                    .font(.caption.weight(.semibold))
-            }
+    @ViewBuilder
+    private var rootHeaderTitle: some View {
+        if let flashcardsToolbar {
+            context.nodeView(of: flashcardsToolbar.title)
+                .font(.headline)
+                .lineLimit(1)
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+        } else if let graphSwitch = rootTitleContent {
+            graphSwitchMenu(graphSwitch)
+                .frame(minHeight: 44)
+        } else if !contextualTitle.isEmpty {
+            Text(verbatim: contextualTitle)
+                .font(.headline)
+                .lineLimit(1)
         }
-        .frame(minHeight: 44)
     }
 
     @ViewBuilder
@@ -1159,13 +1150,7 @@ private struct LGNavigationContent: View {
             if verticalToolbar, toolbarStartIndex != nil {
                 // A principal item would create a second, horizontal bar on Duo.
                 let hideTitle = searchVisible || pdfWorkspaceOpen
-                Group {
-                    if let flashcardsToolbar {
-                        flashcardsHeader(deck: flashcardsToolbar.title, graph: flashcardsToolbar.graph)
-                    } else {
-                        graphSwitchTitle
-                    }
-                }
+                rootHeaderTitle
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .opacity(hideTitle ? 0 : 1)
                 .allowsHitTesting(!hideTitle)
@@ -1343,18 +1328,43 @@ private struct LGNavigationContent: View {
         }
     }
 
+    @ViewBuilder
     private func trailingControls(searchPage: Bool, index: Int, glass: Bool) -> some View {
+        if !searchPage && hasPrimaryToolbarAction(at: index) {
+            pairedTrailingControls(index: index, glass: glass)
+        } else {
+            let action = Group {
+                if selectionActive {
+                    headerConnectionSlot(context, at: childID(at: index + 3), selecting: true)
+                } else if let item = trailingToolbarItem(searchPage: searchPage) {
+                    item.content
+                }
+            }
+            .frame(width: 44, height: 44)
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .overlay {
+                if composerDismissalEnabled { composerDismissalTarget.accessibilityHidden(true) }
+            }
+            if glass {
+                action.modifier(LGLiquidGlassSurface(shape: .circle))
+            } else {
+                action
+            }
+        }
+    }
+
+    private func pairedTrailingControls(index: Int, glass: Bool) -> some View {
         let size: CGFloat = 44
-        let vertical = verticalToolbar && !searchPage
-        let fullWidth = searchPage || vertical ? size : size * 2
-        let fullHeight = vertical ? size * 2 : size
-        let alignment: Alignment = vertical ? .top : .trailing
+        let fullWidth = verticalToolbar ? size : size * 2
+        let fullHeight = verticalToolbar ? size * 2 : size
+        let alignment: Alignment = verticalToolbar ? .top : .trailing
         let contents = ZStack(alignment: alignment) {
             if selectionActive {
                 headerConnectionSlot(context, at: childID(at: index + 3), selecting: true)
                     .frame(width: size, height: size)
                     .transition(.opacity)
-            } else if let item = trailingToolbarItem(searchPage: searchPage) {
+            } else if let item = trailingToolbarItem(searchPage: false) {
                 item.content
                     .transition(.opacity)
             }
@@ -1394,21 +1404,27 @@ private struct LGNavigationContent: View {
         return owner.nodeView(of: slots[index])
     }
 
+    private func hasPrimaryToolbarAction(at index: Int) -> Bool {
+        guard let container = childID(at: index + 2) else { return false }
+        let _ = context.measureStamp(of: container)
+        return !context.childIDs(of: container).isEmpty
+    }
+
     private func trailingToolbarItem(searchPage: Bool) -> (id: String, content: AnyView)? {
         let pageActions: AnyView
         if searchPage, let search, search.context.childIDs.indices.contains(3) {
             pageActions = headerConnectionSlot(search.context, at: search.context.childIDs[3], selecting: false)
         } else if let toolbarStartIndex {
-            // Keep these controls in one item so the system cannot replace
-            // one of them with its own overflow menu as the title changes.
-            let controls = LGToolbarControlPair(
-                first: AnyView(childContent(at: toolbarStartIndex + 2)
-                    .frame(width: 44, height: 44)),
-                second: AnyView(headerConnectionSlot(context, at: childID(at: toolbarStartIndex + 3), selecting: false)
-                    .frame(width: 44, height: 44))
-            )
-            .fixedSize()
-            return ("logseq.trailing-controls", AnyView(controls))
+            pageActions = headerConnectionSlot(context, at: childID(at: toolbarStartIndex + 3), selecting: false)
+            if hasPrimaryToolbarAction(at: toolbarStartIndex) {
+                // Keep the two actions together so the system gives them a single toolbar slot.
+                let controls = LGToolbarControlPair(
+                    first: AnyView(childContent(at: toolbarStartIndex + 2).frame(width: 44, height: 44)),
+                    second: AnyView(pageActions.frame(width: 44, height: 44))
+                )
+                .fixedSize()
+                return ("logseq.trailing-controls", AnyView(controls))
+            }
         } else if let trailingMenuIndex {
             pageActions = childContent(at: trailingMenuIndex)
         } else {

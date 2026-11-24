@@ -214,7 +214,8 @@ let composer_tag_picker model_source send : t =
               List.filter_map (function `String value -> Some value | _ -> None) values | _ -> [] in
             let selected = List.filter_map (fun uuid -> List.find_opt (fun (tag : Model.sidebar_page) -> tag.uuid = uuid) options)
               (strings "selectedValues") in
-            let created = List.map (fun title -> ({Model.uuid = "new:" ^ Dev_query.Unicode.lowercase title; title} : Model.sidebar_page))
+            let created = List.map (fun title ->
+              {Model.uuid = "new:" ^ Dev_query.Unicode.lowercase title; title; page_journal_day = None})
               (strings "newValues") in
             let seen = Hashtbl.create 8 in
             let tags = List.filter (fun (tag : Model.sidebar_page) ->

@@ -33,7 +33,7 @@ appId: com.logseq.logseq
 - tapOn: "__LOGSEQ_E2E_GRAPH_NAME__"
 - extendedWaitUntil:
     visible:
-      id: "sync.connected"
+      id: "button.journals.more"
     timeout: 30000
 - scrollUntilVisible:
     element:
@@ -41,6 +41,8 @@ appId: com.logseq.logseq
       text: "Edit block __LOGSEQ_E2E_DESKTOP_BLOCK__"
     direction: DOWN
     timeout: 30000
+- tapOn:
+    id: "button.journals.more"
 - tapOn:
     id: "sync.connected"
 - copyTextFrom:
@@ -57,6 +59,8 @@ appId: com.logseq.logseq
     id: "button.send"
 - tapOn:
     id: "surface.composer.dismiss"
+- tapOn:
+    id: "button.journals.more"
 - tapOn:
     id: "sync.connected"
 - extendedWaitUntil:
@@ -82,5 +86,7 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "outliner.block-action.*"
     text: "Edit block __LOGSEQ_E2E_MOBILE_BLOCK__"
+- tapOn:
+    id: "button.journals.more"
 - assertVisible:
     id: "sync.connected"

@@ -1081,14 +1081,14 @@ let empty_journals_are_projected_without_writes () = R.with_runtime (fun _ runti
     (List.map (member "journalDay") (items "nodeRoutes" opened)) [`Int day];
   check_eq (Graph_runtime.pending_operations runtime) pending)
 
-let empty_journal_favorites_localize_outside_history () = R.with_runtime (fun _ runtime conn ->
+let empty_journal_favorites_localize_outside_history () = R.with_runtime ~search:true (fun _ runtime conn ->
   let old = "50000000-0000-4000-8000-000000000002" and recent = "50000000-0000-4000-8000-000000000003" in
   let now = Session_types.now_ms () in
   let day = 20001021 in
   let journal eid uuid day = R.entity eid uuid (Journal.day_title day) @ [
     put uuid "block/name" (Ds.String (Journal.day_title day));
     put uuid "block/journal-day" (Ds.Int64 (Int64.of_int day))] in
-  rebase runtime conn (journal 201 old day @ journal 202 recent (Cache_model.journal_day_for_ms now));
+  rebase runtime conn (journal 201 old day @ journal 202 recent 20001022);
   (match Graph_runtime.set_page_favorite runtime old true "old-journal-favorite" now with
    | Ok () -> () | Error message -> fail message);
   let session = Rpc_session.create_session {Rpc_session.default_options with
@@ -1097,6 +1097,7 @@ let empty_journal_favorites_localize_outside_history () = R.with_runtime (fun _ 
     graph_blocks = Some (fun () -> Some (Graph_runtime.blocks runtime));
     graph_page_blocks = Some (fun uuid -> Some (Graph_runtime.blocks_for_page runtime uuid));
     graph_sidebar_pages = Some (fun () -> Some (Graph_runtime.sidebar_pages runtime));
+    graph_search = Some (Graph_runtime.search runtime);
     graph_node_destination = Some (Graph_runtime.node_destination runtime);
     empty_journals = Some (fun () -> Graph_runtime.empty_journals runtime)} in
   ignore (Rpc_test.configure_plain_session session);
@@ -1104,6 +1105,11 @@ let empty_journal_favorites_localize_outside_history () = R.with_runtime (fun _ 
   let ids field = List.map (member "uuid") (items field initial) in
   check (List.mem (`String old) (ids "favorites"));
   check (not (List.mem (`String old) (ids "emptyJournals")));
+  let search_query = "Oc" in
+  let search_response = Rpc_test.dispatch_json session "searchNodes" search_query in
+  let search = Result.get_ok (Response_snapshot.decode_response (J.to_string search_response)) in
+  check ~msg:"search projects the journal day alongside the title"
+    (List.exists (fun (hit : Model.search_hit) -> hit.hit_uuid = old && hit.hit_journal_day = Some day) search.search_results);
   let opened = Rpc_test.dispatch_json session "selectPage" old in
   let data = result opened in
   check_eq (items "outlinerRows" data) [];
@@ -1112,11 +1118,24 @@ let empty_journal_favorites_localize_outside_history () = R.with_runtime (fun _ 
     App_test.send app (Model.ChooseSettingsLanguage "fr");
     App_test.flush app;
     let host = Lui_app.runtime app in
-    let detail = App_test.descendant_with_identifier host (Lui_app.root_node app) "layout.selected-page.title" in
+    let root = Lui_app.root_node app in
+    let find id = App_test.descendant_with_identifier host root id in
+    let sidebar_title uuid = App_test.property_string host (find ("link.sidebar.page." ^ uuid)) Lui_protocol.AccessibilityLabel in
+    check_eq (sidebar_title old) "21 oct. 2000";
+    check_eq (sidebar_title recent) "22 oct. 2000";
+    let detail = find "layout.selected-page.title" in
     let heading = App_test.descendant_with_identifier host detail "title.selected-page" in
     let weekday = App_test.descendant_with_identifier host detail "journal.weekday" in
     check_eq (App_test.property_string host heading Lui_protocol.TextValue) "21 oct. 2000";
-    check_eq (App_test.property_string host weekday Lui_protocol.TextValue) "· sam."))
+    check_eq (App_test.property_string host weekday Lui_protocol.TextValue) "· sam.";
+    App_test.send app Model.OpenSearch;
+    App_test.send app (Model.ChangeSearchQuery search_query);
+    App_test.send app (Model.ApplySearchResults (search_query, search.search_results));
+    App_test.flush app;
+    check_eq (App_test.property_string host (find ("search.result.title." ^ old)) Lui_protocol.TextValue) "21 oct. 2000";
+    App_test.send app (Model.ChooseSettingsLanguage "zh-CN");
+    App_test.flush app;
+    check_eq (App_test.property_string host (find ("search.result.title." ^ old)) Lui_protocol.TextValue) "2000年10月21日"))
     [App_test.ios_backend; App_test.kotlin_backend])
 
 let display_titles_resolve_references_without_changing_source () = R.with_runtime (fun session runtime conn ->
@@ -1572,6 +1591,7 @@ let journal_tasks_omit_blocks_from_today () = R.with_runtime (fun _ runtime conn
   let uuids section = List.map (member "uuid") (items section projected) in
   check_eq ~msg:"an older journal's task is still included, even with a matching title"
     (uuids "overdue") [`String Q.owner];
+  check_eq (List.map (member "pageJournalDay") (items "overdue" projected)) [`Int 20261122];
   check_eq (uuids "doing") [];
   check_eq (uuids "planned") [])
 

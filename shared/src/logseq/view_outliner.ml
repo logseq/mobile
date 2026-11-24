@@ -362,10 +362,11 @@ let outliner_indent_view width_source : t =
    Lui_ui.int_property_signal context node WidthValue width_source;
    node
 
-let breadcrumb_button breadcrumb_source search_open send : t =
+let node_breadcrumb_button model_source breadcrumb_source send : t =
   let breadcrumb = Signal.sample breadcrumb_source in
+  let search_open = (Signal.sample model_source : Model.logseq_model).search_open in
   button
-    ~text:(reactive View_base.breadcrumb_title breadcrumb_source)
+    ~text:(reactive (Signal.map2 View_base.sidebar_page_title model_source breadcrumb_source))
     ~variant:`ghost ~style_class:"caption single-line" ~padding:0 ~height:28 ~foreground:"muted-foreground"
     ~accessibility_identifier:(View_base.breadcrumb_identifier breadcrumb)
     ~on_press:(fun _ ->
@@ -378,10 +379,6 @@ let breadcrumb_button breadcrumb_source search_open send : t =
               Model.RequestAppNode
                 (Signal.sample breadcrumb_source : Model.sidebar_page).uuid)))
     []
-
-let node_breadcrumb_button model_source breadcrumb_source send : t =
-  let search_open = (Signal.sample model_source : Model.logseq_model).search_open in
-  breadcrumb_button breadcrumb_source search_open send
 
 let node_breadcrumbs model_source send : t =
   scroll ~orientation:`horizontal ~height:32 ~padding_horizontal:16
@@ -1334,17 +1331,16 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
              ~accessibility_identifier:("button.outliner.selection.status." ^ status.uuid)
              ~on_press:(fun () -> ignore (send (Model.SetSelectedOutlinerTaskStatus status.uuid))) [])
            current.task_statuses) in
-      let menu_item ?(variant = `ghost) icon label action =
-        dropdown_menu_item ~icon:(`app icon) ~variant ~text:(View_base.tr current label)
-          ~accessibility_identifier:("button.outliner.selection.menu." ^ action)
-          ~on_press:(fun () -> ignore (send (Model.PerformOutlinerToolbarAction action))) [] in
-      let more = toolbar_menu ~icon:(`app "more-horiz") ~label:(View_base.tr current "More actions")
-        ~accessibility_identifier:"button.outliner.selection.more" [
-          menu_item "toolbar-copy" "Copy" "copy";
-          menu_item "toolbar-cut" "Cut" "cut";
-          menu_item "toolbar-copy-reference" "Copy reference" "copyReference";
-          menu_item "toolbar-copy-url" "Copy URL" "copyURL";
-          menu_item ~variant:`destructive "toolbar-delete" "Delete" "delete";
+      let perform_action action = ignore (send (Model.PerformOutlinerToolbarAction action)) in
+      let more_label = View_base.tr current "More actions" in
+      let more_actions =
+        List.map (fun (icon, label, action, destructive) ->
+          icon, View_base.tr current label, action, destructive) [
+          "toolbar-copy", "Copy", "copy", false;
+          "toolbar-cut", "Cut", "cut", false;
+          "toolbar-copy-reference", "Copy reference", "copyReference", false;
+          "toolbar-copy-url", "Copy URL", "copyURL", false;
+          "toolbar-delete", "Delete", "delete", true;
         ] in
       let actions = [
         status_menu;
@@ -1359,18 +1355,31 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
       ] in
       let label = View_base.tr current "Outliner selection" in
       if android then
+        let more = toolbar_menu ~icon:(`app "more-horiz") ~label:more_label
+          ~accessibility_identifier:"button.outliner.selection.more"
+          (List.map (fun (icon, title, action, destructive) ->
+            let variant = if destructive then `destructive else `ghost in
+            dropdown_menu_item ~icon:(`app icon) ~variant ~text:title
+              ~accessibility_identifier:("button.outliner.selection.menu." ^ action)
+              ~on_press:(fun () -> perform_action action) []) more_actions) in
         row ~grow:1.0 ~cross:`center ~gap:8
           ~accessibility_identifier:"surface.outliner.selection-toolbar" [
             box ~grow:1.0 [
               toolbar ~orientation:`horizontal ~label
                 ~accessibility_identifier:"toolbar.outliner.selection" ~toolbar_gap:2 actions;
             ];
-            toolbar ~orientation:`horizontal ~label:(View_base.tr current "More actions") [more];
+            toolbar ~orientation:`horizontal ~label:more_label [more];
           ]
       else
         custom (fun context parent ->
           let node = Lui_ui.extension context "native-outliner-selection-toolbar" in
           attach context parent node;
+          Lui_ui.extension_property context node "more-label" (StringValue more_label);
+          Lui_ui.extension_property context node "more-actions" (StringValue (Yojson.Basic.to_string (`List
+            (List.map (fun (icon, title, action, destructive) -> `Assoc [
+              "action", `String action; "title", `String title;
+              "icon", `String icon; "destructive", `Bool destructive;
+            ]) more_actions))));
           Lui_ui.extension_property context node "status-label" (StringValue (View_base.tr current "Status"));
           Lui_ui.extension_property context node "statuses" (StringValue (Yojson.Basic.to_string (`List
             (List.map (fun (status : Model.task_status) -> `Assoc [
@@ -1383,10 +1392,15 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
               (match String_map.find_opt "value" values with
                | Some (StringValue uuid) -> ignore (send (Model.SetSelectedOutlinerTaskStatus uuid))
                | _ -> ())
+            | ExtensionEvent (_, _, "perform-action", values) ->
+              (match String_map.find_opt "value" values with
+               | Some (StringValue action) when List.exists (fun (_, _, key, _) -> key = action) more_actions ->
+                 perform_action action
+               | _ -> ())
             | _ -> ());
           ignore (mount context ~parent:node
             (toolbar ~orientation:`horizontal ~label ~accessibility_identifier:"toolbar.outliner.selection"
-              ~toolbar_gap:2 ~placement:`bottom (actions @ [more])));
+              ~toolbar_gap:2 ~placement:`bottom actions));
           node))
       model_source
   in
@@ -1847,15 +1861,20 @@ let journal_task_row context model_source task_source send =
     let send_block = function
       | Model.DropOutlinerBlocks _ -> true
       | action -> send_scoped_outliner_edit scope send action in
-    let metadata = reactive ~equal:(fun old current -> List.for_all (fun key ->
-      journal_task_field key old = journal_task_field key current) ["scheduled"; "deadline"; "page"]) (fun task ->
+    let task_metadata = Signal.map2 (fun current task ->
+      let day = match journal_task_field "pageJournalDay" task with `Int day -> Some day | _ -> None in
+      let page = View_base.journal_display_title current day (task_text (journal_task_field "page" task)) in
+      let dates = List.map (fun (key, name, image) ->
+        key, name, image, journal_task_field key task) task_date_fields in
+      (current.Model.language, current.system_language), dates, page) model_source task_source in
+    let metadata = reactive (fun (_, dates, page) ->
       let current = Signal.sample model_source in
       let chip id ?icon_name ?overdue_signal ~label value on_press =
         View_property.compact_task_metadata ?icon_name ?overdue_signal ~label
           ~identifier:("journal-task." ^ id ^ "." ^ uuid)
           (Signal.constant context.Lui_ui.ui_scheduler value) on_press in
-      let dates = List.filter_map (fun (key, name, image) ->
-        match journal_task_field key task with
+      let dates = List.filter_map (fun (key, name, image, date) ->
+        match date with
         | `Int date ->
           let overdue_signal = if key <> "deadline" then None else
             Some (Signal.map (fun (current : Model.logseq_model) ->
@@ -1865,8 +1884,7 @@ let journal_task_row context model_source task_source send =
           Some (chip key ~icon_name:image ?overdue_signal ~label:(View_base.tr current name)
             (View_property.task_date_label current date)
             (fun () -> ignore (send (Model.OpenBlockTaskDate (uuid, key)))))
-        | _ -> None) task_date_fields in
-      let page = task_text (journal_task_field "page" task) in
+        | _ -> None) dates in
       let items = dates @ (if page = "" then [] else
         [chip "page" ~label:(View_base.tr_named current "Open {1}" page) page (fun () ->
           ignore (send (View_base.request_node_action (Signal.sample model_source) (Signal.sample source).page_id)))]) in
@@ -1874,7 +1892,7 @@ let journal_task_row context model_source task_source send =
         if index = 0 then [item] else
           [text ~value:"·" ~style_class:"footnote" ~foreground:"muted-foreground" []; item]) items) in
       row ~gap:5 ~main:`start ~cross:`center
-        ~accessibility_identifier:("journal-task.metadata." ^ uuid) items) task_source in
+        ~accessibility_identifier:("journal-task.metadata." ^ uuid) items) task_metadata in
     let inset = 8 in
     with_ios_trailing_padding 0 (column ~gap:0 ~padding_horizontal:inset ~padding_vertical:1
       ~accessibility_identifier:(View_rows.journal_task_scope uuid) [

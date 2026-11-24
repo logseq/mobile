@@ -1753,7 +1753,7 @@ let with_crowded_page_search f =
       outliner_projection_limit = Some 32;
       graph_db = Some (fun () -> Some db);
       graph_blocks = Some (fun () -> Some [synced_block "editing" "Draft"]);
-      graph_search_page = Some (fun ~offset ~limit query ->
+      graph_search_page = Some (fun ?journal_day:_ ~offset ~limit query ->
         Search.search_hits_page ~offset ~limit index db query);
     }) in
     let index_blocks () =
@@ -1840,7 +1840,7 @@ let page_autocomplete_matches_master_order () =
         Session.default_options with
         graph_db = Some (fun () -> Some db);
         graph_blocks = Some (fun () -> Some [synced_block "editing" "Draft"]);
-        graph_search_page = Some (fun ~offset ~limit query ->
+        graph_search_page = Some (fun ?journal_day:_ ~offset ~limit query ->
           Search.search_hits_page ~offset ~limit index db query);
       }) in
       ignore (outliner_block_event session "tapBlock" "editing");
@@ -1900,7 +1900,7 @@ let page_autocomplete_keeps_late_stronger_matches () =
         Session.default_options with
         graph_db = Some (fun () -> Some db);
         graph_blocks = Some (fun () -> Some [synced_block "editing" "Draft"]);
-        graph_search_page = Some (fun ~offset ~limit query ->
+        graph_search_page = Some (fun ?journal_day:_ ~offset ~limit query ->
           Search.search_hits_page ~offset ~limit index db query);
       }) in
       ignore (outliner_block_event session "tapBlock" "editing");

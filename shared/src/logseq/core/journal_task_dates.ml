@@ -125,13 +125,15 @@ let rows db today lookahead =
       Option.bind section (fun (section, order) ->
         if Read.recycled db eid then None
         else match Read.ref_eids db eid "block/page" with
-          | page :: _ when Read.int_value (Read.value db page "block/journal-day") <> Some today ->
+          | page :: _ ->
+            let day = Read.int_value (Read.value db page "block/journal-day") in
+            if day = Some today then None else
             Option.map (fun block ->
               let status = match status with Some _ -> status | None -> default_status in
               let render_block = {block with Cache_model.status} in
               (order, block.uuid, section,
                 `Assoc ["uuid", `String block.uuid; "block", decorate block.uuid (Rpc_encode.block_json render_block);
-                  "page", `String (page_title page);
+                  "page", `String (page_title page); "pageJournalDay", json_int day;
                   "scheduled", json_int scheduled_at; "deadline", json_int deadline_at]))
               (Read.block ~with_breadcrumbs:false identity db eid)
           | _ -> None))) (Seq.append dated_eids doing_eids) in

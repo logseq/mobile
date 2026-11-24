@@ -48,5 +48,13 @@ appId: com.logseq.logseq
     id: "link.sidebar.flashcards"
 - assertVisible:
     id: "menu.flashcards.deck"
-- assertVisible:
+- assertNotVisible:
     id: "button.graph-switch"
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.journals"
+- extendedWaitUntil:
+    visible:
+      id: "button.graph-switch"
+    timeout: 5000

@@ -49,7 +49,10 @@ let request ~now ~fresh_id payload =
       json "completeAssetTranscription" ["parentId", `String uuid; "text", `String text]
     | "load-page-references" -> raw "loadPageReferences"
     | "hydrate-outliner-rows" -> raw "hydrateOutlinerRows"
-    | "search-nodes" -> raw "searchNodes"
+    | "search-nodes" -> (match List.assoc_opt "value" fields with
+      | Some (`Int day) -> let* query = text () in
+        json "searchNodesPage" ["query", `String query; "offset", `Int 0; "journalDay", `Int day]
+      | _ -> raw "searchNodes")
     | "maintain-search-index" -> let* graph_id = text () in
       json "maintainSearchIndex" ["graphId", `String graph_id]
     | "load-search-page" -> let* query = text () in let* offset = integer fields "value" in

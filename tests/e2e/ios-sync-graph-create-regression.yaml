@@ -81,6 +81,8 @@ appId: com.logseq.logseq
     id: "toolbar.outliner.editor"
 - tapOn: "Hide keyboard"
 - assertNotVisible: "snapshot required"
+- tapOn:
+    id: "button.journals.more"
 - extendedWaitUntil:
     visible: "Synced"
     timeout: 3000

@@ -6595,3 +6595,44 @@ let journal_date ~language ~system_language ~current_year day =
     ["{year}", journal_number locale year; "{month}", months.(month - 1);
      "{day}", journal_number locale day] in
   date, weekday
+
+let journal_title_parsers =
+  let field = Re.compile (Re.alt (List.map Re.str ["{day}"; "{month}"; "{year}"])) in
+  List.map (fun (locale, (pattern, year_pattern, months, _)) ->
+    locale, lazy (
+      let months = Array.map Dev_query.Unicode.lowercase months in
+      let digits = List.init 10 (journal_number locale) in
+      let number = Re.rep1 (Re.alt (List.map Re.str digits)) in
+      let parse_number text =
+        let ascii = List.fold_left (fun text (value, digit) ->
+          String_kit.replace text ~match_:digit ~replacement:(string_of_int value))
+          text (List.mapi (fun index digit -> index, digit) digits) in
+        int_of_string_opt ascii in
+      let compile pattern =
+        let parts = Re.split_full field pattern |> List.map (function
+          | `Text text -> Re.str text
+          | `Delim group ->
+            let name = Re.Group.get group 0 in
+            let value = if name = "{month}" then Re.alt (Array.to_list (Array.map Re.str months)) else number in
+            Re.group ~name value) in
+        let re = Re.compile (Re.whole_string (Re.seq parts)) in
+        let fields = Re.group_names re in
+        fun current_year title ->
+          Option.bind (Re.exec_opt re title) (fun groups ->
+            let get name = Option.map (Re.Group.get groups) (List.assoc_opt name fields) in
+            let year = match get "{year}" with None -> Some current_year | Some year -> parse_number year in
+            let month = Array.find_index ((=) (Re.Group.get groups (List.assoc "{month}" fields))) months in
+            let day = Option.bind (get "{day}") parse_number in
+            match year, month, day with
+            | Some year, Some month, Some day when year >= 1 && year <= 9999 && day >= 1 && day <= 31 ->
+              let value = year * 10000 + (month + 1) * 100 + day in
+              if Journal.valid_day value then Some value else None
+            | _ -> None) in
+      [compile pattern; compile year_pattern])) journal_dates
+
+let journal_day_of_title ~language ~system_language ~current_year title =
+  let locale = String.lowercase_ascii (resolve language system_language) in
+  let parsers = Option.value ~default:(List.assoc "en" journal_title_parsers)
+    (List.assoc_opt locale journal_title_parsers) |> Lazy.force in
+  let title = Dev_query.Unicode.lowercase (Dev_query.Unicode.trim title) in
+  List.find_map (fun parse -> parse current_year title) parsers

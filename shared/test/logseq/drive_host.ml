@@ -45,7 +45,7 @@ let runtime_log_seed =
   ]
 
 let tag_choices =
-  [ { Model.uuid = "tag-1"; title = "Project" } ]
+  [ { Model.uuid = "tag-1"; title = "Project"; page_journal_day = None} ]
 
 let page_candidate =
   {
@@ -312,7 +312,7 @@ let page_title host uuid fallback =
   | None -> fallback
 
 let remember_page host uuid =
-  let page = { Model.uuid; title = page_title host uuid uuid } in
+  let page = { Model.uuid; title = page_title host uuid uuid; page_journal_day = None} in
   host.selected_page <- Some page;
   page
 
@@ -322,16 +322,16 @@ let search_hits host =
     [
       {
         Model.hit_uuid = "page-1";
-        hit_title = "Alpha Doc";
+        hit_title = "Alpha Doc"; hit_journal_day = None;
         breadcrumb = "";
         breadcrumbs = [];
         is_page = true;
       };
       {
         Model.hit_uuid = "block-1";
-        hit_title = "alpha block";
+        hit_title = "alpha block"; hit_journal_day = None;
         breadcrumb = "Alpha Doc";
-        breadcrumbs = [ { Model.uuid = "page-1"; title = "Alpha Doc" } ];
+        breadcrumbs = [ { Model.uuid = "page-1"; title = "Alpha Doc"; page_journal_day = None} ];
         is_page = false;
       };
     ]
@@ -443,7 +443,7 @@ let code_row =
 
 let tag_row (row : Model.outline_row) =
   if row.row_uuid = "journal-block-1" then
-    { row with tags = [ { Model.uuid = "tag-1"; title = "Project" } ] }
+    { row with tags = [ { Model.uuid = "tag-1"; title = "Project"; page_journal_day = None} ] }
   else row
 
 let failed_sync_row (row : Model.outline_row) =
@@ -511,8 +511,8 @@ let mount ~profile ?(authentication = "signedIn") ?(fail_sign_in = false)
       graphs = [];
       rows;
       flashcards;
-      favorites = [ { Model.uuid = "fav-1"; title = "Favorite Doc" } ];
-      recents = [ { Model.uuid = "recent-1"; title = "Recent Doc" } ];
+      favorites = [ { Model.uuid = "fav-1"; title = "Favorite Doc"; page_journal_day = None} ];
+      recents = [ { Model.uuid = "recent-1"; title = "Recent Doc"; page_journal_day = None} ];
       selected_page = None;
       runtime_log = runtime_log_seed;
       task_statuses =

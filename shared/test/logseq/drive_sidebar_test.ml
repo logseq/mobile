@@ -10,7 +10,7 @@ let handle (host : Drive_host.host) model = function
     host.Drive_host.favorites <-
       (if favored then
          host.favorites
-         @ [ { Model.uuid; title = Drive_host.page_title host uuid uuid } ]
+         @ [ { Model.uuid; title = Drive_host.page_title host uuid uuid; page_journal_day = None} ]
        else
          List.filter
            (fun (page : Model.sidebar_page) -> page.uuid <> uuid)

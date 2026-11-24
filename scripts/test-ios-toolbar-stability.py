@@ -59,7 +59,7 @@ for index, stage in enumerate(json.loads((source / "stages.json").read_text())):
         steps += ['- tapOn:', '    id: "fixture.next"']
     steps += ['- extendedWaitUntil:', '    visible:', '      id: "fixture.phase.' + stage["name"] + '"',
               '    timeout: 10000', '- waitForAnimationToEnd',
-              '- assertVisible:', '    id: "sync.connected"',
+              '- assertNotVisible:', '    id: "sync.connected"',
               '- assertVisible:', '    id: "button.connection"',
               '- takeScreenshot: "' + ('toolbar-' + stage['name']) + '"']
     if index == 0 or stage["name"] == "block":
@@ -88,7 +88,7 @@ for stage in json.loads((source / "stages.json").read_text()):
             green += 1
         if x > 74 and max(r, g, b) < 120:
             glyph_y.append(y)
-    assert green >= 5, stage["name"] + ": sync indicator disappeared from the rendered toolbar"
+    assert green < 5, stage["name"] + ": unexpected sync indicator in the rendered toolbar"
     height = max(glyph_y) - min(glyph_y) + 1 if glyph_y else 0
     assert 2 <= height <= 14, stage["name"] + ": overflow glyph changed shape (height " + str(height) + ")"
     if stage["name"].startswith("page-") or stage["name"] == "back":

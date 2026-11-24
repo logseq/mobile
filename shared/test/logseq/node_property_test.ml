@@ -530,7 +530,7 @@ let builtin_pages_hide_delete_and_reject_deletion_requests () =
         check_eq ~msg:(label ^ " cannot open a protected delete confirmation")
           (requested.pending_node_deletion <> None) allowed;
         if not allowed then (
-          let stale = { requested with Model.pending_node_deletion = Some (Model.PageToDelete {Model.uuid = Q.page; title = "Workspace"}) } in
+          let stale = { requested with Model.pending_node_deletion = Some (Model.PageToDelete {Model.uuid = Q.page; title = "Workspace"; page_journal_day = None}) } in
           let confirmed = Model.update stale Model.ConfirmDeleteActiveNode in
           check ~msg:"a stale confirmation cannot enqueue a protected deletion"
             (not (List.exists (function Model.DeletePageEffect _ -> true | _ -> false) confirmed.pending_effects)))))

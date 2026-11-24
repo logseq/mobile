@@ -105,7 +105,7 @@ let confirmation_cancel_actions_are_semantic_and_localized () =
       send app (Model.ApplyCoreSnapshot { (empty_core_projection ()) with
         graphs = [local]; selected_graph_id = Some "local";
         sidebar = { (empty_sidebar_projection ()) with
-          selected_page = Some {Model.uuid = "page"; title = "Project"} } });
+          selected_page = Some {Model.uuid = "page"; title = "Project"; page_journal_day = None} } });
       send app (Model.ApplyLocalGraphIds ["local"]);
       send app (Model.ApplySettingsSnapshot { (settings []) with Model.language = language });
       send app request;

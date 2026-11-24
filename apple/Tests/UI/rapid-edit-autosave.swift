@@ -90,7 +90,7 @@ import UIKit
         }
         try await Task.sleep(for: .milliseconds(1600))
         let sync = try find("sync.connected")
-        guard backend.model(id: sync)?.property(.accessibilityLabel)?.stringValue == "Synced" else {
+        guard backend.model(id: sync)?.property(.text)?.stringValue == "Synced" else {
             throw failure("An acknowledged no-op save left the native sync status stuck")
         }
         try backend.performPress(node: sync)

@@ -122,18 +122,38 @@ let journal_tasks_json ?(force = false) ?(only_changed = false) session =
      | None -> `Null)
   | _ -> `Null
 
-let current_summary session (summary : Model.entity_summary) =
-  Option.value ~default:summary (Option.bind (query_db session) (fun db ->
+let current_summary db (summary : Model.entity_summary) =
+  Option.value ~default:summary (Option.bind db (fun db ->
     Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid summary.uuid))
       (Graph_read.entity_summary (fun value -> Ok value) db)))
-
-let summary_json session summary = Rpc.summary_json (current_summary session summary)
 
 let journal_day_json db uuid =
   let day = Option.bind db (fun db ->
     Option.bind (Datascript.entid db "block/uuid" (Datascript.Uuid uuid))
       (fun eid -> Graph_read.int_value (Graph_read.value db eid "block/journal-day"))) in
   Option.fold ~none:`Null ~some:(fun day -> `Int day) day
+
+let with_journal_day db uuid = function
+  | `Assoc fields as json ->
+    (match journal_day_json db uuid with
+     | `Null -> json
+     | day -> `Assoc (("journalDay", day) :: fields))
+  | json -> json
+
+let summary_with_journal_day db (summary : Model.entity_summary) =
+  with_journal_day db summary.uuid (Rpc.summary_json summary)
+
+let summary_json session summary =
+  let db = query_db session in
+  summary_with_journal_day db (current_summary db summary)
+
+let with_breadcrumb_journal_days db breadcrumbs fields =
+  let breadcrumbs = Rpc.json_list (List.map (summary_with_journal_day db) breadcrumbs) in
+  ("breadcrumbs", breadcrumbs) :: List.remove_assoc "breadcrumbs" fields
+
+let search_hit_json db (hit : Search_index.indexed_search_hit) =
+  let json = Rpc.search_hit_json ~summary_json:(summary_with_journal_day db) hit in
+  if hit.is_page then with_journal_day db hit.uuid json else json
 
 let result_block_encoder db =
   let presentation = Node_presentation.decorate db in
@@ -166,8 +186,8 @@ let result_block_encoder db =
 
 let query_for session db uuid =
   let current_page = match active_node_route session with
-    | Some route -> Some (current_summary session route.Types.page).title
-    | None -> Option.map (fun (page : Model.entity_summary) -> (current_summary session page).title)
+    | Some route -> Some (current_summary (Some db) route.Types.page).title
+    | None -> Option.map (fun (page : Model.entity_summary) -> (current_summary (Some db) page).title)
         (state session).selected_sidebar_page in
   let encode_tree = result_block_encoder db in
   Query_block.render ?current_page db uuid
@@ -326,14 +346,13 @@ let node_properties_for session uuid =
 
 let reference_blocks_json session current serialize blocks =
   let rows = So.reference_rows session current blocks in
+  let db = query_db session in
   let serialize = window_serializer session serialize
     (List.map (fun (row : Outliner.outliner_row) -> row.block) rows) in
   Rpc.json_list (List.map (fun (row : Outliner.outliner_row) ->
     match serialize row.block with
     | `Assoc fields ->
-      let fields = if List.assoc_opt "isShell" fields = Some (`Bool true) then
-          ("breadcrumbs", Rpc.json_list (List.map Rpc.summary_json row.block.breadcrumbs)) :: fields
-        else fields in
+      let fields = with_breadcrumb_journal_days db row.block.breadcrumbs fields in
       `Assoc (["depth", `Int row.depth;
         "hasChildren", `Bool row.has_children; "isCollapsed", `Bool row.is_collapsed] @ fields)
     | value -> value) rows)
@@ -463,7 +482,7 @@ let snapshot_with_agenda ?(graph_snapshot_recovery = false) agenda_update sessio
          ; ("searchQuery", `String s.search_query)
          ; ("searchHasMore", `Bool s.search_has_more)
          ; ( "searchResults"
-           , Rpc.json_list (List.concat_map (List.map Rpc.search_hit_json) (List.rev s.search_result_pages))
+           , Rpc.json_list (List.concat_map (List.map (search_hit_json (query_db session))) (List.rev s.search_result_pages))
            )
          ; ( "flashcards"
            , Rpc.json_list (List.map Rpc.flashcard_json s.flashcards) )
@@ -1042,12 +1061,16 @@ let with_object action payload missing handle =
             (action ^ " payload must be an object")))
   | None -> Rpc.failure "invalid_params" missing
 
-let search_page session ~offset ~limit query =
+let search_page session ?journal_day ~offset ~limit query =
   let h = host session in
   match h.Types.graph_search_page with
-  | Some search -> search ~offset ~limit query
+  | Some search -> search ?journal_day ~offset ~limit query
   | None ->
     let all = match h.Types.graph_search with Some search -> search query | None -> [] in
+    let journal = Option.bind journal_day (fun day ->
+      Option.bind (query_db session) (fun db -> Search_index.journal_search_hit db day)) in
+    let all = match journal with None -> all | Some journal ->
+      journal :: List.filter (fun (hit : Search_index.indexed_search_hit) -> hit.uuid <> journal.uuid) all in
     let rec slice skip remaining acc = function
       | [] -> List.rev acc, false
       | _ when remaining = 0 && skip = 0 -> List.rev acc, true
@@ -1058,7 +1081,8 @@ let search_page session ~offset ~limit query =
 let refresh_retained_search session =
   let current = state session in
   if current.search_result_pages <> [] && not (String_kit.is_blank current.search_query) then (
-    let found, has_more = search_page session ~offset:0 ~limit:(max 20 current.search_result_count) current.search_query in
+    let found, has_more = search_page session ?journal_day:current.search_journal_day
+      ~offset:0 ~limit:(max 20 current.search_result_count) current.search_query in
     session.Types.state := {current with search_result_pages = [found];
       search_result_count = List.length found; search_has_more = has_more})
 
@@ -1260,10 +1284,15 @@ let hydrate_outliner_rows session payload =
       if Hashtbl.length found < Hashtbl.length wanted then collect (base_outliner_context session).Outliner.blocks;
       List.iter (fun route ->
         if Hashtbl.length found < Hashtbl.length wanted then collect (node_route_context session route).Outliner.blocks) (state session).node_routes;
+      let db = query_db session in
+      let hydrate (block : Model.block) = match Rpc.visible_block_json block with
+        | `Assoc fields when block.breadcrumbs <> [] ->
+          `Assoc (with_breadcrumb_journal_days db block.breadcrumbs fields)
+        | json -> json in
       success session (Rpc.json_object ["isOutlinerContentPatch", `Bool true;
         "selectedGraphId", (match (state session).config with Some config -> `String config.Api.graph_id | None -> `Null);
         "hydratedBlocks", Rpc.json_list (List.filter_map (fun id ->
-          Option.map Rpc.visible_block_json (Hashtbl.find_opt found id)) ids)])
+          Option.map hydrate (Hashtbl.find_opt found id)) ids)])
   with Yojson.Json_error message -> Rpc.failure "invalid_params" message
 
 let asset_cache_path session uuid asset_type =
@@ -2879,27 +2908,30 @@ let rec dispatch session action payload =
     session.Types.state := { !(session.state) with sync_connected = false };
     snapshot_visible session
   | "searchNodes" | "searchNodesPage" ->
-    let query, offset = if action = "searchNodes" then Option.value ~default:"" payload, 0
+    let query, offset, journal_day = if action = "searchNodes" then Option.value ~default:"" payload, 0, None
       else match payload with
-        | None -> "", -1
+        | None -> "", -1, None
         | Some payload -> (try
           let json = Yojson.Basic.from_string payload in
           let query = Yojson.Basic.Util.member "query" json |> Yojson.Basic.Util.to_string in
           let offset = Yojson.Basic.Util.member "offset" json |> Yojson.Basic.Util.to_int in
-          query, offset with _ -> "", -1) in
+          let journal_day = if offset = 0 then
+            (match Yojson.Basic.Util.member "journalDay" json with `Int day -> Some day | _ -> None)
+            else s.search_journal_day in
+          query, offset, journal_day with _ -> "", -1, None) in
     let valid = offset = 0 || (offset = s.search_result_count && query = s.search_query) in
     let found, has_more =
       if not valid || String_kit.is_blank query then [], false
-      else search_page session ~offset ~limit:20 query in
+      else search_page session ?journal_day ~offset ~limit:20 query in
     if valid then session.Types.state :=
-      { !(session.state) with search_query = query; search_has_more = has_more;
+      { !(session.state) with search_query = query; search_journal_day = journal_day; search_has_more = has_more;
         search_result_pages = (if offset = 0 then [found] else found :: s.search_result_pages);
         search_result_count = offset + List.length found };
     if h.Types.outliner_projection_limit = None then snapshot_visible session
     else success session (Rpc.json_object ["isSearchPatch", `Bool true;
       "selectedGraphId", (match (state session).config with Some config -> `String config.Api.graph_id | None -> `Null);
       "searchQuery", `String query; "searchOffset", `Int offset; "searchHasMore", `Bool has_more;
-      "searchResults", Rpc.json_list (List.map Rpc.search_hit_json found)])
+      "searchResults", Rpc.json_list (List.map (search_hit_json (query_db session)) found)])
   | "maintainSearchIndex" -> object_action (fun _ fields ->
     match Rpc.required_string fields "graphId" with
     | Ok graph_id ->
