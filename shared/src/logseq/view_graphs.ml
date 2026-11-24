@@ -317,7 +317,7 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t =
       let present () =
         let current = Signal.sample model_source in
         if (View_base.graphs_destination_ current || View_base.graph_picker_visible_ current)
-           && not current.settings_open
+           && not current.settings_open && not current.graph_loading
         then Signal.set ready true
         else ignore (send Model.CancelDeleteGraph) in
       mount context ?parent

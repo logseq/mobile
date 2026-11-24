@@ -4760,6 +4760,15 @@ let graph_deletion_confirmation_names_the_local_graph () =
   check_eq ~msg:"cancelling a deletion leaves the graph local"
     (App.model application).local_graph_ids ["local"];
   send application (Model.RequestDeleteGraph "local");
+  send application (Model.ApplyGraphLoading true);
+  flush application;
+  dispatch application (Lui_protocol.Appear
+    (descendant_with_identifier renderer root "graph-delete.presentation-gate"));
+  flush application;
+  check_eq ~msg:"opening a graph discards an unpresented deletion confirmation"
+    (App.model application).pending_graph_deletion None;
+  send application (Model.ApplyGraphLoading false);
+  send application (Model.RequestDeleteGraph "local");
   flush application;
   dispatch application (Lui_protocol.Appear
     (descendant_with_identifier renderer root "graph-delete.presentation-gate"));
