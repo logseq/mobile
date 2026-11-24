@@ -626,7 +626,7 @@ let extension_event node identifier name text value =
              | _ -> "after") );
       ]
     | _, "paste-content" -> ["value", StringValue text]
-    | _, ("text-change" | "paste" | "return") ->
+    | _, ("text-change" | "composing-text-change" | "paste" | "return") ->
       [
         "title", StringValue text;
         "caret-utf16-offset", IntValue value;

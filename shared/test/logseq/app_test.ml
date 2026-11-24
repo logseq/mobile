@@ -6883,6 +6883,23 @@ let editor_pickers_own_focus_without_unmounting_the_block () =
          ["link"; "image"; "embed"; "template"; "date"; "deadline"; "scheduled"; "youtube"]))
     [ios_backend (); kotlin_backend ()]
 
+let android_composing_event_preserves_title_and_caret () =
+  let editing = {Model.editing_uuid = "focus-block"; editing_is_task = None; editing_title = "/"; caret_utf16_offset = 1} in
+  let model = { (Model.initial ()) with outliner_editing = Some editing } in
+  let app = Lui_app.create_with_extensions (kotlin_backend ()) (View.extension_registry ()) model App.update
+    (fun _ source send ->
+      View_outliner.outliner_editor_view source
+        (Signal.map (fun _ -> editing.editing_uuid) source)
+        (Signal.map View_base.editing_title source)
+        (Signal.map View_base.editing_caret source) send) in
+  ignore (Native_bridge.start_application app);
+  Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
+    let editor = extension_node app "outliner-editor" in
+    check ~msg:"the fixture mounts a real editor" (editor <> -1);
+    ignore (Native_bridge.extension_event editor "outliner-editor" "composing-text-change" "/date" 5);
+    check_eq (App.model app).Model.outliner_editing
+      (Some {editing with editing_title = "/date"; caret_utf16_offset = 5}))
+
 let retained_panes_mount_only_the_visible_editor () =
   List.iter (fun backend ->
     let application = App.create backend in
@@ -11853,6 +11870,7 @@ let cases =
     case "kotlin-navigation-renders-each-active-node-row-once" kotlin_navigation_renders_each_active_node_row_once;
     case "kotlin-selected-pages-retain-the-hidden-journal-pane" kotlin_selected_pages_retain_the_hidden_journal_pane;
     case "editor-pickers-own-focus-without-unmounting-the-block" editor_pickers_own_focus_without_unmounting_the_block;
+    case "android composing event preserves title and caret" android_composing_event_preserves_title_and_caret;
     case "retained-panes-mount-only-the-visible-editor" retained_panes_mount_only_the_visible_editor;
     case "kotlin-selected-page-navigation-renders-the-opened-node" kotlin_selected_page_navigation_renders_the_opened_node;
     case "native-navigation-retains-the-journal-and-every-node-route" native_navigation_retains_the_journal_and_every_node_route;
