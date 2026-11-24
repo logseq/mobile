@@ -52,9 +52,14 @@ import SwiftUI
         try await Task.sleep(for: .milliseconds(1500))
         let settings = try frame("button.sidebar.settings")
         let sidebar = try frame("sidebar.navigation")
+        let journals = try frame("link.sidebar.journals")
+        let toolbar = try frame("button.sidebar")
         let safeBottom = window.bounds.maxY - window.safeAreaInsets.bottom
-        print("CHROME sidebar=\(sidebar) settings=\(settings) safeBottom=\(safeBottom)")
-        if abs(sidebar.maxX - settings.maxX - 16) > 1 || abs(safeBottom - settings.maxY - 8) > 1
+        print("CHROME sidebar=\(sidebar) journals=\(journals) toolbar=\(toolbar) settings=\(settings) safeBottom=\(safeBottom)")
+        if journals.minY <= toolbar.maxY {
+            errors.append("Journals must start below the navigation header")
+        }
+        if abs(sidebar.maxX - settings.maxX - 16) > 1 || abs(safeBottom - settings.maxY) > 1
             || settings.width < 44 || settings.height < 44 {
             errors.append("Settings must sit at the sidebar's bottom trailing corner above the home indicator")
         }

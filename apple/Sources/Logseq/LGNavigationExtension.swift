@@ -477,33 +477,33 @@ private struct LGSidebarNavigation: View {
         let scroll = ScrollView {
             child(at: 0)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                // The drawer fills the window. Rows scroll into the top safe area.
-                .padding(.top, topInset)
+                // Start below the navigation bar while allowing rows to scroll into the top edge.
+                .padding(.top, topInset + 44)
         }
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize)
         .accessibilityIdentifier("scroll.sidebar.pages")
         .accentColor(selectionTint)
-        Group {
-            #if os(iOS)
-            if #available(iOS 26.0, *) {
+        VStack(spacing: 0) {
+            Group {
+                #if os(iOS)
+                if #available(iOS 26.0, *) {
+                    scroll
+                        .scrollEdgeEffectStyle(.soft, for: .top)
+                        .scrollEdgeEffectHidden(true, for: .bottom)
+                } else {
+                    scroll
+                }
+                #else
                 scroll
-                    .scrollEdgeEffectStyle(.soft, for: .top)
-                    .scrollEdgeEffectHidden(true, for: .bottom)
-            } else {
-                scroll
+                #endif
             }
-            #else
-            scroll
-            #endif
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+            .clipped()
             child(at: 1)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, bottomInset + 8)
-                .background(background)
+                .padding(.top, 4)
+                .padding(.bottom, bottomInset)
         }
         #if os(iOS)
         .background(LGWindowVerticalInsetsReader {
