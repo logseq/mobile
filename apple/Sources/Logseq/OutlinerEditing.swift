@@ -170,6 +170,8 @@ enum OutlinerLayoutMetrics {
     static let indentation: CGFloat = 22
     static let bulletHitSize: CGFloat = 24
     static let titleLineHeight: CGFloat = bulletHitSize
+    static let disclosureHitSize: CGFloat = 44
+    static let disclosureGlyphInset: CGFloat = 6
     static let depthSpacerHeight: CGFloat = 0
     static let rowVerticalPadding: CGFloat = 5
     static let bulletContentSpacing: CGFloat = 2

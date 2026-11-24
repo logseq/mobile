@@ -113,10 +113,6 @@ struct OutlinerTextRow: UIViewRepresentable {
         status.preferredMenuElementOrder = .fixed
         status.accessibilityIdentifier = "button.block-task-status"
         disclosure.contentHorizontalAlignment = .right
-        var disclosureConfiguration = UIButton.Configuration.plain()
-        disclosureConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 6)
-        disclosureConfiguration.baseForegroundColor = .secondaryLabel
-        disclosure.configuration = disclosureConfiguration
         disclosure.addTarget(self, action: #selector(collapse), for: .touchUpInside)
         failure.text = String(localized: "Sync failed")
         failure.textColor = .systemRed
@@ -219,6 +215,13 @@ struct OutlinerTextRow: UIViewRepresentable {
             }])
         }
         disclosure.isHidden = !row.hasChildren
+        let glyphInset = OutlinerLayoutMetrics.disclosureGlyphInset + row.disclosureGutter
+        if disclosure.configuration?.contentInsets.trailing != glyphInset {
+            var configuration = UIButton.Configuration.plain()
+            configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: glyphInset)
+            configuration.baseForegroundColor = .secondaryLabel
+            disclosure.configuration = configuration
+        }
         disclosure.setImage(UIImage(systemName: row.collapsed ? "arrowtriangle.right.fill" : "arrowtriangle.down.fill",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 10)), for: .normal)
         disclosure.tintColor = .secondaryLabel
@@ -276,7 +279,8 @@ struct OutlinerTextRow: UIViewRepresentable {
         guard let row else { return 0 }
         let inset = CGFloat(max(0, row.depth)) * 22
         let statusWidth: CGFloat = row.status == nil ? 0 : OutlinerLayoutMetrics.statusIconSize + OutlinerLayoutMetrics.statusContentSpacing
-        let trailing: CGFloat = row.hasChildren ? 44 : 0
+        let disclosureSize = OutlinerLayoutMetrics.disclosureHitSize
+        let trailing = row.hasChildren ? disclosureSize + row.disclosureGutter : 0
         let priorityWidth: CGFloat = row.priority == nil ? 0 : 25
         let iconLeading: CGFloat = row.status != nil ? OutlinerLayoutMetrics.statusLeading : (row.priority != nil ? 20 : 26)
         let leading = inset + iconLeading + statusWidth + priorityWidth
@@ -290,7 +294,7 @@ struct OutlinerTextRow: UIViewRepresentable {
             status.frame = CGRect(x: inset + iconLeading, y: 2, width: OutlinerLayoutMetrics.statusIconSize, height: 24)
             priority.frame = CGRect(x: inset + iconLeading + statusWidth, y: 2, width: 20, height: 24)
             title.frame = CGRect(x: leading, y: 2, width: bodyWidth, height: titleHeight)
-            disclosure.frame = CGRect(x: width - trailing, y: -8, width: 44, height: 44)
+            disclosure.frame = CGRect(x: width - trailing, y: -8, width: trailing, height: disclosureSize)
         }
         if !tags.isEmpty {
             var x = leading

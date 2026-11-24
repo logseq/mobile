@@ -62,6 +62,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let selected: Bool
     let editing: Bool?
     let allowsDrag: Bool?
+    let trailingInset: CGFloat?
     let hasCustomContent: Bool?
     let opensAsPage: Bool
     let nodeIcon: NodeIconPayload?
@@ -86,6 +87,8 @@ struct OutlinerRowPayload: Decodable, Equatable {
     var collapseAccessibilityLabel: String {
         collapseLabel ?? (collapsed ? "Expand block" : "Collapse block")
     }
+
+    var disclosureGutter: CGFloat { hasChildren ? trailingInset ?? 0 : 0 }
 }
 
 @MainActor enum OutlinerRowExtension {
@@ -198,6 +201,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
         #endif
         }
         .tint(semanticColors["link"] ?? LogseqThemePolicy.linkColor(isDark: colorScheme == .dark))
+        .padding(.trailing, row.hasChildren ? 0 : row.trailingInset ?? 0)
     }
 
     private var swiftUIContent: some View {
@@ -330,16 +334,18 @@ struct OutlinerRowPayload: Decodable, Equatable {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if row.hasChildren {
-                Color.clear.frame(width: 44, height: 24)
+                let hitSize = OutlinerLayoutMetrics.disclosureHitSize
+                let hitWidth = hitSize + row.disclosureGutter
+                Color.clear.frame(width: hitWidth, height: OutlinerLayoutMetrics.titleLineHeight)
                     .overlay(alignment: .topTrailing) {
                         Button { emit("collapse") } label: {
                             HStack(spacing: 0) {
                                 Spacer(minLength: 0)
                                 Image(systemName: row.collapsed ? "arrowtriangle.right.fill" : "arrowtriangle.down.fill")
                                     .font(.system(size: 10)).foregroundStyle(.secondary)
-                                Color.clear.frame(width: 6)
+                                Color.clear.frame(width: OutlinerLayoutMetrics.disclosureGlyphInset + row.disclosureGutter)
                             }
-                            .frame(width: 44, height: 44)
+                            .frame(width: hitWidth, height: hitSize)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
