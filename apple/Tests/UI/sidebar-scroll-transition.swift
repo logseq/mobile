@@ -37,8 +37,12 @@ import SwiftUI
     @MainActor static func main() async throws {
         let pages: [[String: Any]] = (0..<40).map { ["uuid": "favorite-\($0)", "title": "Favorite page \($0)"] }
         let recent: [[String: Any]] = (0..<40).map { ["uuid": "recent-\($0)", "title": "Recent page \($0)"] }
+        let journalRows: [[String: Any]] = (0..<70).map { index in
+            ["depth": 0, "block": ["uuid": "sidebar-row-\(index)", "title": "Journal row \(index)",
+                                  "pageId": "today", "journalTitle": "Nov 24th, 2026", "journalDay": 20261124]]
+        }
         let result: [String: Any] = ["graphName": "Sidebar regression", "selectedGraphId": "sidebar",
-            "favorites": pages, "recentPages": recent]
+            "favorites": pages, "recentPages": recent, "outlinerRows": journalRows]
         let snapshot = String(decoding: try JSONSerialization.data(withJSONObject: ["ok": true, "result": result]), as: UTF8.self)
         let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: LGCoreEffectExecutor(callCore: { _ in snapshot }))
         try runtime.applyCoreResponse(snapshot)
@@ -66,20 +70,49 @@ import SwiftUI
         guard let drawer = backend.rootIDs.flatMap(descendants).first(where: { backend.model(id: $0)?.kind == .drawer }) else {
             throw failure("Missing drawer")
         }
+        let overlay = views(window).flatMap { $0.gestureRecognizers ?? [] }.contains { $0.name == "logseq.sidebar" }
+        let journal = views(window).compactMap { $0 as? UIScrollView }.first {
+            $0.contentSize.height > $0.bounds.height + 300 && $0.bounds.width > window.bounds.width / 2
+        }
+        journal?.setContentOffset(CGPoint(x: 0, y: 120), animated: false)
+        try await Task.sleep(for: .milliseconds(250))
+        let journalFrame = journal.map { $0.convert($0.bounds, to: window) }
+        let journalOffset = journal?.contentOffset
         try backend.performPress(node: find("button.sidebar")!)
-        try await Task.sleep(for: .milliseconds(500))
+        try await Task.sleep(for: .milliseconds(700))
         guard let scroll = views(window).compactMap({ $0 as? UIScrollView }).first(where: {
             $0.contentSize.height > 3000 && $0.bounds.width < window.bounds.width * 0.85
         }) else { throw failure("Missing Recent/Favorites scroller") }
         print("SIDEBAR_SCROLL type=\(type(of: scroll)) size=\(scroll.contentSize) frame=\(scroll.frame) inset=\(scroll.adjustedContentInset)")
         let bottom = scroll.contentSize.height - scroll.bounds.height
-        guard let settingsID = find("button.sidebar.settings"), let settings = frames[settingsID],
+        guard let settingsID = find("button.sidebar.settings"),
               let panelID = find("sidebar.navigation"), let panel = frames[panelID],
               let lastRecentID = find("link.sidebar.page.recent-39") else {
             throw failure("Missing sidebar footer or last Recent row")
         }
+        func waitForSettingsToSettle() async throws {
+            guard overlay else { return }
+            let bottom = max(window.safeAreaInsets.bottom, LGNavigationSurfacePolicy.collapsedComposerCenterFromBottom - 22)
+            for _ in 0..<50 {
+                if let frame = frames[settingsID],
+                   abs(window.bounds.maxX - frame.maxX - window.safeAreaInsets.right - 16) < 1,
+                   abs(window.bounds.maxY - frame.maxY - bottom) < 1 { return }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            throw failure("Settings must settle at the bottom-right of the window")
+        }
+        try await waitForSettingsToSettle()
+        guard let settings = frames[settingsID] else { throw failure("Missing Settings frame") }
+        func settingsStayedInPlace() -> Bool {
+            guard let actual = frames[settingsID] else { return false }
+            return abs(actual.minX - settings.minX) < 1 && abs(actual.minY - settings.minY) < 1 && actual.size == settings.size
+        }
         guard abs(scroll.convert(scroll.bounds, to: window).maxY - panel.maxY) < 1 else {
             throw failure("The sidebar scroll viewport must extend behind Settings to the bottom of the panel")
+        }
+        if overlay {
+            guard let journal, journal.convert(journal.bounds, to: window) == journalFrame,
+                  journal.contentOffset == journalOffset else { throw failure("Opening the overlay moved the journal") }
         }
         for offset: CGFloat in [0, 400, 2200, bottom] {
             scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
@@ -90,8 +123,9 @@ import SwiftUI
             let sampler = SidebarScrollSampler(scroll: scroll)
             for selected in [false, true, false, true] {
                 try backend.performToggle(node: drawer, checked: selected)
-                try await Task.sleep(for: .milliseconds(420))
+                try await Task.sleep(for: .milliseconds(500))
             }
+            try await waitForSettingsToSettle()
             sampler.stop()
             print("SIDEBAR offset=\(offset) frames=\(sampler.frames) modelShift=\(sampler.maximumModelShift) displayedShift=\(sampler.maximumDisplayedShift) viewportShift=\(sampler.maximumViewportShift)")
             guard sampler.maximumModelShift < 1, sampler.maximumDisplayedShift < 1, sampler.maximumViewportShift < 1 else {
@@ -100,7 +134,7 @@ import SwiftUI
             guard scroll.isScrollEnabled, scroll.window === window else {
                 throw failure("The retained sidebar must resume scrolling after transitions")
             }
-            guard frames[settingsID] == settings else { throw failure("Settings must stay fixed while the sidebar scrolls") }
+            guard settingsStayedInPlace() else { throw failure("Settings must stay fixed while the sidebar scrolls") }
         }
         let viewport = scroll.convert(scroll.bounds, to: window)
         guard let lastRecent = frames[lastRecentID], lastRecent.minY >= viewport.minY,
@@ -108,6 +142,21 @@ import SwiftUI
             throw failure("The last Recent row must scroll fully above Settings")
         }
         guard runtime.lastError == nil else { throw failure(runtime.lastError!) }
+        if overlay, let journal {
+            guard let shell = backend.rootIDs.flatMap(descendants).first(where: {
+                backend.extensionModel(id: $0)?.identifier == "sidebar-overlay"
+            }) else { throw failure("Missing sidebar overlay") }
+            // A reconciliation pass can publish IDs from a child it never mounts.
+            let ops: [[String: Any]] = ["main-id", "panel-id", "settings-id"].map {
+                ["op": "set-extension-prop", "id": shell, "property": $0, "value": Int32.max]
+            }
+            let batch = try JSONSerialization.data(withJSONObject: ["generation": backend.generation + 1, "ops": ops])
+            try backend.apply(json: String(decoding: batch, as: UTF8.self))
+            try await Task.sleep(for: .milliseconds(300))
+            guard journal.window === window, scroll.window === window, settingsStayedInPlace() else {
+                throw failure("An unmounted ID displaced the committed sidebar content")
+            }
+        }
         print("PASS: Recent/Favorites retain their displayed scroll position while toggling the sidebar")
     }
 

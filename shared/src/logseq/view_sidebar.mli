@@ -8,13 +8,10 @@ val sidebar_graph_menu_item :
   Model.graph Signal.signal -> (Model.logseq_action -> 'a) -> Lui_elements.t
 val sidebar_section_heading : Model.logseq_model Signal.signal -> string -> Lui_elements.icon -> Lui_elements.t
 val sidebar_empty_section_label : Model.logseq_model Signal.signal -> string -> Lui_elements.t
-val sidebar_graph_switch_content :
-  Model.logseq_model Signal.signal -> Lui_elements.t
 val native_graph_switch :
   ?grow:float -> ?min_height:int -> ?foreground:string -> Model.logseq_model Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
-val sidebar_graph_switch :
-  Lui_ui.ui_context ->
+val android_graph_switch :
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val sidebar_journals_row :
@@ -29,7 +26,11 @@ val sidebar_graphs_row :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
-val sidebar_view :
+val sidebar_settings :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
+val sidebar_view :
+  Lui_ui.ui_context ->
+  Model.logseq_model Signal.signal ->
+  (Model.logseq_action -> bool) -> settings:Lui_elements.t option -> Lui_elements.t

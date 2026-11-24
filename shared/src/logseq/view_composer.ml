@@ -31,6 +31,10 @@ let attachment_picker_items item model_source context send =
 
 let composer_default_action_foreground = "border"
 
+let composer_action_foreground context =
+  if Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost then "foreground"
+  else composer_default_action_foreground
+
 let composer_attachment_control ?(width = 32) ?(height = 44)
     ?(foreground = composer_default_action_foreground) ?(identifier = "button.attachment")
     model_source (context : Lui_ui.ui_context) send : t =
@@ -49,7 +53,7 @@ let composer_attachment_control ?(width = 32) ?(height = 44)
       [context_menu (attachment_picker_items item model_source context send)]
 
 let composer_attachment_button model_source context send =
-  composer_attachment_control model_source context send
+  composer_attachment_control ~foreground:(composer_action_foreground context) model_source context send
 
 let composer_asset_preview (context : Lui_ui.ui_context) asset_source : t =
   let asset = Signal.sample asset_source in
@@ -124,7 +128,7 @@ let composer_task_status_button (context : Lui_ui.ui_context) model_source send 
   let foreground (current : Model.logseq_model) =
     match current.selected_task_status with
     | Some status -> View_base.task_status_foreground status
-    | None -> composer_default_action_foreground in
+    | None -> composer_action_foreground context in
   icon_button ~icon:(`app "toolbar-task") ~variant:`ghost
     ~width:(if Lui_ui.host context = KotlinHost then 48 else 32) ~height:44
     ~foreground:(reactive foreground model_source)
@@ -362,7 +366,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                stack [composer_task_status_button context model_source send];
                composer_task_date_buttons context model_source send;
                stack [icon_button ~icon:(`app "toolbar-tag") ~variant:`ghost
-                 ~foreground:composer_default_action_foreground
+                 ~foreground:(composer_action_foreground context)
                  ~width:(if Lui_ui.host context = KotlinHost then 48 else 32) ~height:44
                  ~label:(View_base.tr (Signal.sample model_source) "Add tags") ~accessibility_identifier:"button.composer.tags"
                  ~disabled_signal:(Signal.map (fun (model : Model.logseq_model) -> model.composer_tags_loading) model_source)

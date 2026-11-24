@@ -196,6 +196,7 @@ enum LGNavigationExtension {
     static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,16:selection-active:bool:optional:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
+        try LGSidebarOverlay.register(in: registry)
         try registry.registerTweak(
             LUIAppleTweak(
                 identifier: "sidebar-current-item",
@@ -392,6 +393,7 @@ private struct LGSidebarNavigation: View {
     @AppStorage("logseq.appearance") private var appearance = "system"
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.logseqDarkTheme) private var darkTheme
+    @Environment(\.logseqSidebarTranslucent) private var translucent
     @State private var topInset: CGFloat = 0
 
     private var settingsBottomPadding: CGFloat {
@@ -438,14 +440,16 @@ private struct LGSidebarNavigation: View {
             #endif
         }
         .overlay(alignment: .bottomTrailing) {
-            child(at: 1)
-                .padding(.trailing, 16)
-                .padding(.bottom, settingsBottomPadding)
+            if !translucent {
+                child(at: 1)
+                    .padding(.trailing, 16)
+                    .padding(.bottom, settingsBottomPadding)
+            }
         }
         #if os(iOS)
         .background(LGWindowVerticalInsetsReader { topInset = $0.top })
         #endif
-        .background(background.ignoresSafeArea())
+        .background((translucent ? Color.clear : background).ignoresSafeArea())
     }
 
     private func child(at index: Int) -> AnyView {
