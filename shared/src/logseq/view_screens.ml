@@ -1122,15 +1122,15 @@ let application_main_content (context : Lui_ui.ui_context) model_source
                { base with search_open = false; search_navigation_path = [] }) model_source) send)
              context model_source send);
         if_
+          ~test:(Signal.map (fun current ->
+            (Lui_ui.platform context <> IOS || Lui_ui.host context <> SwiftUIHost)
+            && View_base.authentication_screen_visible_ current) model_source)
+          (authentication_screen context model_source send);
+        if_
           ~test:
             (Signal.map View_base.graph_picker_screen_visible_
                model_source)
           (View_graphs.graph_picker_screen context model_source send);
-        if_
-          ~test:
-            (Signal.map View_base.authentication_screen_visible_
-               model_source)
-          (authentication_screen context model_source send);
         if_
           ~test:(reactive View_base.model_settings_open_ model_source)
           (View_settings.settings_sheet context model_source send);
@@ -1265,7 +1265,18 @@ let application_drawer_view (context : Lui_ui.ui_context) model_source send : t 
       let tokens = Signal.map (function
         | "black" -> [ "background", Lui_ui.Adaptive { light = "#FCFCFC"; dark = "#2C2C2C" } ]
         | _ -> []) dark_theme in
-      themed ~tokens_signal:tokens (box ~grow:1.0 [shell])
+      let welcome =
+        overlay ~grow:1.0
+          [ authentication_screen context model_source send;
+            align `top_trailing (row ~padding:12
+              [View_sidebar.sidebar_settings context model_source send]);
+            if_
+              ~test:(reactive View_base.model_settings_open_ model_source)
+              (View_settings.settings_sheet context model_source send) ] in
+      stack ~grow:1.0
+        [ if_ ~test:(reactive View_base.authentication_screen_visible_ model_source) welcome;
+          if_ ~test:(reactive View_base.application_shell_visible_ model_source)
+            (themed ~tokens_signal:tokens (box ~grow:1.0 [shell])) ]
     else shell
 
 let application_view (context : Lui_ui.ui_context) model_source send : t =

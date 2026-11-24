@@ -2047,6 +2047,11 @@ let authentication_screen_renders_from_lg_state () =
   check_eq ~msg:"authentication hides the signed-in navigation header"
     (descendant_with_identifier renderer root "button.sidebar")
     (-1);
+  check_eq ~msg:"authentication does not mount the native sidebar"
+    (descendant_with_identifier renderer root "application.shell")
+    (-1);
+  check ~msg:"settings is accessible from the signed-out screen"
+    (descendant_with_identifier renderer root "button.sidebar.settings" <> -1);
   check_eq ~msg:"authentication fills the available root height"
     (property_float renderer screen Lui_protocol.GrowValue)
     1.0;
