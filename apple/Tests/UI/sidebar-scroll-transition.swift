@@ -75,6 +75,7 @@ import SwiftUI
             $0.contentSize.height > $0.bounds.height + 300 && $0.bounds.width > window.bounds.width / 2
         }
         journal?.setContentOffset(CGPoint(x: 0, y: 120), animated: false)
+        try await Task.sleep(for: .milliseconds(250))
         let journalFrame = journal.map { $0.convert($0.bounds, to: window) }
         let journalOffset = journal?.contentOffset
         try backend.performPress(node: find("button.sidebar")!)
@@ -128,6 +129,21 @@ import SwiftUI
             throw failure("The last Recent row must scroll fully above Settings")
         }
         guard runtime.lastError == nil else { throw failure(runtime.lastError!) }
+        if overlay, let journal {
+            guard let shell = backend.rootIDs.flatMap(descendants).first(where: {
+                backend.extensionModel(id: $0)?.identifier == "sidebar-overlay"
+            }) else { throw failure("Missing sidebar overlay") }
+            // A reconciliation pass can publish IDs from a child it never mounts.
+            let ops: [[String: Any]] = ["main-id", "panel-id", "settings-id"].map {
+                ["op": "set-extension-prop", "id": shell, "property": $0, "value": Int32.max]
+            }
+            let batch = try JSONSerialization.data(withJSONObject: ["generation": backend.generation + 1, "ops": ops])
+            try backend.apply(json: String(decoding: batch, as: UTF8.self))
+            try await Task.sleep(for: .milliseconds(300))
+            guard journal.window === window, scroll.window === window, frames[settingsID] == settings else {
+                throw failure("An unmounted ID displaced the committed sidebar content")
+            }
+        }
         print("PASS: Recent/Favorites retain their displayed scroll position while toggling the sidebar")
     }
 

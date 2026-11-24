@@ -54,16 +54,19 @@ struct LGSidebarOverlay: View {
     var body: some View {
         let _ = context.revision
         #if os(iOS)
-        if !usesNativeSidebar,
-           case let .int(mainID) = context.property("main-id"),
-           case let .int(panelID) = context.property("panel-id"),
-           case let .int(settingsID) = context.property("settings-id"),
+        // LUI can evaluate a drawer child while reconciling a patch without mounting it.
+        // Read the committed drawer children rather than IDs recorded by a child builder.
+        let drawerChildren = context.childIDs.first.map { context.childIDs(of: $0) } ?? []
+        if !usesNativeSidebar, drawerChildren.count == 2,
+           let sidebarID = context.childIDs(of: drawerChildren[1]).first,
+           context.extensionIdentifier(of: sidebarID) == "native-sidebar",
+           let settingsID = context.childIDs(of: sidebarID).dropFirst().first,
            case let .int(width) = context.property("width"),
            case let .bool(open) = context.property("open"),
            case let .bool(enabled) = context.property("enabled"),
            case let .string(dismissLabel) = context.property("dismiss-label") {
             LGPhoneSidebar(
-                main: context.nodeView(of: mainID), panel: context.nodeView(of: panelID),
+                main: context.nodeView(of: drawerChildren[0]), panel: context.nodeView(of: drawerChildren[1]),
                 settings: context.nodeView(of: settingsID),
                 width: CGFloat(width), open: open, enabled: enabled, dismissLabel: dismissLabel
             ) { try? context.emit(name: $0 ? "open" : "close") }
