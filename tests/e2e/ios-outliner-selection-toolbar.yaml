@@ -50,4 +50,22 @@ appId: com.logseq.logseq
     id: "button.outliner.selection.done"
 - assertVisible:
     id: "button.composer.expand"
+- assertVisible: "Edit block E2E anchor A __LOGSEQ_E2E_RUN_ID__"
+- assertVisible: "Edit block E2E anchor B __LOGSEQ_E2E_RUN_ID__"
+- swipe:
+    from:
+      text: "Edit block E2E anchor A __LOGSEQ_E2E_RUN_ID__"
+    direction: LEFT
+- tapOn: "Select block E2E anchor B __LOGSEQ_E2E_RUN_ID__"
+- tapOn:
+    id: "button.outliner.selection.more"
+- tapOn: "Delete"
+- assertVisible: "Delete blocks?"
+- tapOn: "Delete"
+- assertNotVisible:
+    id: "toolbar.outliner.selection"
+- assertNotVisible:
+    id: "button.outliner.selection.done"
+- assertNotVisible: "Edit block E2E anchor A __LOGSEQ_E2E_RUN_ID__"
+- assertNotVisible: "Edit block E2E anchor B __LOGSEQ_E2E_RUN_ID__"
 - assertNotVisible: "outliner_effect_failed"
