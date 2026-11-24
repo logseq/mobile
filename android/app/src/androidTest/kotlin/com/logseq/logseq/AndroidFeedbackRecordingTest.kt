@@ -315,8 +315,9 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
             "attachment-refresh", "image-parent", "image-retry" -> {
                 mount(3)
                 ui.onNodeWithTag("outliner-block-content-" + uuid(13)).performClick(); pause()
+                ui.onNodeWithTag("button.outliner.editor.more").performClick()
                 val attachmentButton = ui.onNodeWithTag(if (scenario == "image-parent") "button.outliner.editor.attachment" else "button.outliner.editor.camera")
-                attachmentButton.performScrollTo().performClick(); pause()
+                attachmentButton.performClick(); pause()
                 val file = File(context.cacheDir, "captured.png")
                 val bitmap = Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888)
                 Canvas(bitmap).apply { drawColor(android.graphics.Color.rgb(40, 130, 100)); drawText("Captured photo", 55f, 190f,

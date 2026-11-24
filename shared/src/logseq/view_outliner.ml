@@ -1573,6 +1573,11 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
       | Some status -> View_base.task_status_foreground status
       | None -> "foreground"
     in
+    let more_item icon label identifier action =
+      dropdown_menu_item ~icon:(`app icon)
+        ~text:(View_base.tr (Signal.sample model_source) label)
+        ~accessibility_identifier:identifier
+        ~on_press:(fun _ -> ignore (send (Model.PerformOutlinerToolbarAction action))) [] in
     box
       ~accessibility_identifier:"surface.outliner.editor-toolbar"
       [
@@ -1595,6 +1600,8 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
                  []);
             if_ ~test:show_task_dates (android_date "scheduled" "Scheduled" "calendar");
             if_ ~test:show_task_dates (android_date "deadline" "Deadline" "deadline");
+            toolbar_button model_source (`app "toolbar-tag") "Tag"
+              "button.outliner.editor.tag" "tag" send;
             toolbar_button model_source (`app "toolbar-outdent") "Outdent"
               "button.outliner.editor.outdent" "outdent" send;
             toolbar_button model_source (`app "toolbar-indent") "Indent"
@@ -1605,18 +1612,16 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
               "button.outliner.editor.moveDown" "moveDown" send;
             new_block;
             line_break;
-            toolbar_button model_source (`app "toolbar-tag") "Tag"
-              "button.outliner.editor.tag" "tag" send;
-            toolbar_button model_source (`app "toolbar-camera") "Take photo"
-              "button.outliner.editor.camera" "camera" send;
-            toolbar_button model_source (`app "toolbar-audio") "Record audio"
-              "button.outliner.editor.audio" "audio" send;
-            toolbar_button model_source (`app "toolbar-attachment") "Upload asset"
-              "button.outliner.editor.attachment" "attachment" send;
-            toolbar_button model_source (`app "toolbar-page-reference")
-              (View_base.tr (Signal.sample model_source) "Page reference")
-              "button.outliner.editor.pageReference" "pageReference" send;
               ] ];
+            menu_trigger ~icon:(`app "more-horiz")
+              ~label:(View_base.tr (Signal.sample model_source) "More editor tools")
+              ~accessibility_identifier:"button.outliner.editor.more"
+              (dropdown_menu [
+                more_item "toolbar-camera" "Take photo" "button.outliner.editor.camera" "camera";
+                more_item "toolbar-audio" "Record audio" "button.outliner.editor.audio" "audio";
+                more_item "toolbar-attachment" "Upload asset" "button.outliner.editor.attachment" "attachment";
+                more_item "toolbar-page-reference" "Page reference" "button.outliner.editor.pageReference" "pageReference";
+              ]);
             toolbar_button model_source (`app "toolbar-hide-keyboard") "Hide keyboard"
               "button.outliner.editor.hideKeyboard" "hideKeyboard" send;
           ];

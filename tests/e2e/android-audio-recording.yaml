@@ -6,6 +6,8 @@ appId: com.logseq.logseq
     timeout: 30000
 - tapOn: "Edit block E2E Outliner Fixture.*"
 - tapOn:
+    id: "button.outliner.editor.more"
+- tapOn:
     id: "button.outliner.editor.audio"
 - assertVisible: "Audio recording"
 - extendedWaitUntil:

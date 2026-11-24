@@ -10659,13 +10659,15 @@ let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
   let toolbar =
     descendant_with_identifier renderer root "toolbar.outliner.editor"
   in
-  let buttons =
+  let scrolling_buttons =
     let rec actions id =
       if property_int renderer id Lui_protocol.WidthValue = 48 then [id]
       else List.concat_map actions (children renderer id) in
-    actions toolbar in
-  check_eq ~msg:"all editor actions remain reachable by horizontal scroll"
-    (List.length buttons) 14;
+    actions (descendant_with_node_kind renderer toolbar Lui_protocol.Scroll) in
+  check_eq ~msg:"frequent editor actions remain in the horizontal toolbar"
+    (List.length scrolling_buttons) 9;
+  let hide_keyboard = descendant_with_identifier renderer toolbar
+    "button.outliner.editor.hideKeyboard" in
   List.iter
     (fun button ->
        check_eq ~msg:"every editor action has a 48dp target"
@@ -10677,19 +10679,26 @@ let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
        check_eq ~msg:"every editor action uses a 24dp Material glyph"
          (property_string renderer button Lui_protocol.SizeValue)
          "icon")
-    buttons;
-  let line_break = List.nth buttons 7 in
+    (hide_keyboard :: scrolling_buttons);
+  let line_break = List.nth scrolling_buttons 8 in
   check_eq ~msg:"line break follows the structural editor actions"
     (property_string renderer line_break Lui_protocol.AccessibilityIdentifier)
     "button.outliner.editor.lineBreak";
-  let page_reference = List.nth buttons 12 in
+  let more = descendant_with_identifier renderer toolbar
+    "button.outliner.editor.more" in
+  let menu = descendant_with_node_kind renderer more Lui_protocol.DropdownMenu in
+  check_eq ~msg:"the pinned overflow exposes media and page reference"
+    (List.length (children renderer menu)) 4;
+  let page_reference = menu_item_with_text renderer more "Page reference" in
   check_eq ~msg:"page reference uses its native bracket icon"
     (property_string renderer page_reference Lui_protocol.InlineIconName)
     "app:toolbar-page-reference";
-  check_eq ~msg:"page reference renders as an icon button"
-    (property_string renderer page_reference Lui_protocol.TextValue)
-    "<missing>";
-  dispatch application (Lui_protocol.Press (List.nth buttons 13));
+  dispatch application (Lui_protocol.Press page_reference);
+  flush application;
+  check ~msg:"Android Page reference crosses the typed core boundary"
+    (List.exists (function Model.OutlinerToolbarEffect (_, "pageReference") -> true
+       | _ -> false) (App.model application).pending_effects);
+  dispatch application (Lui_protocol.Press hide_keyboard);
   flush application;
   check ~msg:"Android Hide keyboard crosses the typed core boundary"
     (List.exists (function Model.OutlinerToolbarEffect (_, "hideKeyboard") -> true

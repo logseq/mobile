@@ -5458,6 +5458,7 @@ let dictionaries = [
     ("Loading blocks…", "正在加载内容…");
     ("Move down", "下移");
     ("Move up", "上移");
+    ("More editor tools", "更多编辑工具");
     ("No graphs", "没有图谱");
     ("No results", "没有结果");
     ("No tagged nodes", "没有带此标签的内容");
@@ -5856,6 +5857,7 @@ let dictionaries = [
     ("About", "關於");
     ("Account", "帳戶");
     ("Add block", "新增區塊");
+    ("More editor tools", "更多編輯工具");
     ("Add property", "添加屬性");
     ("Advanced", "進階功能");
     ("Again", "重來");
