@@ -3154,7 +3154,7 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   let favorites_heading_top = List.nth favorites_heading_children 0 in
   let favorites_heading_content = List.nth favorites_heading_children 1 in
   let favorites_heading_bottom = List.nth favorites_heading_children 2 in
-  let favorites_heading_icon =
+  let favorites_heading_label =
     List.nth (children renderer favorites_heading_content) 0
   in
   let recent =
@@ -3163,9 +3163,9 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   let favorite_link =
     descendant_with_identifier renderer favorites "link.sidebar.page.page-a"
   in
-  check_eq ~msg:"sidebar keeps the main branch content inset"
+  check_eq ~msg:"the native sidebar has a 16-point content inset"
     (property_int renderer sidebar_content Lui_protocol.PaddingValue)
-    12;
+    16;
   let pages_scroll =
     descendant_with_identifier renderer sidebar_view "scroll.sidebar.pages"
   in
@@ -3177,7 +3177,7 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   let native_sidebar = extension_node application "native-sidebar" in
   check ~msg:"the native surface owns sidebar layout"
     (native_sidebar <> -1);
-  check ~msg:"Settings belongs to the native sidebar footer"
+  check ~msg:"Settings is mounted beside the sidebar's scrolling content"
     (descendant_with_identifier renderer (List.nth (children renderer native_sidebar) 1)
        "button.sidebar.settings" <> -1);
   check_eq ~msg:"the sidebar has no duplicate graph switch"
@@ -3185,7 +3185,7 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     (-1);
   check_eq ~msg:"the sidebar content starts directly with navigation rows"
     (List.hd (children renderer sidebar_content)) journals;
-  check_eq ~msg:"sidebar keeps the main branch row spacing"
+  check_eq ~msg:"the sidebar keeps a consistent gap between navigation rows"
     (property_int renderer sidebar_content Lui_protocol.Gap)
     4;
   check_eq
@@ -3209,30 +3209,29 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   check_eq ~msg:"sidebar destinations use native navigation rows"
     (property_string renderer journals Lui_protocol.RoleValue)
     "navigation";
-  check_eq ~msg:"journals keeps its navigation icon"
-    (property_string renderer journals Lui_protocol.InlineIconName)
-    "app:calendar";
-  check ~msg:"the current journal destination keeps its selected row"
-    (property_bool renderer journals Lui_protocol.Selected);
-  check_eq ~msg:"flashcards keeps its navigation icon"
-    (property_string renderer flashcards Lui_protocol.InlineIconName)
-    "app:flashcards";
-  check_eq ~msg:"graphs keeps its navigation icon"
-    (property_string renderer graphs Lui_protocol.InlineIconName)
-    "app:folder";
+  List.iter (fun (row, icon) ->
+    check_eq ~msg:"sidebar destinations have a spacious touch target"
+      (property_int renderer row Lui_protocol.MinHeight) 52;
+    check_eq ~msg:"sidebar destinations keep their navigation icon"
+      (descendant_count_with_property_string renderer row Lui_protocol.IconName icon) 1;
+    check_eq ~msg:"sidebar destinations use the title font"
+      (descendant_count_with_property_string renderer row Lui_protocol.StyleClass "title semibold single-line") 1;
+    check ~msg:"sidebar destinations have no selected background"
+      (not (property_bool renderer row Lui_protocol.Selected)))
+    [journals, "app:calendar"; flashcards, "app:flashcards"; graphs, "app:folder"];
   check ~msg:"sidebar keeps the recent section identifier" (recent <> -1);
   check_eq ~msg:"sidebar pages keep their document icon"
     (property_string renderer favorite_link Lui_protocol.InlineIconName)
     "app:document";
-  check_eq ~msg:"sidebar section glyphs match main's caption2 metrics"
-    (property_int renderer favorites_heading_icon Lui_protocol.WidthValue)
-    14;
-  check_eq ~msg:"sidebar section headings keep main's top spacing"
+  check_eq ~msg:"sidebar section names use the headline font"
+    (property_string renderer favorites_heading_label Lui_protocol.StyleClass)
+    "headline";
+  check_eq ~msg:"sidebar section headings have clear space above them"
     (property_int renderer favorites_heading_top Lui_protocol.HeightValue)
-    16;
-  check_eq ~msg:"sidebar section headings keep main's bottom spacing"
+    22;
+  check_eq ~msg:"sidebar section headings have a small gap below them"
     (property_int renderer favorites_heading_bottom Lui_protocol.HeightValue)
-    6;
+    8;
   dispatch application (Lui_protocol.Press favorite_link);
   flush application;
   check ~msg:"page selection closes the controlled drawer"
@@ -3246,6 +3245,8 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     (property_bool renderer root Lui_protocol.Enabled);
   check_eq ~msg:"the selected favorite page is previewed at the root"
     (App.model application).selected_page (Some favorite);
+  check ~msg:"the favorite link has no selected background after navigation"
+    (not (property_bool renderer favorite_link Lui_protocol.Selected));
   let menu =
     descendant_with_identifier renderer graph_switch "menu.graph-switch"
   in
@@ -8032,8 +8033,6 @@ let journal_dates_follow_the_app_language () =
     let empty_title = if journal_test_year () = 2025 then "11月22日" else "2025年11月22日" in
     check_heading "journal-page" title "· 星期一";
     check_heading "empty-day" empty_title "· 星期六";
-    check_eq (List.map snd (View_rows.journal_section_titles (App.model app)))
-      [title; empty_title];
     List.iter (fun (format, original, date) ->
       let model = {(App.model app) with journal_title_format = format} in
       check_eq (View_base.journal_title_parts model (Some 20261123) original) (date, Some "· 星期一");
@@ -8266,9 +8265,6 @@ let journal_rows_stay_flat_while_retaining_the_first_viewport () =
     (property_string renderer first_section Lui_protocol.DataAttrs) in
   check_eq ~msg:"the first journal's two rows determine its viewport fill boundary"
     (List.assoc "data-first-section-count" metadata) "3";
-  check_eq ~msg:"journal dates remain available outside the mounted block window"
-    (List.assoc_opt "data-section-title-0" metadata, List.assoc_opt "data-section-title-3" metadata)
-    (Some (expected_august_date 27), Some (expected_august_date 28));
   check ~msg:"all journal rows use the same bounded source"
     (List.for_all (fun entry ->
        List.exists (fun item -> List.mem entry (children renderer item))

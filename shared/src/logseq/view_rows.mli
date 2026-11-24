@@ -24,7 +24,6 @@ val paged_keyed : identifier:string -> item_extent:int -> count:int Signal.signa
 val windowed_keyed :
   ?scroll_target:string option Signal.signal ->
   ?first_section:int Signal.signal ->
-  ?section_titles:(int * string) list Signal.signal ->
   ?reset_key:string Signal.signal -> ?window_size:int -> ?identifier:string -> ?item_extent:int ->
   ?on_visible_range:(int -> int -> unit) -> ?on_window:('a list -> unit) ->
   ?on_prefetch:('a list -> unit) -> ?is_pinned:('a -> bool) ->
@@ -69,5 +68,3 @@ val page_entry_ready : page_entry -> bool
 
 val page_entry_pinned_ : page_entry -> bool
 val retain_page_entry_pin : string option -> page_entry list -> string option * page_entry list
-
-val journal_section_titles : Model.logseq_model -> (int * string) list

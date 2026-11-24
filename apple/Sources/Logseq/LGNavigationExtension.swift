@@ -5,74 +5,6 @@ import Observation
 import UIKit
 #endif
 
-#if os(iOS)
-@MainActor @Observable
-private final class JournalScrollTitle {
-    private(set) var displayed: String?
-    @ObservationIgnored private var candidate: String?
-    @ObservationIgnored private var scrollingCandidate: String?
-    @ObservationIgnored private var isScrolling = false
-    @ObservationIgnored private var updateTask: Task<Void, Never>?
-
-    func receive(_ title: String?) {
-        candidate = title
-        if isScrolling {
-            // The inline heading can temporarily leave the toolbar title empty.
-            if let title { scrollingCandidate = title }
-        } else {
-            cancelUpdate()
-        }
-        scheduleUpdate()
-    }
-
-    func setScrolling(_ scrolling: Bool) {
-        guard isScrolling != scrolling else { return }
-        isScrolling = scrolling
-        scrollingCandidate = scrolling ? candidate ?? displayed : nil
-        cancelUpdate()
-        scheduleUpdate()
-    }
-
-    private func cancelUpdate() {
-        updateTask?.cancel()
-        updateTask = nil
-    }
-
-    private var nextTitle: String? { isScrolling ? scrollingCandidate : candidate }
-
-    private func scheduleUpdate() {
-        guard updateTask == nil, nextTitle != displayed else { return }
-        // Coalesce fast section changes while moving and settle the final heading at rest.
-        let delay: Duration = .milliseconds(isScrolling ? 150 : 120)
-        updateTask = Task { [weak self] in
-            do { try await Task.sleep(for: delay) } catch { return }
-            guard let self else { return }
-            updateTask = nil
-            displayed = nextTitle
-        }
-    }
-}
-
-private struct JournalScrollTitleModifier: ViewModifier {
-    @State private var title = JournalScrollTitle()
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        let displayed = title.displayed
-        let tracked = content
-            .onPreferenceChange(LUIScrollTitlePreferenceKey.self) { title.receive($0) }
-            .transformPreference(LUIScrollTitlePreferenceKey.self) { $0 = displayed }
-        if #available(iOS 18.0, *) {
-            tracked.onScrollPhaseChange { _, phase in
-                title.setScrolling(phase != .idle)
-            }
-        } else {
-            tracked
-        }
-    }
-}
-#endif
-
 enum LGNavigationSurfacePolicy {
     static let androidContentTopPadding = CGFloat(0)
     static let androidDestinationContentTopPadding = CGFloat(56)
@@ -262,16 +194,6 @@ enum LGNavigationExtension {
     static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,16:selection-active:bool:optional:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
-        #if os(iOS)
-        try registry.registerTweak(
-            LUIAppleTweak(
-                identifier: "journal-scroll-title",
-                fingerprint: "lui-tweak-v1|20:journal-scroll-title|profiles:ios/swiftui|properties:"
-            ) { content, _ in
-                AnyView(content.modifier(JournalScrollTitleModifier()))
-            }
-        )
-        #endif
         try registry.register(
             LUIAppleExtension(
                 identifier: "native-auth-input",
@@ -437,8 +359,9 @@ struct LGWindowVerticalInsetsReader: UIViewRepresentable {
         override func safeAreaInsetsDidChange() { super.safeAreaInsetsDidChange(); measure() }
         func measure() {
             guard let window else { return }
-            // The drawer fills the window, so SwiftUI's inherited safe area is empty.
-            let frame = convert(bounds, to: window)
+            // A full-window drawer scales during transitions without changing its layout insets.
+            let frame = abs(bounds.height - window.bounds.height) < 1
+                ? window.bounds : convert(bounds, to: window)
             let insets = UIEdgeInsets(top: max(0, window.safeAreaInsets.top - frame.minY),
                                       left: 0,
                                       bottom: max(0, frame.maxY - (window.bounds.maxY - window.safeAreaInsets.bottom)),
@@ -479,30 +402,28 @@ private struct LGSidebarNavigation: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 // Start below the navigation bar while allowing rows to scroll into the top edge.
                 .padding(.top, topInset + 44)
+                .padding(.bottom, bottomInset + 48)
         }
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize)
         .accessibilityIdentifier("scroll.sidebar.pages")
         .accentColor(selectionTint)
-        VStack(spacing: 0) {
-            Group {
-                #if os(iOS)
-                if #available(iOS 26.0, *) {
-                    scroll
-                        .scrollEdgeEffectStyle(.soft, for: .top)
-                        .scrollEdgeEffectHidden(true, for: .bottom)
-                } else {
-                    scroll
-                }
-                #else
+        Group {
+            #if os(iOS)
+            if #available(iOS 26.0, *) {
                 scroll
-                #endif
+                    .scrollEdgeEffectStyle(.soft, for: .top)
+                    .scrollEdgeEffectHidden(true, for: .bottom)
+            } else {
+                scroll
             }
-            .clipped()
+            #else
+            scroll
+            #endif
+        }
+        .overlay(alignment: .bottomTrailing) {
             child(at: 1)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.horizontal, 16)
-                .padding(.top, 4)
+                .padding(.trailing, 16)
                 .padding(.bottom, bottomInset)
         }
         #if os(iOS)

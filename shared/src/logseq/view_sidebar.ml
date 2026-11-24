@@ -1,6 +1,9 @@
 open Lui_protocol
 open Lui_elements
 
+let uses_native_sidebar context =
+  Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost
+
 let sidebar_page_row (context : Lui_ui.ui_context) model_source
     (page_source : Model.sidebar_page Signal.signal) send : t
   =
@@ -9,15 +12,17 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source
     ignore (send (Model.SelectSidebarPage (sample page_source).uuid)) in
   let icon_source = Signal.map2 (fun current (page : Model.sidebar_page) ->
     View_base.node_icon current page.uuid) model_source page_source in
+  let ios = uses_native_sidebar context in
   let item custom =
     View_base.with_label_signal (Signal.map View_base.sidebar_page_title page_source)
       (list_item ~corner_radius:10
         ?height:(if Lui_ui.host context = KotlinHost then Some 48 else None)
+        ?min_height:(if ios then Some 48 else None)
         ?padding_vertical:(if Lui_ui.host context = KotlinHost then Some 0 else None)
         ~text_signal:(Signal.map (fun page -> if custom then "" else View_base.sidebar_page_title page) page_source)
         ?role:(if Lui_ui.host context = KotlinHost then None else Some `navigation)
         ?icon:(if custom then None else Some (`app "document"))
-        ~selected:(reactive View_base.sidebar_page_selected_ model_source page_source)
+        ?selected_signal:(if ios then None else Some (Signal.map2 View_base.sidebar_page_selected_ model_source page_source))
         ~accessibility_identifier:(View_base.sidebar_page_identifier page)
         ~on_press:navigate
         (if custom then [row ~gap:10 ~cross:`center [
@@ -126,56 +131,37 @@ let sidebar_graph_switch (context : Lui_ui.ui_context) model_source send : t =
          [ sidebar_graph_switch_content model_source ])
   else native_graph_switch ~grow:1.0 model_source send
 
-let sidebar_journals_row (context : Lui_ui.ui_context) model_source send : t =
-  if Lui_ui.host context = KotlinHost then
-    View_base.with_label "Journals"
-      (list_item ~corner_radius:10 ~icon:(`app "calendar")
-      ~selected:(reactive View_base.journals_sidebar_selected_ model_source)
-      ~accessibility_identifier:"link.sidebar.journals"
-      ~on_press:(press send Model.ShowJournals)
-      ~text:(View_base.tr (Signal.sample model_source) "Journals") [])
-  else
-    View_base.with_label "Journals"
-      (list_item ~corner_radius:10 ~role:`navigation ~icon:(`app "calendar")
-      ~selected:(reactive View_base.journals_sidebar_selected_ model_source)
-      ~accessibility_identifier:"link.sidebar.journals"
-      ~on_press:(press send Model.ShowJournals)
-      ~text:(View_base.tr (Signal.sample model_source) "Journals") [])
+let sidebar_destination_row context model_source send ~title ~id ~icon ~selected ~action : t =
+  let value = View_base.tr (Signal.sample model_source) title in
+  let ios = uses_native_sidebar context in
+  View_base.with_label (if ios then value else title)
+    (list_item ~corner_radius:10
+      ?role:(if Lui_ui.host context = KotlinHost then None else Some `navigation)
+      ?min_height:(if ios then Some 52 else None)
+      ?icon:(if ios then None else Some icon)
+      ?selected_signal:(if ios then None else Some (Signal.map selected model_source))
+      ?text:(if ios then None else Some value)
+      ~accessibility_identifier:("link.sidebar." ^ id)
+      ~on_press:(press send action)
+      (if ios then [row ~gap:12 ~cross:`center [
+        Lui_elements.icon ~name:icon ~width:22 ~height:22 ~foreground:"foreground" [];
+        text ~value ~style_class:"title semibold single-line" [];
+      ]] else []))
 
-let sidebar_flashcards_row (context : Lui_ui.ui_context) model_source send : t =
-  if Lui_ui.host context = KotlinHost then
-    View_base.with_label "Flashcards"
-      (list_item ~corner_radius:10 ~icon:(`app "flashcards")
-      ~selected:(reactive View_base.flashcards_sidebar_selected_ model_source)
-      ~accessibility_identifier:"link.sidebar.flashcards"
-      ~on_press:(press send Model.ShowFlashcards)
-      ~text:(View_base.tr (Signal.sample model_source) "Flashcards") [])
-  else
-    View_base.with_label "Flashcards"
-      (list_item ~corner_radius:10 ~role:`navigation ~icon:(`app "flashcards")
-      ~selected:(reactive View_base.flashcards_sidebar_selected_ model_source)
-      ~accessibility_identifier:"link.sidebar.flashcards"
-      ~on_press:(press send Model.ShowFlashcards)
-      ~text:(View_base.tr (Signal.sample model_source) "Flashcards") [])
+let sidebar_journals_row context model_source send =
+  sidebar_destination_row context model_source send ~title:"Journals" ~id:"journals"
+    ~icon:(`app "calendar") ~selected:View_base.journals_sidebar_selected_ ~action:Model.ShowJournals
 
-let sidebar_graphs_row (context : Lui_ui.ui_context) model_source send : t =
-  if Lui_ui.host context = KotlinHost then
-    View_base.with_label "Graphs"
-      (list_item ~corner_radius:10 ~icon:(`app "folder")
-      ~selected:(reactive View_base.graphs_sidebar_selected_ model_source)
-      ~accessibility_identifier:"link.sidebar.graphs"
-      ~on_press:(press send Model.ShowGraphs)
-      ~text:(View_base.tr (Signal.sample model_source) "Graphs") [])
-  else
-    View_base.with_label "Graphs"
-      (list_item ~corner_radius:10 ~role:`navigation ~icon:(`app "folder")
-      ~selected:(reactive View_base.graphs_sidebar_selected_ model_source)
-      ~accessibility_identifier:"link.sidebar.graphs"
-      ~on_press:(press send Model.ShowGraphs)
-      ~text:(View_base.tr (Signal.sample model_source) "Graphs") [])
+let sidebar_flashcards_row context model_source send =
+  sidebar_destination_row context model_source send ~title:"Flashcards" ~id:"flashcards"
+    ~icon:(`app "flashcards") ~selected:View_base.flashcards_sidebar_selected_ ~action:Model.ShowFlashcards
+
+let sidebar_graphs_row context model_source send =
+  sidebar_destination_row context model_source send ~title:"Graphs" ~id:"graphs"
+    ~icon:(`app "folder") ~selected:View_base.graphs_sidebar_selected_ ~action:Model.ShowGraphs
 
 let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
-  let native_sidebar = Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost in
+  let native_sidebar = uses_native_sidebar context in
   let settings =
     View_base.with_liquid_glass "circle"
       (icon_button ~icon:(`app "settings") ~variant:`ghost ~size:`icon
@@ -202,16 +188,32 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
           settings;
         ];
       box ~height:12 []] in
+  let section_heading title icon =
+    if native_sidebar then
+      column ~gap:0 [
+        box ~height:22 [];
+        row ~padding_horizontal:12 [
+          text ~value:(View_base.tr (Signal.sample model_source) title)
+            ~style_class:"headline" [];
+        ];
+        box ~height:8 [];
+      ]
+    else sidebar_section_heading model_source title icon in
+  let empty_section title =
+    if native_sidebar then
+      row ~padding_horizontal:12 [text ~style_class:"subheadline"
+        ~foreground:"muted-foreground" ~value:(View_base.tr (Signal.sample model_source) title) []]
+    else sidebar_empty_section_label model_source title in
   let pages =
     column ~gap:4
       [
         column ~accessibility_identifier:"section.sidebar.favorites"
           ~gap:2
           [
-            sidebar_section_heading model_source (View_base.tr (Signal.sample model_source) "Favorites") (`app "star");
+            section_heading "Favorites" (`app "star");
             if_
               ~test:(Signal.map View_base.favorites_empty_ model_source)
-              (sidebar_empty_section_label model_source (View_base.tr (Signal.sample model_source) "No favorites yet"));
+              (empty_section "No favorites yet");
             keyed
               ~source:
                 (Signal.map View_base.sidebar_favorites model_source)
@@ -223,11 +225,11 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
         column ~accessibility_identifier:"section.sidebar.recent"
           ~gap:2
           [
-            sidebar_section_heading model_source (View_base.tr (Signal.sample model_source) "Recent") (`app "history");
+            section_heading "Recent" (`app "history");
             if_
               ~test:
                 (Signal.map View_base.recent_pages_empty_ model_source)
-              (sidebar_empty_section_label model_source (View_base.tr (Signal.sample model_source) "No recent pages"));
+              (empty_section "No recent pages");
             keyed
               ~source:
                 (Signal.map View_base.sidebar_recent_pages model_source)
@@ -242,7 +244,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
     else scroll ~grow:1.0 ~accessibility_identifier:"scroll.sidebar.pages" [pages] in
   let content =
     column ~accessibility_identifier:(if native_sidebar then "sidebar.content" else "sidebar.navigation")
-      ~grow:1.0 ~gap:4 ~padding:12
+      ~grow:1.0 ~gap:4 ~padding:(if native_sidebar then 16 else 12)
       ((if native_sidebar then [] else header) @ [
       sidebar_journals_row context model_source send;
       if_

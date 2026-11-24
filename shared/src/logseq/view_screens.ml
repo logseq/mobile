@@ -270,6 +270,10 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
     Signal.sample visible_source
     && View_base.older_journals_visible_ (Signal.sample model_source)
     && send Model.LoadOlderJournals in
+  let list_style = Signal.map (fun (current : Model.logseq_model) ->
+    if current.selected_page <> None && View_base.selected_page_journal_day current = None then
+      "retained-pane scroll-section-titles"
+    else "retained-pane") model_source in
   View_base.with_reading_insets
     (box ~grow:1.0 ~accessibility_identifier:"layout.outliner.horizontal-inset"
     [
@@ -281,10 +285,10 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
         ~mount:(fun _ -> View_outliner.with_result_page ~root:true context model_source send
         (View_outliner.with_journal_task_transition model_source
         (View_base.with_selected_signal visible_source
+        (View_base.with_string_prop_signal StyleClass list_style
         (virtual_list ~grow:1.0
            ~data_attrs_signal:(Signal.map (fun current ->
              ["data-scroll-identity", View_base.outliner_scroll_identity current]) model_source)
-           ~style_class:"retained-pane scroll-section-titles"
            ~accessibility_identifier:"list.outliner"
         [
           box ~height:16 ~accessibility_identifier:"spacer.outliner.top"
@@ -331,7 +335,7 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
             ];
           View_outliner.page_loading_view model_source;
           View_outliner.outliner_bottom_spacer ();
-          ]))));
+          ])))));
     ])
 
 let retained_journal_pane (context : Lui_ui.ui_context) model_source send
@@ -350,16 +354,6 @@ let retained_journal_pane (context : Lui_ui.ui_context) model_source send
              })
          model_source)
       send
-  in
-  let content =
-    match Lui_ui.profile context with
-    | {profile_os = IOS; profile_host = SwiftUIHost} ->
-      custom (fun context parent ->
-        let tweak = Lui_ui.platform_tweak context "journal-scroll-title" in
-        ignore (mount context ~parent:tweak content);
-        attach context parent tweak;
-        tweak)
-    | _ -> content
   in
   box ~grow:1.0 ~accessibility_identifier:"pane.journals" [content]
 

@@ -74,11 +74,12 @@ import SwiftUI
         print("SIDEBAR_SCROLL type=\(type(of: scroll)) size=\(scroll.contentSize) frame=\(scroll.frame) inset=\(scroll.adjustedContentInset)")
         let bottom = scroll.contentSize.height - scroll.bounds.height
         guard let settingsID = find("button.sidebar.settings"), let settings = frames[settingsID],
+              let panelID = find("sidebar.navigation"), let panel = frames[panelID],
               let lastRecentID = find("link.sidebar.page.recent-39") else {
             throw failure("Missing sidebar footer or last Recent row")
         }
-        guard scroll.convert(scroll.bounds, to: window).maxY <= settings.minY else {
-            throw failure("Settings must have its own space below the sidebar scroll viewport")
+        guard abs(scroll.convert(scroll.bounds, to: window).maxY - panel.maxY) < 1 else {
+            throw failure("The sidebar scroll viewport must extend behind Settings to the bottom of the panel")
         }
         for offset: CGFloat in [0, 400, 2200, bottom] {
             scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
@@ -103,7 +104,7 @@ import SwiftUI
         }
         let viewport = scroll.convert(scroll.bounds, to: window)
         guard let lastRecent = frames[lastRecentID], lastRecent.minY >= viewport.minY,
-              lastRecent.maxY <= viewport.maxY + 1 else {
+              lastRecent.maxY <= settings.minY + 1 else {
             throw failure("The last Recent row must scroll fully above Settings")
         }
         guard runtime.lastError == nil else { throw failure(runtime.lastError!) }

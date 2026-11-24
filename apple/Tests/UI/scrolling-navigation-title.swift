@@ -7,32 +7,20 @@ import Vision
 @main struct ScrollingNavigationTitleCheck {
     @MainActor static func main() async throws {
         for delayedLoad in [true, false] {
-            for isPage in [false, true] {
-                try await check(isPage: isPage, delayedLoad: delayedLoad)
-            }
-            try await check(isPage: false, delayedLoad: delayedLoad, groupedJournal: true)
+            try await check(delayedLoad: delayedLoad)
         }
-        print("PASS: the graph switch stays visible alongside journal and page titles while scrolling after warm and cold loads")
+        print("PASS: the graph switch stays visible alongside the page title while scrolling after warm and cold loads")
     }
 
-    @MainActor static func check(isPage: Bool, delayedLoad: Bool, groupedJournal: Bool = false) async throws {
+    @MainActor static func check(delayedLoad: Bool) async throws {
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first!
-        let year = Calendar(identifier: .gregorian).component(.year, from: Date())
-        let journalTitle = year == 2026 ? "Oct 21" : "Oct 21, 2026"
-        let title = isPage ? "Project page" : journalTitle
+        let title = "Project page"
         let rows: [[String: Any]] = (0..<60).map { index in
-            var block: [String: Any] = ["uuid": "row-\(index)", "title": "Body row \(index)", "pageId": "page"]
-            if !isPage {
-                let first = !groupedJournal || index < 10
-                block["pageId"] = first ? "page" : "older"
-                block["journalTitle"] = first ? "Oct 21st, 2026" : "Oct 20th, 2026"
-                block["journalDay"] = first ? 20261021 : 20261020
-            }
-            return ["block": block, "depth": 0]
+            ["block": ["uuid": "row-\(index)", "title": "Body row \(index)", "pageId": "page"], "depth": 0]
         }
-        var result: [String: Any] = ["graphName": "Work", "selectedGraphId": "work", "outlinerRows": rows,
+        let result: [String: Any] = ["graphName": "Work", "selectedGraphId": "work", "outlinerRows": rows,
+            "selectedPage": ["uuid": "page", "title": title],
             "outlinerState": ["selectedBlockIds": []]]
-        if isPage { result["selectedPage"] = ["uuid": "page", "title": title] }
         let snapshot = String(decoding: try JSONSerialization.data(withJSONObject: ["ok": true, "result": result]), as: UTF8.self)
         let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: LGCoreEffectExecutor(callCore: { _ in snapshot }))
         if !delayedLoad { try runtime.applyCoreResponse(snapshot) }
@@ -85,7 +73,7 @@ import Vision
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
-        try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("scrolling-title-\(delayedLoad ? "cold" : "warm")-\(isPage ? "page" : "journal").png"))
+        try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("scrolling-title-\(delayedLoad ? "cold" : "warm")-page.png"))
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.regionOfInterest = CGRect(x: frame.minX / window.bounds.width,
