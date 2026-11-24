@@ -1070,8 +1070,11 @@ let authentication_screen (context : Lui_ui.ui_context) model_source send
   else
     column ~accessibility_identifier:"screen.authentication" ~grow:1.0
       ~container_relative_frame:`vertical ~main:`center ~cross:`center
-      ~padding:32
-      [ authentication_content context model_source send ]
+      [ view_that_fits ~orientation:`vertical
+          [ column ~padding_horizontal:32 ~padding_vertical:64 ~cross:`center
+              [authentication_content context model_source send];
+            scroll ~max_width:464 ~padding_horizontal:32 ~padding_vertical:64
+              [authentication_content context model_source send] ] ]
 
 let application_main_content (context : Lui_ui.ui_context) model_source
     send : t =
