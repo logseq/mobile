@@ -20,8 +20,11 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.RenderEffect
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
@@ -41,6 +44,7 @@ import dev.lui.LuiExtensionRegistry
 import dev.lui.LuiExtensionValueKind
 import kotlinx.coroutines.flow.drop
 import kotlin.math.pow
+import kotlin.math.sqrt
 
 internal fun LuiExtensionRegistry.registerSidebarOverlay() {
     register(
@@ -89,6 +93,7 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
     BoxWithConstraints(Modifier.fillMaxSize().testTag("application.shell")) {
         val width = minOf((context.int("width") ?: 320).dp, maxWidth * 0.80f)
         val widthPx = with(LocalDensity.current) { width.toPx() }.coerceAtLeast(1f)
+        val blurPx = with(LocalDensity.current) { 12.dp.toPx() }
         val direction = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1f else -1f
         fun drawerFraction(): Float {
             val offset = drawer.currentOffset
@@ -97,6 +102,11 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
         }
         fun revealFraction(fraction: Float = drawerFraction()): Float =
             if (drawer.currentValue == DrawerValue.Closed) 1f - (1f - fraction).pow(5) else fraction
+        fun sidebarBlur(reveal: Float): RenderEffect? {
+            if (reveal <= 0f || reveal >= 1f) return null
+            val radius = blurPx * sqrt(1f - reveal)
+            return BlurEffect(radius, radius, TileMode.Decal)
+        }
         ModalNavigationDrawer(
             drawerState = drawer,
             gesturesEnabled = enabled || open,
@@ -110,6 +120,7 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
                         val fraction = drawerFraction()
                         val reveal = revealFraction(fraction)
                         alpha = reveal
+                        renderEffect = sidebarBlur(reveal)
                         translationX = direction * (reveal - fraction) * widthPx
                     }
                         .then(if (!open) Modifier.semantics { hideFromAccessibility() } else Modifier),
@@ -143,6 +154,7 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
                 .graphicsLayer {
                     val reveal = revealFraction()
                     alpha = reveal
+                    renderEffect = sidebarBlur(reveal)
                     translationX = direction * (reveal - 1f) * widthPx
                 }
                 .then(if (!open) Modifier.semantics { hideFromAccessibility() } else Modifier),

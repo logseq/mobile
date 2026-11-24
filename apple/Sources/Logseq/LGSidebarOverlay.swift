@@ -246,6 +246,7 @@ private struct LGSidebarLayers: View, Animatable {
                     .overlay(alignment: .bottomTrailing) {
                         settings.padding(settingsInsets)
                     }
+                    .blur(radius: reduceTransparency || visible == 0 ? 0 : 12 * (1 - visible).squareRoot())
                     .opacity(visible)
                     .offset(x: reduceMotion ? 0 : (visible - 1) * panelWidth)
                     .allowsHitTesting(open && visible > 0.95)
