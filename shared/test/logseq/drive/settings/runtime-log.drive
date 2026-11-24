@@ -15,5 +15,5 @@ expect prop:accessibility-identifier=button.log-refresh
 expect prop:accessibility-identifier=button.log-copy
 press prop:accessibility-identifier=button.log-refresh
 wait text:"drive test log line"
-press kind:button&text:"Done"
+press prop:accessibility-identifier=button.log.done
 expect-absent prop:accessibility-identifier=screen.runtime-log

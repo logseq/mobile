@@ -1036,7 +1036,7 @@ let runtime_log_actions model_source (context : Lui_ui.ui_context) send : t =
           ~on_press:(press send Model.RefreshRuntimeLog)
           ~text:(View_base.tr (Signal.sample model_source) "Refresh") [];
         button ~variant:`primary ~grow:1.0
-          ~accessibility_identifier:"button.connection.apply"
+          ~accessibility_identifier:"button.log.done"
           ~on_press:(press send Model.DismissRuntimeLog)
           ~text:(View_base.tr (Signal.sample model_source) "Done") [];
       ]
@@ -1050,7 +1050,7 @@ let runtime_log_actions model_source (context : Lui_ui.ui_context) send : t =
           ~on_press:(press send Model.RefreshRuntimeLog)
           ~text:(View_base.tr (Signal.sample model_source) "Refresh") [];
         Lui_elements.toolbar_button ~style_class:"confirmation-action" ~foreground:"foreground"
-          ~accessibility_identifier:"button.connection.apply"
+          ~accessibility_identifier:"button.log.done"
           ~on_press:(press send Model.DismissRuntimeLog)
           ~text:(View_base.tr (Signal.sample model_source) "Done") [];
       ]

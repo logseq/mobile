@@ -29,17 +29,21 @@ let attachment_picker_items item model_source context send =
     ] in
   if Lui_ui.host context = KotlinHost then items else List.rev items
 
+let composer_default_action_foreground = "border"
+
 let composer_attachment_button model_source (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then
     let item ~icon ~accessibility_identifier ~text ~on_press children =
       dropdown_menu_item ~icon ~accessibility_identifier ~text ~on_press children in
-    menu_trigger ~icon:(`app "composer-add") ~label:(View_base.tr (Signal.sample model_source) "Add attachment")
+    menu_trigger ~icon:(`app "composer-add") ~foreground:composer_default_action_foreground
+      ~label:(View_base.tr (Signal.sample model_source) "Add attachment")
       ~accessibility_identifier:"button.attachment"
       (dropdown_menu (attachment_picker_items item model_source context send))
   else
     let item ~icon ~accessibility_identifier ~text ~on_press _ =
       context_menu_item ~icon ~accessibility_identifier ~text ~on_press () in
     icon_button ~icon:(`app "composer-add") ~variant:`ghost ~width:32 ~height:44
+      ~foreground:composer_default_action_foreground
       ~label:(View_base.tr (Signal.sample model_source) "Add attachment") ~accessibility_identifier:"button.attachment"
       [context_menu (attachment_picker_items item model_source context send)]
 
@@ -147,7 +151,7 @@ let composer_task_status_button (context : Lui_ui.ui_context) model_source send 
   let foreground (current : Model.logseq_model) =
     match current.selected_task_status with
     | Some status -> View_base.task_status_foreground status
-    | None -> "border" in
+    | None -> composer_default_action_foreground in
   if Lui_ui.host context = KotlinHost then
     menu_trigger ~icon:(reactive icon model_source)
       ~foreground:(reactive foreground model_source) ~label:(View_base.tr (Signal.sample model_source) "Task status")
@@ -366,6 +370,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                stack [composer_attachment_button model_source context send];
                stack [composer_task_status_button context model_source send];
                stack [icon_button ~icon:(`app "toolbar-tag") ~variant:`ghost
+                 ~foreground:composer_default_action_foreground
                  ~width:(if Lui_ui.host context = KotlinHost then 48 else 32) ~height:44
                  ~label:(View_base.tr (Signal.sample model_source) "Add tags") ~accessibility_identifier:"button.composer.tags"
                  ~disabled_signal:(Signal.map (fun (model : Model.logseq_model) -> model.composer_tags_loading) model_source)

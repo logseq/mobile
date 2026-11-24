@@ -1548,7 +1548,7 @@ let kotlin_runtime_log_actions_fit_phone_width () =
     descendant_with_identifier renderer root "button.log-refresh"
   in
   let done_button =
-    descendant_with_identifier renderer root "button.connection.apply"
+    descendant_with_identifier renderer root "button.log.done"
   in
   check_eq ~msg:"Kotlin gives the Runtime log sheet one bounded child"
     (List.length (children renderer sheet))
