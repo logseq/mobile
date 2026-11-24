@@ -503,12 +503,13 @@ public final class LGRuntime {
             Self.log.notice("effect start id=\(effect.id, privacy: .public) kind=\(effect.kind, privacy: .public)")
             LGInteractionDiagnostics.event("effect.start", "id=\(effect.id) kind=\(effect.kind)")
             #if os(iOS)
-            let cancelKeyboardDismissal = effect.kind == "outliner-toolbar" && effect.text == "hideKeyboard"
+            let keyboardDismissal = effect.kind == "outliner-toolbar" && effect.text == "hideKeyboard"
                 ? OutlinerInlineEditor.prepareForKeyboardDismissal() : nil
             #endif
             let resolution = await effectExecutor.execute(effect)
             #if os(iOS)
-            if !resolution.succeeded { cancelKeyboardDismissal?() }
+            if resolution.succeeded, epoch == patchApplyEpoch { await keyboardDismissal?.dismiss() }
+            else { keyboardDismissal?.cancel() }
             #endif
             LGInteractionDiagnostics.event("effect.end", "id=\(effect.id) kind=\(effect.kind) success=\(resolution.succeeded)")
             guard epoch == patchApplyEpoch else { return }

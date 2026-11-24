@@ -1,4 +1,5 @@
 val with_journal_task_transition : Model.logseq_model Signal.signal -> Lui_elements.t -> Lui_elements.t
+val outliner_bottom_spacer : unit -> Lui_elements.t
 val task_dates_dialog : Model.logseq_model Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
 val page_title_spacer : ?has_properties:bool -> unit -> Lui_elements.t
 val page_heading_text : ?accessibility_identifier:string -> (string * string option) Signal.signal -> Lui_elements.t list

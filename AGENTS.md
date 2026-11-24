@@ -2,6 +2,8 @@
 
 Logseq uses native SwiftUI on iOS and Kotlin/Jetpack Compose on Android, backed by an OCaml DataScript core. Build and test setup is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+See [Mobile UX Rules](UX_RULES.md) when changing navigation, safe areas, or outliner interactions.
+
 ## Testing
 
 - Do NOT run `swift test` (xctest). It hangs indefinitely in this

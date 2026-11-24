@@ -65,6 +65,14 @@ enum LGPropertyExtension {
             properties: [.init(name: "collapsed", kind: .string, isRequired: true)]
         ) { AnyView(LGJournalTaskTransition(context: $0)) })
         try registry.register(LUIAppleExtension(
+            identifier: "outliner-bottom-spacer",
+            fingerprint: "lui-extension-v1|22:outliner-bottom-spacer|profiles:ios/swiftui|standard-children:0|children:|properties:6:height:int:required:none|events:",
+            properties: [.init(name: "height", kind: .int, isRequired: true)]
+        ) { context in
+            guard case let .int(height) = context.property("height") else { return AnyView(EmptyView()) }
+            return AnyView(LGOutlinerBottomSpacer(height: CGFloat(height)))
+        })
+        try registry.register(LUIAppleExtension(
             identifier: "journal-task-chevron",
             fingerprint: "lui-extension-v1|20:journal-task-chevron|profiles:ios/swiftui|standard-children:1|children:|properties:9:collapsed:bool:required:none|events:",
             acceptsStandardChildren: true,
@@ -99,11 +107,22 @@ private struct LGJournalTaskTransition: View {
             context.content(for: id)
         }
         .environment(\.outlinerScrollRetention, scrollRetention)
-        .contentMargins(.bottom, scrollRetention.bottomMargin, for: .scrollContent)
         .animation(
             reduceMotion ? nil : journalDisclosureAnimation,
             value: context.property("collapsed")
         )
+    }
+}
+
+private struct LGOutlinerBottomSpacer: View {
+    let height: CGFloat
+    @Environment(\.outlinerScrollRetention) private var scrollRetention
+
+    var body: some View {
+        // Keep the reserve in the content so UIKit does not treat it as keyboard occlusion.
+        Color.clear
+            .frame(height: height + (scrollRetention?.bottomSpace ?? 0))
+            .accessibilityHidden(true)
     }
 }
 

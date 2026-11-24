@@ -1,5 +1,7 @@
 module Selection = Set.Make (String)
 
+let outliner_editor_key = "active-outliner-editor"
+
 type retained_row =
   { render_key : string
   ; value : Model.outline_row
@@ -16,7 +18,7 @@ let make_retained_outline_row_with_selection ?edit_scope is_selected (current : 
     if editing.editing_uuid = row.row_uuid
        && current.outliner_edit_scope = Option.map (fun scope -> scope, row.row_uuid) edit_scope then
       {
-        render_key = "active-outliner-editor";
+        render_key = outliner_editor_key;
         value = row;
         is_editing = true;
         is_selected;
@@ -179,6 +181,16 @@ let windowed_keyed ?scroll_target ?first_section ?section_titles ?reset_key
           ~data_attrs_signal:metadata ~track_visible_range:true
           ~on_visible_range:(function
             | Lui_elements.Range { first; last } ->
+              (* The editor overlay owns its pinned row outside the window. If
+                 its stale frame widens the native range, follow the other end
+                 so the rows in the new viewport can still mount. *)
+              let first, last =
+                if first >= 0 && last - first >= 2 * window_size then
+                  let pinned = Signal.sample pinned in
+                  if pinned = first then last - window_size / 2, last
+                  else if pinned = last then first, first + window_size / 2
+                  else first, last
+                else first, last in
               on_visible_range first last;
               let items, start, length = Signal.sample window in
               let count = Array.length items in
@@ -261,7 +273,11 @@ let reference_entry_row = function
   | _ -> invalid_arg "reference_entry_row requires a block entry"
 
 
-type placeholder = { parent_uuid : string; journal_heading : (string * int * bool) option }
+type placeholder = {
+  parent_uuid : string;
+  journal_heading : (string * int * bool) option;
+  show_button : bool;
+}
 type page_entry = Outline_entry of retained_row | Reference_entry of reference_entry
   | Placeholder_entry of placeholder
   | Journal_task_gap
@@ -274,6 +290,10 @@ let needs_placeholder rows = match List.rev rows with
   | last :: _ ->
     let title = if last.is_editing then last.editing_title else last.value.row_title in
     not ((last.value.row_loaded || last.value.row_cached) && String_kit.is_blank title && not last.value.has_children)
+
+let placeholder_button_visible rows =
+  not (List.exists (fun row -> row.is_editing
+    && not (List.mem row.value.row_display_type [Some "math"; Some "code"])) rows)
 
 let outline_entries rows = List.map (fun row -> Outline_entry row) rows
 
@@ -336,14 +356,20 @@ let journal_entries rows (current : Model.logseq_model) =
     if Hashtbl.mem groups page.uuid then sections
     else insert_empty (page.uuid, Some page.title, Some day, []) sections) sections current.empty_journals in
   let entries = List.mapi (fun index (page, title, day, rows) ->
+    let tasks = match day with
+      | Some day when task_field "day" current.journal_tasks = `Int day -> task_rows current
+      | _ -> [] in
+    let needs_button = needs_placeholder rows in
     let outline = outline_entries rows in
     let outline = match title, day with
-    | Some title, Some day when needs_placeholder rows || rows = [] ->
+    (* Keep the add-block space before the agenda while an empty row becomes
+       nonempty. Otherwise typing the first character shifts every task row. *)
+    | Some title, Some day when needs_button || tasks <> [] ->
       outline @ [Placeholder_entry {parent_uuid = page;
-        journal_heading = if rows = [] then Some (title, day, index > 0) else None}]
+        journal_heading = (if rows = [] then Some (title, day, index > 0) else None);
+        show_button = needs_button && placeholder_button_visible rows}]
     | _ -> outline in
-    if Option.fold ~none:false ~some:(fun day -> task_field "day" current.journal_tasks = `Int day) day
-    then outline @ task_rows current else outline) sections in
+    outline @ tasks) sections in
   List.rev (List.fold_left (fun acc section -> List.rev_append section acc) [] entries)
 
 let page_entries rows current =
@@ -359,11 +385,14 @@ let page_entries rows current =
         && View_base.page_content_ready_ current && parent <> ""
         && (match Model.active_page current with
           | Some page -> String.lowercase_ascii page.title <> "library" | None -> true) in
-      let outline = if allowed && needs_placeholder rows then
-        outline @ [Placeholder_entry {parent_uuid = parent; journal_heading = None}]
+      let tasks = if task_field "page" current.journal_tasks = `String parent then task_rows current else [] in
+      let outline = if not allowed then outline else
+        let needs_button = needs_placeholder rows in
+        if needs_button || tasks <> [] then
+          outline @ [Placeholder_entry {parent_uuid = parent; journal_heading = None;
+            show_button = needs_button && placeholder_button_visible rows}]
         else outline in
-      if task_field "page" current.journal_tasks = `String parent then outline @ task_rows current
-      else outline in
+      outline @ tasks in
   let references =
     List.map (fun row -> Reference_entry row) (reference_entries current) in
   if not journal_home || references = [] then List.rev_append (List.rev outline) references
@@ -387,6 +416,7 @@ let page_entries rows current =
 let page_entry_identifier = function
   | Outline_entry row -> "outline." ^ retained_row_identifier row
   | Reference_entry row -> "reference." ^ reference_entry_identifier row
+  | Placeholder_entry {parent_uuid; journal_heading = Some _; _} -> "placeholder.journal-heading." ^ parent_uuid
   | Placeholder_entry value -> "placeholder." ^ value.parent_uuid
   | Journal_task_gap -> "journal-tasks.gap"
   | Journal_task_heading section -> "journal-tasks." ^ section
@@ -408,7 +438,7 @@ let journal_sections current =
   |> List.mapi (fun index entry ->
     let section = match entry with
       | Outline_entry row -> Option.map (fun title -> row.value.page_id, row.value.journal_day, title) row.value.journal_title
-      | Placeholder_entry {parent_uuid; journal_heading = Some (title, day, _)} -> Some (parent_uuid, Some day, title)
+      | Placeholder_entry {parent_uuid; journal_heading = Some (title, day, _); _} -> Some (parent_uuid, Some day, title)
       | _ -> None in
     match section with
     | Some (page, day, title) when !previous <> Some page ->
@@ -437,7 +467,29 @@ let page_entry_ready = function
   | Reference_entry (Reference_row (_, row)) -> row.Model.row_loaded || row.row_cached || row.row_title <> ""
   | _ -> true
 
-let page_entry_editor_ = function
-  | Outline_entry row -> row.is_editing
-  | Journal_task_row (_, editing) -> editing
+let page_entry_pinned_ = function
+  | Outline_entry row -> row.render_key = outliner_editor_key
+  | Journal_task_row (_, pinned) -> pinned
   | _ -> false
+
+let page_entry_block_key = function
+  | Outline_entry row -> Some ("outline." ^ row.value.row_uuid)
+  | Journal_task_row (task, _) -> Some (journal_task_scope (journal_task_uuid task))
+  | _ -> None
+
+let retain_page_entry_pin previous entries =
+  match List.find_opt page_entry_pinned_ entries with
+  | Some active -> page_entry_block_key active, entries
+  | None -> match previous with
+    | None -> None, entries
+    | Some _ ->
+      let rec retain prefix = function
+        | [] -> None, entries
+        | entry :: rest when page_entry_block_key entry = previous ->
+          let pinned = match entry with
+            | Outline_entry row -> Outline_entry {row with render_key = outliner_editor_key}
+            | Journal_task_row (task, _) -> Journal_task_row (task, true)
+            | _ -> entry in
+          previous, List.rev_append prefix (pinned :: rest)
+        | entry :: rest -> retain (entry :: prefix) rest in
+      retain [] entries

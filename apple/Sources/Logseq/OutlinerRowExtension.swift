@@ -433,6 +433,9 @@ struct OutlinerRowPayload: Decodable, Equatable {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            #if os(iOS)
+            .background(OutlinerScrollAnchorMarker(blockID: row.uuid))
+            #endif
             if row.hasChildren {
                 let hitSize = OutlinerLayoutMetrics.disclosureHitSize
                 let hitWidth = hitSize + row.disclosureGutter

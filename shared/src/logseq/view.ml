@@ -302,6 +302,12 @@ let journal_task_transition_schema () =
   component "journal-task-transition" [profile IOS SwiftUIHost]
     true [] [property "collapsed" StringScalar true None] []
 
+let outliner_bottom_spacer_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  component "outliner-bottom-spacer" [profile IOS SwiftUIHost]
+    false [] [property "height" IntScalar true None] []
+
 let journal_task_chevron_schema () =
   let open Lui_protocol in
   let open Lui_extension in
@@ -341,6 +347,7 @@ let extension_registry () =
   Lui_extension.register_component registry (table_viewport_schema ());
   Lui_extension.register_component registry (property_date_schema ());
   Lui_extension.register_component registry (journal_task_transition_schema ());
+  Lui_extension.register_component registry (outliner_bottom_spacer_schema ());
   Lui_extension.register_component registry (journal_task_chevron_schema ());
   Lui_extension.register_component registry (outliner_continuation_schema ());
   Lui_extension.register_component registry (outliner_editor_schema ());
