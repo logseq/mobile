@@ -31,6 +31,7 @@ type outliner_state =
   ; pending_deletion : string list
   ; autocomplete : reducer_autocomplete option
   ; completion_dismissed : bool
+  ; composition_started_empty : bool option
   ; collapsed : Sset.t
   ; zoomed : string list
   }
@@ -95,6 +96,7 @@ type outliner_message =
   | Block_toolbar of string * outliner_toolbar
   | Paste_content of Block_clipboard.content
   | Text_pasted of outliner_text
+  | Text_composing of outliner_text
   | Text_changed of outliner_text
   | Caret_moved of int
   | Return_pressed

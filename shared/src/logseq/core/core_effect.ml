@@ -97,17 +97,20 @@ let request ~now ~fresh_id payload =
     | "save-outliner-editing" -> event "saveEditing" []
     | "confirm-outliner-delete" -> event "confirmDelete" []
     | "cancel-outliner-editing" -> event "cancelEditing" []
-    | "paste-outliner-text" | "change-outliner-text" | "return-outliner-editor" | "backspace-outliner-editor" | "move-outliner-caret" ->
+    | "paste-outliner-text" | "change-outliner-text" | "compose-outliner-text" | "return-outliner-editor" | "backspace-outliner-editor" | "move-outliner-caret" ->
       let* uuid = string fields "uuid" in let* value = integer fields "value" in
       let name, key = match kind with
-        | "paste-outliner-text" | "change-outliner-text" -> "textChanged", "caretUTF16Offset"
+        | "paste-outliner-text" | "change-outliner-text" | "compose-outliner-text" -> "textChanged", "caretUTF16Offset"
         | "return-outliner-editor" -> "returnPressed", "caretUTF16Offset"
         | "backspace-outliner-editor" -> "backspacePressed", "selectionLength"
         | _ -> "caretMoved", "caretUTF16Offset" in
       let* extra = if kind = "move-outliner-caret" then Ok [] else
         let* title = text () in Ok ["title", `String title] in
-      event name (["uuid", `String uuid; key, `Int value] @ extra
-        @ if kind = "paste-outliner-text" then ["inputOrigin", `String "paste"] else [])
+      let origin = match kind with
+        | "paste-outliner-text" -> ["inputOrigin", `String "paste"]
+        | "compose-outliner-text" -> ["inputOrigin", `String "composition"]
+        | _ -> [] in
+      event name (["uuid", `String uuid; key, `Int value] @ extra @ origin)
     | "open-graph" -> raw "selectGraph"
     | "unlock-graph" -> raw "unlockGraph"
     | "create-graph" -> let* name = text () in let* value = integer fields "value" in

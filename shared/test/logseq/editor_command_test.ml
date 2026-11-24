@@ -534,6 +534,20 @@ let typed_quote_marker_converts_only_ordinary_blocks () =
       (Some (Ds.Keyword (if label = "Math block" then "math" else "code")))))
     ["Code block"; "Calculator"; "Math block"]
 
+let composing_quote_marker_converts_only_on_commit () =
+  R.with_runtime (fun session runtime _ ->
+    ignore (start session "");
+    let title = ">Batched quote" in
+    let encoded = Native_bridge.encode_effect (Model.ComposeOutlinerTextEffect (1, Q.alpha, title, 14)) in
+    let provisional = result (Rpc_test.dispatch_json session "executeEffect" encoded) in
+    check_eq ~msg:"composition keeps the provisional quote marker in the draft"
+      (member "title" (draft provisional)) (`String title);
+    check_eq ~msg:"composition does not set the block display type"
+      (value runtime Q.alpha "logseq.property.node/display-type") None;
+    let committed = type_at session title 14 in
+    check_eq (member "title" (draft committed)) (`String "Batched quote");
+    check_eq (value runtime Q.alpha "logseq.property.node/display-type") (Some (Ds.Keyword "quote")))
+
 let code_toolbar_creates_a_block_without_a_hardware_keyboard () =
   List.iter (fun backend -> List.iter (fun label -> R.with_runtime (fun session runtime _ ->
     ignore (run session label); ignore (type_at session "6*7\nlast*3" 10);
@@ -1831,6 +1845,7 @@ let cases = [
   case "date-time commands accept natural language" datetime_commands_accept_natural_language;
   case "date commands accept natural language on both hosts" date_command_accepts_natural_language;
   case "typed quote markers match master without changing literal blocks" typed_quote_marker_converts_only_ordinary_blocks;
+  case "composing quote markers convert only on commit" composing_quote_marker_converts_only_on_commit;
   case "Code and Calculator toolbars create blocks with software keyboards" code_toolbar_creates_a_block_without_a_hardware_keyboard;
   case "toolbar inserts a line break with software keyboards" toolbar_inserts_line_break_without_a_hardware_keyboard;
   case "date commands accept directly typed historical dates" date_command_accepts_typed_historical_dates;

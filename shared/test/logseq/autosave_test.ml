@@ -85,8 +85,12 @@ let composing_text_waits_for_commit_before_autosaving () = with_editor (fun sess
   send (Model.ComposeOutlinerText ("editing", title, 9));
   send (Model.MoveOutlinerCaret ("editing", 3));
   let dispatch = take_ready () in
-  check_eq (kind dispatch) "change-outliner-text";
-  apply_effect session dispatch ["type", `String "textChanged"; "title", `String title; "caretUTF16Offset", `Int 3];
+  check_eq (kind dispatch) "compose-outliner-text";
+  let encoded = member "effect" (J.from_string dispatch) in
+  check_eq (member "value" encoded) (`Int 3);
+  let response = Rpc_test.dispatch_json session "executeEffect" (J.to_string encoded) |> J.to_string in
+  ignore (Native_bridge.apply_response response);
+  ignore (Native_bridge.resolve_effect (effect_id dispatch) true response);
   check_eq (pending_kinds ()) [];
   check_eq (!saved).Cache_model.title "Before";
   type_text session title;
