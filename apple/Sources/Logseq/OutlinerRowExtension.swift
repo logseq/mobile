@@ -180,7 +180,17 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
         return uiViewController.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
     }
 
-    private var hostedContent: AnyView { AnyView(content.environment(\.self, environment)) }
+    private var hostedContent: AnyView {
+        // Keep the row host's accessibility infrastructure while forwarding app settings.
+        AnyView(content
+            .environment(\.luiSemanticColors, environment.luiSemanticColors)
+            .environment(\.lgPropertyValue, environment.lgPropertyValue)
+            .environment(\.lgImagePreviews, environment.lgImagePreviews)
+            .environment(\.lgOpenPDF, environment.lgOpenPDF)
+            .environment(\.outlinerScrollRetention, environment.outlinerScrollRetention)
+            .environment(\.locale, environment.locale)
+            .environment(\.openURL, environment.openURL))
+    }
 }
 #endif
 
@@ -295,7 +305,6 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
                     }, interactions: interactions)
             } else if let interactions {
                 OutlinerHostedBlockRow(content: swiftUIContent, interactions: interactions)
-                    .accessibilityRepresentation { swiftUIContent }
             } else {
                 swiftUIContent
             }

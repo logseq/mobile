@@ -225,6 +225,10 @@ if [[ ${flow##*/} == ios-graphs-lifecycle.yaml ]]; then
   run_maestro_test "$rendered_graphs_lifecycle_fixture"
 fi
 run_maestro_test "$rendered_flow"
+if [[ ${flow##*/} == ios-outliner-drag.yaml ]]; then
+  python3 "$repo_root/tests/e2e/run-ios-outliner-drop.py" "$device" "$app_path" "$app_id" \
+    "E2E anchor A $run_id" "E2E anchor B $run_id"
+fi
 xcrun simctl io "$device" screenshot "$screenshots_dir/ios-e2e-final.png" >/dev/null
 
 echo "$screenshots_dir/ios-e2e-final.png"
