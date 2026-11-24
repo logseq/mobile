@@ -790,6 +790,24 @@ let sync_indicator_prioritizes_connectivity_before_pending_work () =
           (Model.ChangeOutlinerText ("offline-block", "Draft", 5))))
     "Not connected"
 
+let capture_and_offline_transport_show_pending_sync () =
+  let ready = { (Model.initial ()) with Model.sync_state = SyncedState;
+    authentication_state = "signedIn"; composer_draft = "Keep this note" } in
+  let submitted = Model.update ready Model.SendComposer in
+  check_eq (View_base.sync_indicator_label submitted) "Syncing";
+  check_eq (View_base.sync_pending_label submitted) "Waiting to save";
+  check_eq (View_base.sync_indicator_foreground submitted) "warning-foreground";
+  let capture_id = List.find_map (function Model.SendCaptureEffect (id, _) -> Some id
+    | _ -> None) submitted.pending_effects |> Option.get in
+  let in_flight = Model.update submitted (Model.DequeueEffect capture_id) in
+  check_eq (View_base.sync_indicator_label in_flight) "Syncing";
+  let waiting = { submitted with has_pending_semantic_operations = true;
+    pending_sync_error = Some "Upload asset: network_unavailable\n\nnetwork_unavailable" } in
+  check_eq (View_base.sync_indicator_label waiting) "Not connected";
+  check_eq (View_base.sync_pending_label waiting) "Waiting to save";
+  let rejected = { waiting with pending_sync_error = Some "Server rejected the change\n\nnetwork_unavailable" } in
+  check_eq (View_base.sync_indicator_label rejected) "Sync failed"
+
 let authenticated_sync_indicator_uses_only_yellow_or_green () =
   List.iter
     (fun sync_state ->
@@ -11748,6 +11766,7 @@ let cases =
     case "empty-outliner-rows-use-the-main-untitled-accessibility-title" empty_outliner_rows_use_the_main_untitled_accessibility_title;
     case "synced-header-control-uses-the-main-accessibility-label" synced_header_control_uses_the_main_accessibility_label;
     case "sync-indicator-prioritizes-connectivity-before-pending-work" sync_indicator_prioritizes_connectivity_before_pending_work;
+    case "capture-and-offline-transport-show-pending-sync" capture_and_offline_transport_show_pending_sync;
     case "authenticated-sync-indicator-uses-only-yellow-or-green" authenticated_sync_indicator_uses_only_yellow_or_green;
     case "sync-indicator-is-neutral-without-authentication" sync_indicator_is_neutral_without_authentication;
     case "settings-navigation-tabs-and-diagnostics-are-lg-owned" settings_navigation_tabs_and_diagnostics_are_lg_owned;

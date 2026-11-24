@@ -224,17 +224,35 @@ let graph_label (current : Model.logseq_model) =
   | Some graph_name -> graph_name
   | None -> tr current "No graph selected"
 
+let displayed_sync_state (current : Model.logseq_model) =
+  match current.pending_sync_error with
+  | None -> current.sync_state
+  | Some detail ->
+    (* The pending pump can combine an asset error and a transport error.
+       A failed server response still takes precedence over a lost connection. *)
+    let reasons = String.split_on_char '\n' detail |> List.map String.trim
+      |> List.filter (fun line -> line <> "") in
+    if reasons <> [] && List.for_all (fun line ->
+         line = "network_unavailable" || String.ends_with ~suffix:": network_unavailable" line)
+         reasons
+    then OfflineState
+    else FailedState detail
+
+let sync_work_pending (current : Model.logseq_model) =
+  let is_capture = function
+    | Model.SendCaptureEffect _ | SendTaggedCaptureEffect _ | SendTaskEffect _ | SendAssetEffect _ -> true
+    | _ -> false in
+  current.has_pending_semantic_operations || current.has_pending_sync_request
+  || List.exists is_capture current.pending_effects
+  || List.exists is_capture current.in_flight_effects
+
 let sync_label (current : Model.logseq_model) =
   let source =
-    if current.pending_sync_error <> None then "Sync failed" else
-    match current.sync_state with
+    match displayed_sync_state current with
     | OfflineState -> "Offline"
     | FailedState _ -> "Sync failed"
     | _ ->
-      if
-        current.has_pending_semantic_operations
-        || current.has_pending_sync_request
-      then "Syncing"
+      if sync_work_pending current then "Syncing"
       else
         (match current.sync_state with
          | SyncedState -> "Up to date"
@@ -244,15 +262,11 @@ let sync_label (current : Model.logseq_model) =
 
 let sync_indicator_label (current : Model.logseq_model) =
   let source =
-    if current.pending_sync_error <> None then "Sync failed" else
-    match current.sync_state with
+    match displayed_sync_state current with
     | OfflineState -> "Not connected"
     | FailedState _ -> "Sync failed"
     | _ ->
-      if
-        current.has_pending_semantic_operations
-        || current.has_pending_sync_request
-      then "Syncing"
+      if sync_work_pending current then "Syncing"
       else
         (match current.sync_state with
          | SyncedState -> "Synced"
@@ -262,8 +276,7 @@ let sync_indicator_label (current : Model.logseq_model) =
   tr current source
 
 let sync_accessibility_identifier (current : Model.logseq_model) =
-  if current.pending_sync_error <> None then "sync.failed" else
-  match current.sync_state with
+  match displayed_sync_state current with
   | FailedState _ -> "sync.failed"
   | OfflineState -> "sync.disconnected"
   | _ -> "sync.connected"
@@ -271,8 +284,7 @@ let sync_accessibility_identifier (current : Model.logseq_model) =
 let sync_indicator_synced (current : Model.logseq_model) =
   current.authentication_state = "signedIn"
   && current.sync_state = SyncedState
-  && not current.has_pending_semantic_operations
-  && not current.has_pending_sync_request
+  && not (sync_work_pending current)
   && current.pending_sync_error = None
 
 let sync_indicator_foreground (current : Model.logseq_model) =
@@ -282,18 +294,16 @@ let sync_indicator_foreground (current : Model.logseq_model) =
 
 let sync_connection_label (current : Model.logseq_model) =
   tr current
-    (match current.sync_state with
+    (match displayed_sync_state current with
      | OfflineState | FailedState _ -> "Disconnected"
      | _ -> "Connected")
 
 let sync_pending_label (current : Model.logseq_model) =
   tr current
-    (if current.pending_sync_error <> None then "Not saved" else
-     if
-       current.has_pending_semantic_operations
-       || current.has_pending_sync_request
-     then "Waiting to save"
-     else "Saved")
+    (match displayed_sync_state current with
+     | FailedState _ when current.pending_sync_error <> None -> "Not saved"
+     | _ when sync_work_pending current -> "Waiting to save"
+     | _ -> "Saved")
 
 let sync_cursor_label (current : Model.logseq_model) =
   match current.applied_server_t with
