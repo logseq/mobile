@@ -24,7 +24,9 @@ import UIKit
         precondition(coordinator.presentAttachment("audio", targetBlockID: "original"))
         let request = coordinator.attachmentRequestID
         runtime.acceptSharedCaptureURL(audioURL)
-        precondition(coordinator.attachmentRequestID == request && coordinator.attachmentTargetBlockID == "original",
+        precondition(coordinator.attachmentService == .audio &&
+                     coordinator.attachmentRequestID == request &&
+                     coordinator.attachmentTargetBlockID == "original",
                      "The lock-screen URL replaced the active recording")
         let existingIDs = Set(existingItems.map(\.id))
         defer {
