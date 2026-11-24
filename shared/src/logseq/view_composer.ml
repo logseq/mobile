@@ -32,8 +32,10 @@ let attachment_picker_items item model_source context send =
 let composer_default_action_foreground = "border"
 
 let composer_action_foreground context =
-  if Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost then "foreground"
-  else composer_default_action_foreground
+  match Lui_ui.host context with
+  | KotlinHost -> "muted-foreground"
+  | SwiftUIHost when Lui_ui.platform context = IOS -> "foreground"
+  | _ -> composer_default_action_foreground
 
 let composer_attachment_control ?(width = 32) ?(height = 44)
     ?(foreground = composer_default_action_foreground) ?(identifier = "button.attachment")
@@ -143,6 +145,7 @@ let composer_task_date_button (context : Lui_ui.ui_context) model_source send fi
   let icon, label = if field = "scheduled" then "calendar", "Scheduled" else "deadline", "Deadline" in
   let foreground (current : Model.logseq_model) =
     if List.mem_assoc field current.composer_task_dates then "foreground"
+    else if Lui_ui.host context = KotlinHost then composer_action_foreground context
     else composer_default_action_foreground in
   icon_button ~icon:(`app icon) ~variant:`ghost
     ~width:(if Lui_ui.host context = KotlinHost then 48 else 32) ~height:44
