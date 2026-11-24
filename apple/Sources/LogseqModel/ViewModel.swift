@@ -439,7 +439,9 @@ private struct CreateSyncGraphPayload: Encodable {
     public private(set) var syncError: LogseqCoreError? {
         didSet {
             if let syncError, syncError != oldValue {
-                LogseqRuntimeLog.shared.append(level: .error, source: .core, message: syncError.message)
+                let offline = syncError.code == pendingSyncNetworkUnavailable ||
+                    pendingSyncErrorIsOffline(syncError.message)
+                LogseqRuntimeLog.shared.append(level: offline ? .info : .error, source: .core, message: syncError.message)
             }
         }
     }
@@ -918,7 +920,8 @@ private struct CreateSyncGraphPayload: Encodable {
             graphEventsRetryDelayMilliseconds = commands.first(where: { $0.type == "retry" })?.delayMs ?? 0
             logger.info("Logseq sync transport ended domain=\(transportError.domain) code=\(transportError.code) closeCode=\(closeCode) ownerCancelled=\(cancelled) lifetimeSeconds=\(Int(Date().timeIntervalSince(startedAt))) retryMs=\(graphEventsRetryDelayMilliseconds)")
             if !cancelled {
-                syncError = LogseqCoreError(code: "websocket_connection_failed",
+                let code = pendingSyncConnectionError(error) ?? "websocket_connection_failed"
+                syncError = LogseqCoreError(code: code,
                     message: LogseqGraphWebSocketFailurePolicy.userFacingMessage(error))
             }
             lastError = nil

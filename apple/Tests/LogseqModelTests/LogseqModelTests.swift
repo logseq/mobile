@@ -23,8 +23,13 @@ private let testEmptySnapshotJSON = """
         #expect(pendingSyncConnectionError(URLError(.notConnectedToInternet)) == "network_unavailable")
         #expect(pendingSyncConnectionError(URLError(.cannotConnectToHost)) == "network_unavailable")
         #expect(pendingSyncConnectionError(URLError(.networkConnectionLost)) == "network_unavailable")
+        #expect(pendingSyncConnectionError(NSError(domain: NSPOSIXErrorDomain,
+            code: Int(POSIXErrorCode.ENOTCONN.rawValue))) == "network_unavailable")
         #expect(pendingSyncConnectionError(URLError(.badServerResponse)) == nil)
         #expect(pendingSyncConnectionError(URLError(.cancelled)) == nil)
+        #expect(pendingSyncConnectionError(POSIXError(.EACCES)) == nil)
+        #expect(pendingSyncErrorIsOffline("upload: network_unavailable\n\nnetwork_unavailable"))
+        #expect(!pendingSyncErrorIsOffline("upload: network_unavailable\nHTTP 401"))
     }
 
     @Test func logseqModel() throws {

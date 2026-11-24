@@ -8,7 +8,24 @@ func pendingSyncConnectionError(_ error: Error) -> String? {
          .cannotFindHost, .dnsLookupFailed, .timedOut, .dataNotAllowed:
         return pendingSyncNetworkUnavailable
     default:
+        break
+    }
+    switch (error as? POSIXError)?.code {
+    case .ENOTCONN, .ECONNRESET, .ECONNREFUSED, .ECONNABORTED, .EPIPE,
+         .ETIMEDOUT, .ENETDOWN, .ENETUNREACH, .EHOSTDOWN, .EHOSTUNREACH:
+        return pendingSyncNetworkUnavailable
+    default:
         return nil
+    }
+}
+
+func pendingSyncErrorIsOffline(_ message: String) -> Bool {
+    // The core may combine several retry failures, some with a resource prefix.
+    let reasons = message.split(whereSeparator: \.isNewline)
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty }
+    return !reasons.isEmpty && reasons.allSatisfy {
+        $0 == pendingSyncNetworkUnavailable || $0.hasSuffix(": " + pendingSyncNetworkUnavailable)
     }
 }
 
