@@ -77,7 +77,7 @@ struct OutlinerSelectionToolbar: View {
         .scrollDisabled(intrinsic <= width)
         .frame(width: width, height: Self.cell)
         .clipShape(Capsule())
-        .modifier(LGLiquidGlassSurface(shape: .capsule))
+        .modifier(LGBottomBarGlass(surface: .selection))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("toolbar.outliner.selection")
     }
@@ -97,7 +97,7 @@ struct OutlinerSelectionToolbar: View {
             try? context.emit(name: "perform-action", values: ["value": .string(action)])
         }
         .frame(width: Self.cell, height: Self.cell)
-        .modifier(LGLiquidGlassSurface(shape: .circle))
+        .modifier(LGBottomBarGlass(surface: .trailing))
     }
 }
 

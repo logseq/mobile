@@ -152,7 +152,7 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send
       ~accessibility_identifier:"row.bottom.capture"
       [
         View_composer.composer_view context model_source send;
-        View_base.with_liquid_glass "circle"
+        View_base.with_liquid_glass "bottom-search"
           (icon_button ~icon:(`app "search") ~variant:`ghost ~size:`icon
              ~width:58 ~height:58 ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "Search")
              ~accessibility_identifier:"button.search"

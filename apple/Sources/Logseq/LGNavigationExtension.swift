@@ -910,27 +910,20 @@ private struct LGNavigationContent: View {
                         if bottomOccupiesLayoutSpace {
                             // The measured toolbar guides caret avoidance without resizing the scroller.
                             sizedBottomChrome
-                        } else if selectionActive {
+                        } else if selectionActive || usesFloatingComposerChrome {
+                            let followsKeyboard = !selectionActive && !hasCollapsedComposer
+                            let hiddenBySearch = searchVisible && !selectionActive
                             VStack {
                                 Spacer(minLength: 0)
                                 floatingBottomChrome
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .ignoresSafeArea(.all, edges: .bottom)
-                            .transition(.opacity)
-                        } else if usesFloatingComposerChrome {
-                            VStack {
-                                Spacer(minLength: 0)
-                                floatingBottomChrome
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .ignoresSafeArea(hasCollapsedComposer ? .all : .container, edges: .bottom)
+                            .ignoresSafeArea(followsKeyboard ? .container : .all, edges: .bottom)
                             // Keep capture controls mounted underneath the native search surface.
-                            .opacity(searchVisible ? 0 : 1)
+                            .opacity(hiddenBySearch ? 0 : 1)
                             .animation(nil, value: searchVisible)
-                            .allowsHitTesting(!searchVisible)
-                            .accessibilityHidden(searchVisible)
-                            .transition(.opacity)
+                            .allowsHitTesting(!hiddenBySearch)
+                            .accessibilityHidden(hiddenBySearch)
                         } else {
                             sizedBottomChrome
                         }
@@ -1448,16 +1441,10 @@ private struct LGNavigationContent: View {
         return childContent(at: bottomChromeIndex)
     }
 
-    @ViewBuilder
     private var floatingBottomChrome: some View {
-        Group {
-            if #available(iOS 26.0, *) {
-                GlassEffectContainer(spacing: 0) { sizedBottomChrome }
-            } else {
-                sizedBottomChrome
-            }
-        }
-        .fixedSize(horizontal: false, vertical: true)
+        sizedBottomChrome
+            .modifier(LGBottomBarGlassLayer(animation: selectionAnimation))
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder

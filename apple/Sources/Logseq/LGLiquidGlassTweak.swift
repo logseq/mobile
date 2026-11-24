@@ -24,6 +24,10 @@ enum LGLiquidGlassTweak {
                 }
                 let shape: LGLiquidGlassSurface.Shape
                 switch shapeName {
+                case "bottom-capture":
+                    return AnyView(content.modifier(LGBottomBarGlass(surface: .capture)))
+                case "bottom-search":
+                    return AnyView(content.modifier(LGBottomBarGlass(surface: .trailing)))
                 case "circle":
                     shape = .circle
                 case "container":
@@ -43,6 +47,83 @@ enum LGLiquidGlassTweak {
                 return AnyView(content.modifier(LGLiquidGlassSurface(shape: shape)))
             }
         )
+    }
+}
+
+private extension EnvironmentValues {
+    @Entry var lgCollectBottomBarGlass = false
+}
+
+struct LGBottomBarGlass: ViewModifier {
+    enum Surface {
+        case capture
+        case selection
+        case trailing
+    }
+
+    enum Position: CaseIterable { case leading, trailing }
+
+    let surface: Surface
+    @Environment(\.lgCollectBottomBarGlass) private var collectsGlass
+
+    private var position: Position { surface == .trailing ? .trailing : .leading }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if collectsGlass {
+            content.anchorPreference(key: LGBottomBarGlassBounds.self, value: .bounds) { anchor in
+                [position: anchor]
+            }
+        } else if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.interactive(surface != .capture), in: .capsule)
+        } else if surface == .capture {
+            content.background(.regularMaterial, in: Capsule())
+        } else {
+            content.modifier(LGLiquidGlassSurface(shape: surface == .trailing ? .circle : .capsule))
+        }
+    }
+}
+
+private struct LGBottomBarGlassBounds: PreferenceKey {
+    static let defaultValue: [LGBottomBarGlass.Position: Anchor<CGRect>] = [:]
+
+    static func reduce(value: inout Value, nextValue: () -> Value) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+struct LGBottomBarGlassLayer: ViewModifier {
+    let animation: Animation?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: 0) {
+                content.environment(\.lgCollectBottomBarGlass, true)
+            }
+            .backgroundPreferenceValue(LGBottomBarGlassBounds.self) { anchors in
+                GeometryReader { geometry in
+                    // The model replaces the controls. Their glass stays mounted
+                    // and animates to the new bounds behind the incoming controls.
+                    GlassEffectContainer(spacing: 0) {
+                        ForEach(LGBottomBarGlass.Position.allCases, id: \.self) { position in
+                            if let anchor = anchors[position] {
+                                let frame = geometry[anchor]
+                                Color.clear
+                                    .frame(width: frame.width, height: frame.height)
+                                    .glassEffect(.regular, in: .capsule)
+                                    .position(x: frame.midX, y: frame.midY)
+                                    .animation(animation, value: frame)
+                            }
+                        }
+                    }
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        } else {
+            content
+        }
     }
 }
 

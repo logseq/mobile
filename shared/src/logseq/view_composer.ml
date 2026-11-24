@@ -324,10 +324,10 @@ let collapsed_composer model_source (context : Lui_ui.ui_context) send : t =
           ~accessibility_identifier:"button.composer.expand"
           ~on_press:(press send Model.ExpandComposer) [] ]
   else
-  row ~grow:1.0 ~height:58 ~gap:0 ~cross:`center
-    ~background:"glass" ~corner_radius:999
-    ~border_width:(if Lui_ui.host context = KotlinHost then 1 else 0)
-    ~border_color:"border"
+  let native_glass = Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost in
+  let surface =
+    row ~grow:1.0 ~height:58 ~gap:0 ~cross:`center ~corner_radius:999
+    ?background:(if native_glass then None else Some "glass")
     [
       with_press (press send Model.ExpandComposer)
         (box ~width:8 ~height:58 []);
@@ -338,6 +338,8 @@ let collapsed_composer model_source (context : Lui_ui.ui_context) send : t =
         ~label:(View_base.tr (Signal.sample model_source) "Capture") ~accessibility_identifier:"button.composer.expand"
         ~on_press:(press send Model.ExpandComposer) ~text:(View_base.tr (Signal.sample model_source) "Capture") [];
     ]
+  in
+  View_base.with_liquid_glass "bottom-capture" surface
 
 let composer_view (context : Lui_ui.ui_context) model_source send : t =
   box ~accessibility_identifier:"surface.composer.root" ~grow:1.0
