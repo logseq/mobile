@@ -192,7 +192,8 @@ let composer_task_date_dialog model_source send : t =
       let submit = function
         | `Int value -> choose name (Some value)
         | `Assoc ["day", `Int day] ->
-          choose name (Some (Int64.to_int (Dev_query.Date_time_util.journal_day_to_local_ms day)))
+          let current = List.assoc_opt name (Signal.sample model_source).Model.composer_task_dates in
+          choose name (Journal_task_dates.reschedule_on_day day current)
         | _ -> choose name None in
       task_date_sheet context parent ~model_source ~name ~targets:1 ~saved_dates
         ~ready:(constant true) ~waiting:(constant false) ~feedback:(constant None) ~close ~submit)
