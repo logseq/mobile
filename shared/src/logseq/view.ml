@@ -325,7 +325,7 @@ let property_date_schema () =
 let task_date_sheet_schema () =
   let open Lui_protocol in
   let open Lui_extension in
-  component "native-task-date-sheet" [profile IOS SwiftUIHost]
+  component "native-task-date-sheet" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost]
     false [] [property "payload" StringScalar true None]
     [event "clear" []; event "choose" [event_field "value" StringScalar true];
       event "submit" [event_field "value" StringScalar true]; event "dismiss" []]

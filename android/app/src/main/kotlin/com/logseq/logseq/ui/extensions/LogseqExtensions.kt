@@ -101,6 +101,7 @@ fun logseqExtensionRegistry(
     val youtubeStarts = androidx.compose.runtime.mutableStateMapOf<String, Int>()
     registerNodeIcon()
     registerProperties()
+    registerTaskDateSheet()
     registerPdfWorkspace(loadImage)
     register(
         "outliner-row-swipe",

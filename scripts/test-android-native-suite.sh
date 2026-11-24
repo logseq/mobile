@@ -24,6 +24,7 @@ _build/default/shared/native/logseq_e2e_seed.exe "$fixture/graph.sqlite" --compo
 tests=(
   "$app_id.AndroidBackgroundSyncTest"
   "$app_id.AndroidEditorKeyboardTest"
+  "$app_id.AndroidTaskDateSheetTest"
   "$app_id.AndroidDurableShareTest"
 )
 selector=$(IFS=,; echo "${tests[*]}")
