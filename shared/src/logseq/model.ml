@@ -1803,7 +1803,7 @@ let resolve_failed_effect (current : logseq_model) eff message =
     else {current with capture_confirmation = None;
       composer_draft = (if current.composer_draft = "" then capture.capture_text else current.composer_draft);
       composer_tags = (if current.composer_tags = [] then capture.capture_tags else current.composer_tags);
-      composer_task_dates = (if current.composer_task_dates = [] then capture.capture_dates
+      composer_task_dates = (if current.composer_draft = "" && current.composer_task_dates = [] then capture.capture_dates
         else current.composer_task_dates)}
   | SendCaptureEffect _ | SendTaskEffect _ ->
     { current with capture_confirmation = None }
