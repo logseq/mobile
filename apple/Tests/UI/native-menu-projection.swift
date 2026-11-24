@@ -32,14 +32,16 @@ import Foundation
         precondition(find("menu.graph.work", under: graphMenu.id)?.isSelected == true)
         precondition(find("menu.graph.preparing", under: graphMenu.id)?.isEnabled == false)
         try press("button.composer.expand")
-        for identifier in ["button.attachment", "button.task-status"] {
+        for identifier in ["button.attachment"] {
             let trigger = find(identifier)!
             precondition(trigger.children.contains { renderer.backend.model(id: $0)?.kind == .contextMenu })
         }
-        try press("button.task-status.option.todo")
-        precondition(find("button.task-status.option.todo")?.isSelected == true)
-        try press("button.task-status.clear")
-        precondition(find("button.task-status.option.todo")?.isSelected == false)
+        try press("button.task-status")
+        precondition(find("button.task-status")?.isSelected == true)
+        precondition(find("button.composer.scheduled") != nil)
+        try press("button.task-status")
+        precondition(find("button.task-status")?.isSelected == false)
+        precondition(find("button.composer.scheduled") == nil)
         for service in ["files", "camera", "photos", "audio"] {
             precondition(find("button.attachment." + service)?.kind == .menuItem)
         }
@@ -56,6 +58,6 @@ import Foundation
             }
         }
         precondition(attachments == 1)
-        print("PASS: real core menus validate and preserve selection, disabled graphs, clear status, and attachment actions")
+        print("PASS: real core menus validate and preserve selection, disabled graphs, the task todo toggle, and attachment actions")
     }
 }
