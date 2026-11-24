@@ -607,7 +607,7 @@ let extension_event node identifier name text value =
     | "outliner-block-row", "edit" when value >= 0 ->
       ["uuid", StringValue text; "caret-utf16-offset", IntValue value]
     | ("outliner-block-row" | "outliner-block-content"), "menu-action" -> ["payload", StringValue text]
-    | "native-outliner-selection-toolbar", "select-status" -> ["value", StringValue text]
+    | "native-outliner-selection-toolbar", ("perform-action" | "select-status") -> ["value", StringValue text]
     | "outliner-block-row", _ -> ["uuid", StringValue text]
     | "outliner-block-content", "open-node"
     | "outliner-block-content", "drag-start"

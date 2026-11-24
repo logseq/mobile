@@ -10388,12 +10388,17 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
       (5, "app:toolbar-copy");
       (6, "app:toolbar-tag");
     ];
-  let menu = List.hd (List.rev selection_buttons) in
-  check_eq ~msg:"the trailing control is the selection menu"
-    (property_string renderer menu Lui_protocol.AccessibilityIdentifier)
-    "button.outliner.selection.more";
-  check ~msg:"Cut is reachable in the menu"
-    (descendant_with_identifier renderer menu "button.outliner.selection.menu.cut" <> -1);
+  let native_toolbar = extension_node application "native-outliner-selection-toolbar" in
+  let menu_actions = match extension_property application native_toolbar "more-actions" with
+    | Some (Lui_protocol.StringValue value) -> Yojson.Basic.(Util.to_list (from_string value))
+    | _ -> failwith "Native selection menu actions missing" in
+  let open Yojson.Basic.Util in
+  check_eq ~msg:"the native menu exposes the selection actions in order"
+    (List.map (member "action") menu_actions)
+    [`String "copy"; `String "cut"; `String "copyReference"; `String "copyURL"; `String "delete"];
+  check_eq ~msg:"the native menu marks Delete as destructive"
+    (menu_actions |> List.find (fun item -> member "action" item = `String "delete") |> member "destructive")
+    (`Bool true);
   let done_button = descendant_with_identifier renderer navigation "button.outliner.selection.done" in
   check ~msg:"the navigation bar offers Done during selection" (done_button <> -1);
   check_eq ~msg:"selection replaces Capture"
@@ -10403,10 +10408,13 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
     (descendant_with_identifier renderer chrome "toolbar.outliner.editor")
     (-1);
   dispatch application (Lui_protocol.Press copy_button);
+  dispatch application (Lui_protocol.ExtensionEvent
+    (native_toolbar, "native-outliner-selection-toolbar", "perform-action",
+      Lui_protocol.String_map.singleton "value" (Lui_protocol.StringValue "delete")));
   flush application;
   check_eq ~msg:"selection toolbar actions cross the typed core boundary"
     (App.model application).pending_effects
-    [ Model.OutlinerToolbarEffect (1, "copy") ]
+    [ Model.OutlinerToolbarEffect (1, "copy"); Model.OutlinerToolbarEffect (2, "delete") ]
 
 let typed_toolbars_keep_reactive_width_and_labels () =
   let application = App.create (ios_backend ()) in

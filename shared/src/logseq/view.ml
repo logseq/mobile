@@ -364,8 +364,10 @@ let extension_registry () =
   Lui_extension.register_component registry (let open Lui_protocol in
     let open Lui_extension in
     component "native-outliner-selection-toolbar" [profile IOS SwiftUIHost] true []
-      [property "status-label" StringScalar true None; property "statuses" StringScalar true None]
-      [event "select-status" [event_field "value" StringScalar true]]);
+      [property "more-actions" StringScalar true None; property "more-label" StringScalar true None;
+       property "status-label" StringScalar true None; property "statuses" StringScalar true None]
+      [event "perform-action" [event_field "value" StringScalar true];
+       event "select-status" [event_field "value" StringScalar true]]);
   Lui_extension.register_component registry
     (outliner_block_content_schema ());
   Lui_extension.register_component registry (let open Lui_protocol in

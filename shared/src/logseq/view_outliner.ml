@@ -1331,17 +1331,16 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
              ~accessibility_identifier:("button.outliner.selection.status." ^ status.uuid)
              ~on_press:(fun () -> ignore (send (Model.SetSelectedOutlinerTaskStatus status.uuid))) [])
            current.task_statuses) in
-      let menu_item ?(variant = `ghost) icon label action =
-        dropdown_menu_item ~icon:(`app icon) ~variant ~text:(View_base.tr current label)
-          ~accessibility_identifier:("button.outliner.selection.menu." ^ action)
-          ~on_press:(fun () -> ignore (send (Model.PerformOutlinerToolbarAction action))) [] in
-      let more = toolbar_menu ~icon:(`app "more-horiz") ~label:(View_base.tr current "More actions")
-        ~accessibility_identifier:"button.outliner.selection.more" [
-          menu_item "toolbar-copy" "Copy" "copy";
-          menu_item "toolbar-cut" "Cut" "cut";
-          menu_item "toolbar-copy-reference" "Copy reference" "copyReference";
-          menu_item "toolbar-copy-url" "Copy URL" "copyURL";
-          menu_item ~variant:`destructive "toolbar-delete" "Delete" "delete";
+      let perform_action action = ignore (send (Model.PerformOutlinerToolbarAction action)) in
+      let more_label = View_base.tr current "More actions" in
+      let more_actions =
+        List.map (fun (icon, label, action, destructive) ->
+          icon, View_base.tr current label, action, destructive) [
+          "toolbar-copy", "Copy", "copy", false;
+          "toolbar-cut", "Cut", "cut", false;
+          "toolbar-copy-reference", "Copy reference", "copyReference", false;
+          "toolbar-copy-url", "Copy URL", "copyURL", false;
+          "toolbar-delete", "Delete", "delete", true;
         ] in
       let actions = [
         status_menu;
@@ -1356,18 +1355,31 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
       ] in
       let label = View_base.tr current "Outliner selection" in
       if android then
+        let more = toolbar_menu ~icon:(`app "more-horiz") ~label:more_label
+          ~accessibility_identifier:"button.outliner.selection.more"
+          (List.map (fun (icon, title, action, destructive) ->
+            let variant = if destructive then `destructive else `ghost in
+            dropdown_menu_item ~icon:(`app icon) ~variant ~text:title
+              ~accessibility_identifier:("button.outliner.selection.menu." ^ action)
+              ~on_press:(fun () -> perform_action action) []) more_actions) in
         row ~grow:1.0 ~cross:`center ~gap:8
           ~accessibility_identifier:"surface.outliner.selection-toolbar" [
             box ~grow:1.0 [
               toolbar ~orientation:`horizontal ~label
                 ~accessibility_identifier:"toolbar.outliner.selection" ~toolbar_gap:2 actions;
             ];
-            toolbar ~orientation:`horizontal ~label:(View_base.tr current "More actions") [more];
+            toolbar ~orientation:`horizontal ~label:more_label [more];
           ]
       else
         custom (fun context parent ->
           let node = Lui_ui.extension context "native-outliner-selection-toolbar" in
           attach context parent node;
+          Lui_ui.extension_property context node "more-label" (StringValue more_label);
+          Lui_ui.extension_property context node "more-actions" (StringValue (Yojson.Basic.to_string (`List
+            (List.map (fun (icon, title, action, destructive) -> `Assoc [
+              "action", `String action; "title", `String title;
+              "icon", `String icon; "destructive", `Bool destructive;
+            ]) more_actions))));
           Lui_ui.extension_property context node "status-label" (StringValue (View_base.tr current "Status"));
           Lui_ui.extension_property context node "statuses" (StringValue (Yojson.Basic.to_string (`List
             (List.map (fun (status : Model.task_status) -> `Assoc [
@@ -1380,10 +1392,15 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
               (match String_map.find_opt "value" values with
                | Some (StringValue uuid) -> ignore (send (Model.SetSelectedOutlinerTaskStatus uuid))
                | _ -> ())
+            | ExtensionEvent (_, _, "perform-action", values) ->
+              (match String_map.find_opt "value" values with
+               | Some (StringValue action) when List.exists (fun (_, _, key, _) -> key = action) more_actions ->
+                 perform_action action
+               | _ -> ())
             | _ -> ());
           ignore (mount context ~parent:node
             (toolbar ~orientation:`horizontal ~label ~accessibility_identifier:"toolbar.outliner.selection"
-              ~toolbar_gap:2 ~placement:`bottom (actions @ [more])));
+              ~toolbar_gap:2 ~placement:`bottom actions));
           node))
       model_source
   in
