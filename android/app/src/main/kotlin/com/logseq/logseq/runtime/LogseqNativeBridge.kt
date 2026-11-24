@@ -1,5 +1,6 @@
 package com.logseq.logseq.runtime
 
+import android.os.Build
 import android.os.Trace
 import android.util.Log
 import com.logseq.logseq.NativeCore
@@ -159,7 +160,8 @@ internal class LogseqNativeBridge(
     }
 
     private fun rpcMethod(request: String): String =
-        if (!Trace.isEnabled()) "" else RPC_METHOD.find(request)?.groupValues?.get(1) ?: "unknown"
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || !Trace.isEnabled()) ""
+        else RPC_METHOD.find(request)?.groupValues?.get(1) ?: "unknown"
 
     private companion object {
         const val TAG = "LogseqBridge"

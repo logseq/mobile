@@ -23,7 +23,9 @@ class BaselineProfileGenerator {
     @Test fun journalHome() = rule.collect(packageName = PACKAGE, includeInStartupProfile = true) {
         pressHome()
         startActivityAndWait()
-        device.wait(Until.hasObject(By.res("list.outliner")), 15_000)
+        check(device.wait(Until.hasObject(By.res("list.outliner")), 15_000)) {
+            "The journal list did not appear. Sign in and open a graph first."
+        }
         val x = device.displayWidth / 2
         val (top, bottom) = device.displayHeight / 4 to device.displayHeight * 3 / 4
         repeat(4) {
@@ -34,12 +36,10 @@ class BaselineProfileGenerator {
             device.swipe(x, top, x, bottom, 10)
             SystemClock.sleep(400)
         }
-        device.findObject(By.res("button.sidebar"))?.let { sidebar ->
-            sidebar.click()
-            SystemClock.sleep(800)
-            device.pressBack()
-            SystemClock.sleep(800)
-        }
+        checkNotNull(device.findObject(By.res("button.sidebar"))) { "The sidebar button is missing" }.click()
+        SystemClock.sleep(800)
+        device.pressBack()
+        SystemClock.sleep(800)
     }
 
     private companion object {
