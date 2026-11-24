@@ -684,6 +684,25 @@ let task_date_commands_use_the_native_sheet () =
       let key, load_id, load = List.find_map (function
         | Model.LoadPropertyValuesEffect (id, key, payload) -> Some (key, id, payload)
         | _ -> None) (effects ()) |> Option.get in
+      let dismiss_id, dismiss = match List.find_map (function
+        | Model.EditorOutlinerEventEffect (id, payload)
+          when member "type" (J.from_string payload) = `String "dismissAutocomplete" -> Some (id, payload)
+        | _ -> None) (effects ()) with
+        | Some dismissal -> dismissal
+        | None -> fail "Expected a queued autocomplete dismissal" in
+      check ~msg:"the picker is active before the dismissal and load" (dismiss_id < load_id
+        && member "kind" (member "autocomplete" (state (snapshot session))) = `String field);
+      send (Model.DequeueEffect dismiss_id);
+      let response = Rpc_test.dispatch_json session "executeEffect" (J.to_string (`Assoc [
+        "id", `Int dismiss_id; "kind", `String "editor-outliner-event"; "text", `String dismiss])) in
+      let dismissed = result response in
+      check_eq ~msg:"the dismissal clears the core picker" (member "autocomplete" (state dismissed)) `Null;
+      check_eq ~msg:"the dismissal preserves the active draft" (member "title" (draft dismissed))
+        (`String "Edited task ");
+      apply (J.to_string response);
+      send (Model.ResolveEffect (dismiss_id, true, ""));
+      check_eq ~msg:"the native sheet remains open after autocomplete dismissal"
+        (App_test.extension_node app identifier) sheet;
       ignore (event session "caretMoved" ["caretUTF16Offset", `Int 12]);
       apply (Rpc_session.snapshot_visible session);
       check_eq ~msg:"a late caret event does not close the native task date sheet"
