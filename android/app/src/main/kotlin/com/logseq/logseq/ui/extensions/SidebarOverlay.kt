@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.RenderEffect
@@ -94,7 +95,15 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
         val width = minOf((context.int("width") ?: 320).dp, maxWidth * 0.80f)
         val widthPx = with(LocalDensity.current) { width.toPx() }.coerceAtLeast(1f)
         val blurPx = with(LocalDensity.current) { 12.dp.toPx() }
+        val viewportWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
         val direction = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1f else -1f
+        val glassTint = Brush.horizontalGradient(
+            0f to (if (dark) colors.surfaceContainer else colors.background).copy(alpha = if (dark) 0.68f else 0.78f),
+            0.65f to colors.background.copy(alpha = if (dark) 0.58f else 0.68f),
+            1f to colors.background.copy(alpha = if (dark) 0.36f else 0.47f),
+            startX = if (direction > 0f) 0f else viewportWidthPx,
+            endX = if (direction > 0f) viewportWidthPx else 0f,
+        )
         fun drawerFraction(): Float {
             val offset = drawer.currentOffset
             return if (offset.isFinite()) (1f + offset / widthPx).coerceIn(0f, 1f)
@@ -139,12 +148,12 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
             Box(Modifier.fillMaxSize()) {
                 CompositionLocalProvider(LocalLuiScrollingEnabled provides !obscured) {
                     Box(
-                        Modifier.fillMaxSize().blur(20.dp * progress)
+                        Modifier.fillMaxSize().blur(26.dp * progress)
                             .then(if (obscured) Modifier.semantics { hideFromAccessibility() } else Modifier),
                     ) { context.child(main) }
                 }
                 Canvas(Modifier.fillMaxSize()) {
-                    drawRect(colors.background.copy(alpha = revealFraction() * if (dark) 0.72f else 0.86f))
+                    drawRect(brush = glassTint, alpha = revealFraction())
                 }
             }
         }

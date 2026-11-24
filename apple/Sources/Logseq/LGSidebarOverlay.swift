@@ -212,19 +212,29 @@ private struct LGSidebarLayers: View, Animatable {
         let visible = presentation.sample(progress)
         let blocksMain = open || visible > 0.001
         let dark = colorScheme == .dark
-        let background = LogseqThemePolicy.palette(mode: .system, systemIsDark: dark, darkTheme: darkTheme).background
+        let palette = LogseqThemePolicy.palette(mode: .system, systemIsDark: dark, darkTheme: darkTheme)
         ZStack(alignment: .leading) {
             main
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.ultraThinMaterial)
-                .blur(radius: reduceTransparency ? 0 : visible * 20, opaque: true)
+                .blur(radius: reduceTransparency ? 0 : visible * 26, opaque: true)
                 .allowsHitTesting(!blocksMain)
                 .accessibilityHidden(blocksMain)
 
-            background
-                .opacity(visible * (reduceTransparency ? 1 : (dark ? 0.72 : 0.86)))
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+            Group {
+                if reduceTransparency {
+                    palette.background
+                } else {
+                    LinearGradient(stops: [
+                        .init(color: (dark ? palette.surface : palette.background).opacity(dark ? 0.68 : 0.78), location: 0),
+                        .init(color: palette.background.opacity(dark ? 0.58 : 0.68), location: 0.65),
+                        .init(color: palette.background.opacity(dark ? 0.36 : 0.47), location: 1),
+                    ], startPoint: .leading, endPoint: .trailing)
+                }
+            }
+            .opacity(visible)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
 
             if blocksMain {
                 Button(action: dismiss) { Color.clear.contentShape(Rectangle()) }
