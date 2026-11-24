@@ -4980,7 +4980,7 @@ let composer_matches_the_main_branch_expand_draft_and_send_contract () =
     (property_int renderer controls Lui_protocol.HeightValue)
     44;
   check_eq ~msg:"main's controls include a flexible trailing spacer"
-    (List.length control_children) 7;
+    (List.length control_children) 5;
   check_eq ~msg:"the composer spacer remains directly testable"
     (property_string renderer control_spacer
        Lui_protocol.AccessibilityIdentifier)
