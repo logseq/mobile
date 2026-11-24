@@ -2,7 +2,6 @@ package com.logseq.logseq.runtime
 
 import android.app.Activity
 import android.graphics.BitmapFactory
-import android.os.SystemClock
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,6 +19,7 @@ import com.logseq.logseq.isNetworkUnavailable
 import com.logseq.logseq.ui.extensions.LogseqDialogs
 import dev.lui.LuiBackend
 import dev.lui.LuiEvent
+import dev.lui.LuiPatchBatch
 import kotlinx.coroutines.async
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
@@ -43,8 +43,6 @@ import com.logseq.logseq.AndroidAppEntryParser
 internal class LogseqRuntime(
     private val activity: Activity,
     parentScope: CoroutineScope,
-    private val patchDispatcher: kotlinx.coroutines.CoroutineDispatcher =
-        Dispatchers.Default.limitedParallelism(1),
 ) {
     private val runtimeJob = SupervisorJob(parentScope.coroutineContext[kotlinx.coroutines.Job])
     private val scope = CoroutineScope(parentScope.coroutineContext + runtimeJob)
@@ -137,7 +135,8 @@ internal class LogseqRuntime(
         )
     }
     private val patchFilter = LuiPatchFilter(backend)
-    private val bridge = LogseqNativeBridge(onPatch = ::applyPatch)
+    private val bridge = LogseqNativeBridge(onPatch = ::deliverPatch)
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var awaitingRendererSnapshot = false
     private var rendererSnapshotPending = false
 
@@ -219,7 +218,7 @@ internal class LogseqRuntime(
                         graphProgress = current.copy(phase = phase, completed = completed, total = total)
                 }
                 // Prepare the retained tree while the activity draws its first frame.
-                val (storage, rootNode, hasStoredSession, hasInitialWidgetBlock) = withContext(patchDispatcher) {
+                val (storage, rootNode, hasStoredSession, hasInitialWidgetBlock) = withContext(NativeCoreThread.dispatcher) {
                     val (authenticationCode, savedStorage, pendingWidgetBlock) = withContext(Dispatchers.IO) {
                         Triple(
                             platformEffects.initialAuthenticationCode(),
@@ -229,7 +228,7 @@ internal class LogseqRuntime(
                     }
                     val root = bridge.initialize(authenticationCode = authenticationCode)
                     for (update in savedStorage.startupHostUpdates) {
-                        applyPatch(bridge.applyHostUpdate(update.kind, update.payload))
+                        deliverPatch(bridge.applyHostUpdate(update.kind, update.payload))
                     }
                     InitialState(savedStorage, root, authenticationCode == 3, pendingWidgetBlock)
                 }
@@ -265,12 +264,15 @@ internal class LogseqRuntime(
                 )
                 val drain = NativeEffectDrain(
                     runtime = object : NativeEffectRuntime {
-                        override fun takeEffect() = bridge.takeEffect()
-                        override fun resolveEffect(id: Long, succeeded: Boolean, message: String) =
-                            bridge.resolveEffect(id, succeeded, message)
-                        override fun applySnapshot(response: String) = bridge.applySnapshot(response)
-                        override fun applyHostUpdate(kind: String, payload: String) =
-                            bridge.applyHostUpdate(kind, payload)
+                        override suspend fun takeEffect() = onCore { bridge.takeEffect() }
+                        // Patches decode on the core thread and reach the main thread
+                        // before the drain resumes, so the returned string is empty.
+                        override suspend fun resolveEffect(id: Long, succeeded: Boolean, message: String) =
+                            onCore { deliverPatch(bridge.resolveEffect(id, succeeded, message)); "" }
+                        override suspend fun applySnapshot(response: String) =
+                            onCore { deliverPatch(bridge.applySnapshot(response)); "" }
+                        override suspend fun applyHostUpdate(kind: String, payload: String) =
+                            onCore { deliverPatch(bridge.applyHostUpdate(kind, payload)); "" }
                     },
                     execute = NativeEffectExecutor(::executeEffect),
                     applyPatch = ::applyPatch,
@@ -354,23 +356,37 @@ internal class LogseqRuntime(
     // --- LUI event dispatch ---
 
     private fun dispatch(event: LuiEvent) {
-        dispatchLuiEvent(event, bridge)
+        // Pending editor text must reach the core before the press it precedes.
+        if (event is LuiEvent.Press) NativeEditorInput.flush()
+        NativeCoreThread.execute { dispatchLuiEvent(event, bridge) }
         val drain = effectDrain ?: return
         scope.launch { drain.drain(scope) }
     }
 
-    @Synchronized
-    private fun applyPatch(patch: String) {
+    private suspend fun <T> onCore(block: () -> T): T = withContext(NativeCoreThread.dispatcher) { block() }
+
+    /** Apply a host update on the core thread and queue its patch for the main thread. */
+    private suspend fun hostUpdate(kind: String, payload: String) =
+        onCore { deliverPatch(bridge.applyHostUpdate(kind, payload)) }
+
+    // Core thread: decode here, then apply on the main thread in production order.
+    private fun deliverPatch(patch: String) {
         if (patch.isEmpty()) return
+        val batch = runCatching { traced("lui.parsePatch") { LuiPatchBatch.parse(patch) } }
+        mainHandler.post { applyPatch(batch) }
+    }
+
+    private fun applyPatch(patch: String) {
+        if (patch.isNotEmpty()) applyPatch(runCatching { LuiPatchBatch.parse(patch) })
+    }
+
+    private fun applyPatch(batch: Result<LuiPatchBatch>) {
         if (awaitingRendererSnapshot) {
             requestRendererSnapshot()
             return
         }
         try {
-            val t0 = SystemClock.elapsedRealtimeNanos()
-            patchFilter.applyJson(patch)
-            val ms = (SystemClock.elapsedRealtimeNanos() - t0) / 1_000_000.0
-            if (ms > 20) Log.d("GraphLifecycle", "applyJson took ${"%.1f".format(ms)}ms for ${patch.length} chars")
+            traced("lui.applyPatch") { patchFilter.apply(batch.getOrThrow()) }
         } catch (error: Throwable) {
             awaitingRendererSnapshot = true
             Log.w("LogseqRuntime", "Rejected UI delta; requesting authoritative snapshot", error)
@@ -381,16 +397,19 @@ internal class LogseqRuntime(
     private fun requestRendererSnapshot() {
         if (rendererSnapshotPending) return
         rendererSnapshotPending = true
-        try {
-            bridge.resync(::applyRendererSnapshot)
-        } catch (failure: Throwable) {
-            rendererSnapshotPending = false
-            reportError(failure)
-            startupError = failure
+        NativeCoreThread.execute {
+            try {
+                bridge.resync { snapshot -> mainHandler.post { applyRendererSnapshot(snapshot) } }
+            } catch (failure: Throwable) {
+                mainHandler.post {
+                    rendererSnapshotPending = false
+                    reportError(failure)
+                    startupError = failure
+                }
+            }
         }
     }
 
-    @Synchronized
     private fun applyRendererSnapshot(snapshot: String) {
         rendererSnapshotPending = false
         try {
@@ -404,10 +423,9 @@ internal class LogseqRuntime(
     }
 
     private suspend fun applyCoreResponse(response: String) {
-        // Patch decode + retained-tree mutation are expensive on big graphs
-        // (~0.5s for a 461KB journal patch); keep them off the main thread on a
-        // single-threaded dispatcher so patch ordering stays serial.
-        withContext(patchDispatcher) { applyPatch(bridge.applySnapshot(response)) }
+        // Decode big snapshot patches (~0.5s for a 461KB journal) on the core
+        // thread; the retained tree is only mutated on the main thread.
+        onCore { deliverPatch(bridge.applySnapshot(response)) }
         outlinerCommands.deliver(response)
         trackSyncState(response)
         ensureGraphEventsSync()
@@ -791,14 +809,12 @@ internal class LogseqRuntime(
             val restoredAuthentication = restoreAndroidAuthentication(hasStoredSession, platformEffects::restoreAccessToken)
             hasAuthenticatedSession = restoredAuthentication.hasSession
             if (hasStoredSession && !restoredAuthentication.hasSession) {
-                applyPatch(
-                    bridge.applyHostUpdate(
-                        kind = "authentication",
-                        payload = JSONObject()
-                            .put("state", "signedOut")
-                            .put("errorMessage", JSONObject.NULL)
-                            .toString(),
-                    )
+                hostUpdate(
+                    kind = "authentication",
+                    payload = JSONObject()
+                        .put("state", "signedOut")
+                        .put("errorMessage", JSONObject.NULL)
+                        .toString(),
                 )
                 AndroidLaunchMetrics.report("authentication_published")
             }
@@ -814,11 +830,9 @@ internal class LogseqRuntime(
             configuredAccessToken = restoredAuthentication.accessToken
             applyCoreResponse(restored.catalogResponse)
             graphCatalogAutoRefresh?.rememberCatalog(restored.catalogResponse)
-            applyPatch(
-                bridge.applyHostUpdate(
-                    kind = "local-graph-ids",
-                    payload = org.json.JSONArray(restored.localGraphIds).toString(),
-                )
+            hostUpdate(
+                kind = "local-graph-ids",
+                payload = org.json.JSONArray(restored.localGraphIds).toString(),
             )
             hasOpenGraph = restored.graphResponse != null
             restored.graphResponse?.let { applyCoreResponse(it) }
@@ -836,7 +850,7 @@ internal class LogseqRuntime(
                     reportWidgetLinkError(error)
                 }
             }
-            applyPatch(bridge.applyHostUpdate("graph-loading", "false"))
+            hostUpdate("graph-loading", "false")
             // The catalog patch carries the authentication snapshot the UI
             // renders against; by now auth state is published either way.
             AndroidLaunchMetrics.report("authentication_published")
@@ -852,7 +866,7 @@ internal class LogseqRuntime(
             throw cancelled
         } catch (error: Throwable) {
             reportError(error)
-            applyPatch(bridge.applyHostUpdate("graph-loading", "false"))
+            hostUpdate("graph-loading", "false")
         } finally {
             isRestoringInitialGraph = false
             isOpeningInitialWidgetBlock = false
@@ -889,7 +903,7 @@ internal class LogseqRuntime(
         logRuntime("info", "ui", "Handling Android app entry ${entry.kind}")
         when (entry.kind) {
             AndroidAppEntryKind.OpenCapture ->
-                applyPatch(bridge.applyHostUpdate("open-capture", "{}"))
+                hostUpdate("open-capture", "{}")
             AndroidAppEntryKind.OpenJournal -> applyAppEntryCoreRequest(
                 JSONObject()
                     .put("apiVersion", 1)
@@ -945,10 +959,10 @@ internal class LogseqRuntime(
             return
         }
         result?.optString("deepLinkNodeUuid")?.takeIf { it.isNotEmpty() && it != "null" }?.let { uuid ->
-            applyPatch(bridge.applyHostUpdate("open-node", JSONObject.quote(uuid)))
+            hostUpdate("open-node", JSONObject.quote(uuid))
         }
         decoded.optJSONObject("result")?.optString("deepLinkQuickAction")?.takeIf(String::isNotEmpty)?.let { action ->
-            applyPatch(bridge.applyHostUpdate("open-quick-action", JSONObject.quote(action)))
+            hostUpdate("open-quick-action", JSONObject.quote(action))
         }
     }
 
@@ -1067,7 +1081,7 @@ internal class LogseqRuntime(
         val confirmed = com.logseq.logseq.ui.extensions.LogseqDialogs
             .confirmDeletion(blockIds.size > 1)
         if (confirmed) {
-            applyPatch(bridge.applyHostUpdate("confirm-outliner-delete", "null"))
+            hostUpdate("confirm-outliner-delete", "null")
             effectDrain?.let { drain -> scope.launch { drain.drain(scope) } }
         }
     }
@@ -1124,7 +1138,7 @@ internal class LogseqRuntime(
             graphProgress = null
             if (ownsCore) {
                 AndroidGraphImportProgress.listener = null
-                try { bridge.close() }
+                try { withContext(NativeCoreThread.dispatcher) { bridge.close() } }
                 finally {
                     ownsCore = false
                     NativeCoreSession.gate.unlock(this@LogseqRuntime)
