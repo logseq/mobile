@@ -9,7 +9,7 @@ val capture_and_search_row :
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val main_bottom_chrome :
-  Lui_ui.ui_context ->
+  ?search_page:bool -> Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val root_outliner_view :

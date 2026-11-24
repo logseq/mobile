@@ -19,6 +19,7 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -134,18 +135,21 @@ class AndroidOutlinerToolbarTest {
         }
     }
 
-    @Test fun selectionOverflowKeepsUnselectReachableAndEmitsOneAction() {
+    @Test fun selectionMenuAndHeaderDoneStayReachable() {
         toolbar(editing = false)
-        val unselect = ui.onNodeWithTag("button.outliner.selection.unselect")
-        unselect.assertIsDisplayed()
-        val before = unselect.fetchSemanticsNode().boundsInRoot
-        ui.onNodeWithTag("toolbar.outliner.selection").performTouchInput {
-            swipeLeft(startX = width * 0.7f, endX = width * 0.15f, durationMillis = 400)
+        val done = ui.onNodeWithTag("button.outliner.selection.done").assertIsDisplayed()
+        ui.onNodeWithTag("button.outliner.selection.status").assertIsDisplayed()
+        for (direction in listOf("outdent", "indent", "moveUp", "moveDown")) {
+            ui.onNodeWithTag("button.outliner.selection.$direction").assertIsDisplayed()
         }
-        ui.onNodeWithTag("button.outliner.selection.copyURL").assertIsDisplayed()
-        assertEquals(before, unselect.fetchSemanticsNode().boundsInRoot)
-        ui.runOnIdle { events.clear() }
-        unselect.performClick()
+        ui.onNodeWithTag("button.outliner.select.toolbar-block").assertDoesNotExist()
+        ui.onNodeWithTag("button.outliner.selection.more").performClick()
+        ui.onNodeWithText("Copy URL").assertIsDisplayed().performClick()
+        ui.runOnIdle {
+            assertEquals(listOf("copyURL"), pendingToolbarActions())
+            events.clear()
+        }
+        done.performClick()
         ui.runOnIdle {
             assertEquals(1, events.filterIsInstance<LuiEvent.Press>().size)
             assertEquals(listOf("unselect"), pendingToolbarActions())

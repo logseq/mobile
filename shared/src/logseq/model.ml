@@ -222,7 +222,7 @@ type node_projection =
   ; node_outliner_autocomplete_candidates :
       outliner_autocomplete_candidate list
   ; node_outliner_selected_block_ids : string list
-  ; node_outliner_selected_tasks_only : bool
+  ; node_outliner_selected_task_block_ids : string list
   }
 
 type outline_row_splice =
@@ -275,7 +275,7 @@ type core_projection =
   ; projection_outliner_autocomplete_candidates :
       outliner_autocomplete_candidate list
   ; projection_outliner_selected_block_ids : string list
-  ; projection_outliner_selected_tasks_only : bool
+  ; projection_outliner_selected_task_block_ids : string list
   ; outliner_rows : outline_row list
   ; has_older_journals : bool
   ; is_outliner_patch : bool
@@ -466,7 +466,7 @@ type logseq_model =
   ; journal_outliner_rows : outline_row list
   ; outliner_rows : outline_row list
   ; outliner_selected_block_ids : string list
-  ; outliner_selected_tasks_only : bool
+  ; outliner_selected_task_block_ids : string list
   ; outliner_editing : outliner_editing option
   ; outliner_edit_scope : (string * string) option
   ; outliner_selection_revision : int
@@ -850,7 +850,7 @@ let initial () =
     journal_outliner_rows = [];
     outliner_rows = [];
     outliner_selected_block_ids = [];
-    outliner_selected_tasks_only = false;
+    outliner_selected_task_block_ids = [];
     outliner_editing = None;
     outliner_edit_scope = None;
     outliner_selection_revision = 0;
@@ -1051,7 +1051,7 @@ let journal_task_retry_available_ (current : logseq_model) =
       route = `Null || route = journal_task_field "page" current.journal_tasks)
 
 let outliner_task_selection_ (current : logseq_model) =
-  current.outliner_selected_block_ids <> [] && current.outliner_selected_tasks_only
+  current.outliner_selected_task_block_ids <> []
 
 let journal_tasks_collapsed (current : logseq_model) =
   match current.selected_graph_id, journal_task_field "day" current.journal_tasks with
@@ -1226,7 +1226,7 @@ let journal_preview_route (current : logseq_model) uuid =
         node_outliner_autocomplete = None;
         node_outliner_autocomplete_candidates = [];
         node_outliner_selected_block_ids = [];
-        node_outliner_selected_tasks_only = false;
+        node_outliner_selected_task_block_ids = [];
       }
   | None -> None
 
@@ -1273,7 +1273,7 @@ let outliner_preview_route (current : logseq_model) uuid =
         node_outliner_autocomplete = None;
         node_outliner_autocomplete_candidates = [];
         node_outliner_selected_block_ids = [];
-        node_outliner_selected_tasks_only = false;
+        node_outliner_selected_task_block_ids = [];
       }
   | None -> None
 
@@ -1665,6 +1665,7 @@ let back_app_navigation (current : logseq_model) requested =
       {
         (cancel_outliner_editing current) with
         outliner_selected_block_ids = [];
+        outliner_selected_task_block_ids = [];
         destination = JournalsDestination;
       }
   else
@@ -2168,7 +2169,7 @@ let rec update (current : logseq_model) action =
   | CloseTaskDates -> {current with task_date_editor = None}
   | OpenSelectedTaskDate field ->
     if outliner_task_selection_ current && (field = "scheduled" || field = "deadline") then
-      open_task_date_editor current current.outliner_selected_block_ids None field
+      open_task_date_editor current current.outliner_selected_task_block_ids None field
     else current
   | OpenBlockTaskDate (uuid, field) ->
     let editing = match current.outliner_editing with
@@ -3061,10 +3062,8 @@ let rec update (current : logseq_model) action =
          (SetOutlinerTaskStatusEffect (id, block_id, status))
      | None -> current)
   | SetSelectedOutlinerTaskStatus status_id ->
-    if outliner_task_selection_ current then
-      List.fold_left (fun current uuid -> update current (SetOutlinerTaskStatus (uuid, status_id)))
-        current current.outliner_selected_block_ids
-    else current
+    List.fold_left (fun current uuid -> update current (SetOutlinerTaskStatus (uuid, status_id)))
+      current current.outliner_selected_block_ids
   | SetOutlinerTaskPriority (block_id, priority_id) ->
     let priority = task_status_by_id current.task_priorities priority_id in
     if priority_id <> "" && priority = None then current
@@ -3474,7 +3473,7 @@ and apply_core_snapshot (current : logseq_model)
         snapshot_autocomplete_candidates current projection;
       outliner_selected_block_ids =
         projection.projection_outliner_selected_block_ids;
-      outliner_selected_tasks_only = projection.projection_outliner_selected_tasks_only;
+      outliner_selected_task_block_ids = projection.projection_outliner_selected_task_block_ids;
       outliner_section_markers = journal_section_markers projected_rows;
       outliner_rows = projected_rows;
     }
@@ -3683,7 +3682,7 @@ and apply_core_snapshot (current : logseq_model)
           snapshot_autocomplete_candidates current projection;
         outliner_selected_block_ids =
           projection.projection_outliner_selected_block_ids;
-        outliner_selected_tasks_only = projection.projection_outliner_selected_tasks_only;
+        outliner_selected_task_block_ids = projection.projection_outliner_selected_task_block_ids;
         has_older_journals;
         outliner_section_markers = journal_section_markers projected_rows;
         outliner_rows = projected_rows;

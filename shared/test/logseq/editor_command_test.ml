@@ -1464,21 +1464,22 @@ let block_menu_targets_the_pressed_selection () = R.with_runtime (fun session _ 
   check_eq ~msg:"a menu on a selected block applies to the selection"
     (copy Q.beta) (List.sort String.compare [Q.alpha; Q.beta]))
 
-let selected_task_dates_require_all_task_objects () = R.with_runtime (fun session runtime conn ->
+let selected_task_ids_exclude_ordinary_blocks () = R.with_runtime (fun session runtime conn ->
   let task uuid = put uuid "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Task")) in
   rebase runtime conn [task Q.alpha;
     put Q.beta "logseq.property/status" (Ds.Ref_to (Ds.Ident "logseq.property/status.doing"))];
-  let acts response = member "selectedTasksOnly" (state response) in
+  let tasks response = member "selectedTaskBlockIds" (state response) in
   let long_press uuid = event session "longPressBlock" ["uuid", `String uuid] in
-  check_eq ~msg:"a plain block with a status is not a Task"
-    (acts (long_press Q.beta)) (`Bool false);
-  check_eq ~msg:"a Task can set dates before either date exists"
-    (acts (long_press Q.alpha)) (`Bool true);
+  check_eq ~msg:"a plain block with a status is excluded"
+    (tasks (long_press Q.beta)) (`List []);
+  check_eq ~msg:"a Task is included before either date exists"
+    (tasks (long_press Q.alpha)) (`List [`String Q.alpha]);
   let mixed = event session "tapBlock" ["uuid", `String Q.beta] in
-  check_eq ~msg:"a mixed selection does not offer date actions" (acts mixed) (`Bool false);
+  check_eq ~msg:"a mixed selection projects only its Tasks" (tasks mixed) (`List [`String Q.alpha]);
   rebase runtime conn [task Q.beta];
-  check_eq ~msg:"the same selection offers dates once all targets are Tasks"
-    (acts (snapshot session)) (`Bool true))
+  check_eq ~msg:"the same selection includes both blocks once both are Tasks"
+    (tasks (snapshot session)) (`List (List.map (fun uuid -> `String uuid)
+      (List.sort String.compare [Q.alpha; Q.beta]))))
 
 let journal_doing_tasks_follow_status_and_due_dates () = R.with_runtime (fun _ runtime conn ->
   let local = Dev_query.Date_time_util.journal_day_to_local_ms in
@@ -1724,7 +1725,7 @@ let cases = [
   case "splitting a query result focuses the new outline row" splitting_query_result_focuses_new_outline_row;
   case "editor date buttons follow Task membership" editor_task_date_buttons_follow_task_membership;
   case "journal task buckets recover from query failure" journal_task_dates_partition_and_recover;
-  case "selected date actions require all Task objects" selected_task_dates_require_all_task_objects;
+  case "selected Task IDs exclude ordinary blocks" selected_task_ids_exclude_ordinary_blocks;
   case "block selection toggles with haptic feedback" block_selection_toggles_with_haptic_feedback;
   case "block menu targets the pressed selection" block_menu_targets_the_pressed_selection;
   case "journal Doing tasks follow status and due dates" journal_doing_tasks_follow_status_and_due_dates;

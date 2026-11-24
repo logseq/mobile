@@ -143,12 +143,18 @@ let outliner_block_content_schema () =
       Lui_extension.property "show-code-language" BoolScalar false None;
       Lui_extension.property "asset-type" StringScalar true None;
       Lui_extension.property "local-path" StringScalar true None;
+      Lui_extension.property "row-actions" StringScalar false None;
     ]
     [
       Lui_extension.event "drag-start"
         [ Lui_extension.event_field "uuid" StringScalar true ];
       Lui_extension.event "toggle-selection"
         [ Lui_extension.event_field "uuid" StringScalar true ];
+      Lui_extension.event "menu-action"
+        [ Lui_extension.event_field "payload" StringScalar true ];
+      Lui_extension.event "set-status"
+        [ Lui_extension.event_field "uuid" StringScalar true;
+          Lui_extension.event_field "count" IntScalar true ];
       Lui_extension.event "drop"
         [
           Lui_extension.event_field "uuid" StringScalar true;
@@ -339,6 +345,11 @@ let extension_registry () =
   Lui_extension.register_component registry (outliner_continuation_schema ());
   Lui_extension.register_component registry (outliner_editor_schema ());
   Lui_extension.register_component registry (outliner_block_row_schema ());
+  Lui_extension.register_component registry (let open Lui_protocol in
+    let open Lui_extension in
+    component "native-outliner-selection-toolbar" [profile IOS SwiftUIHost] true []
+      [property "status-label" StringScalar true None; property "statuses" StringScalar true None]
+      [event "select-status" [event_field "value" StringScalar true]]);
   Lui_extension.register_component registry
     (outliner_block_content_schema ());
   Lui_extension.register_component registry

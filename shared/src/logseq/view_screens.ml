@@ -160,7 +160,7 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send
              []);
       ]
 
-let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
+let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) model_source send : t
     =
   let selection_chrome : t =
     column ~gap:0 ~padding_horizontal:16
@@ -213,12 +213,20 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
              ]);
       ]
   else
+    let selection_source = Signal.map (fun current ->
+      match View_base.active_node_projection current with
+      | Some route -> View_base.node_route_model ~active:true current route
+      | None -> current) model_source in
     stack
       [
         if_
-          ~test:(Signal.map View_base.bottom_chrome_selection_
-                   model_source)
-          (column ~gap:0 ~padding_horizontal:16 [ box ~height:21 [] ]);
+          ~test:(Signal.map (fun current ->
+            current.Model.search_open = search_page && View_base.bottom_chrome_selection_ current) selection_source)
+          (column ~gap:0 [
+             box ~height:8 [];
+             View_outliner.outliner_selection_toolbar context selection_source send;
+             box ~height:21 [];
+          ]);
         if_
           ~test:(reactive View_base.bottom_chrome_editor_ model_source)
           (View_base.with_liquid_glass "container"
@@ -652,14 +660,19 @@ let active_overflow_menu model_source send : t =
            model_source property (fun () -> Signal.set editing None)) (Signal.value editing));
    ]))
 
-let header_selection_active context current =
-  Lui_ui.host context = SwiftUIHost
-  && match View_base.active_node_projection current with
+let header_selection_active current =
+  match View_base.active_node_projection current with
      | Some route -> route.Model.node_outliner_selected_block_ids <> []
      | None -> View_base.bottom_chrome_selection_ current
 
+let selection_done model_source send =
+  icon_button ~icon:(`app "selection-done") ~variant:`ghost ~size:`icon ~width:44 ~height:44
+    ~style_class:"system-toolbar-icon" ~label:(View_base.tr (Signal.sample model_source) "Done")
+    ~accessibility_identifier:"button.outliner.selection.done"
+    ~on_press:(press send (Model.PerformOutlinerToolbarAction "unselect")) []
+
 let main_header_connection model_source send : t = custom @@ fun context parent ->
-  let selecting = Signal.map (header_selection_active context) model_source in
+  let selecting = Signal.map header_selection_active model_source in
   let controls = stack
     [
       if_
@@ -676,13 +689,7 @@ let main_header_connection model_source send : t = custom @@ fun context parent 
                  (active_overflow_menu model_source send)]));
     ] in
   mount context ?parent (reactive (fun selecting ->
-    if selecting then
-      icon_button ~icon:(`app "selection-done") ~variant:`ghost ~size:`icon ~width:44 ~height:44
-        ~style_class:"system-toolbar-icon"
-        ~label:(View_base.tr (Signal.sample model_source) "Done")
-        ~accessibility_identifier:"button.outliner.selection.done"
-        ~on_press:(press send (Model.PerformOutlinerToolbarAction "unselect")) []
-    else controls) selecting)
+    if selecting then selection_done model_source send else controls) selecting)
 
 let native_node_destination ~source:title_source content : t =
  custom @@ fun context parent ->
@@ -713,14 +720,7 @@ let native_node_screen (context : Lui_ui.ui_context) model_source
              (if View_base.node_title_visible_ current then ""
               else View_base.active_node_title current))
            route_model_source)
-      (column ~gap:0 [
-        View_outliner.node_screen context route_model_source send;
-        if_ ~test:(Signal.map2 (fun (current : Model.logseq_model) ((route : Model.node_projection), active) ->
-          active && route.node_outliner_selected_block_ids <> []
-          && Option.fold ~none:false ~some:(fun (active : Model.node_projection) -> active.node_uuid = route.node_uuid)
-            (Model.last_opt current.node_routes)) model_source route_source)
-          (View_outliner.outliner_selection_toolbar context route_model_source send);
-      ])
+      (View_outliner.node_screen context route_model_source send)
 
 let native_node_stack context model_source ~source:routes_source send =
   keyed
@@ -797,7 +797,8 @@ let native_search_view ?base (_context : Lui_ui.ui_context) model_source send :
      in
      ignore (mount context ~parent:node (if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
        current.search_open && current.search_navigation_path <> []) model_source)
-       (active_overflow_menu model_source send)));
+       (reactive (fun selecting -> if selecting then selection_done model_source send
+          else active_overflow_menu model_source send) (Signal.map header_selection_active model_source))));
      node
    else (
      ignore
@@ -809,8 +810,9 @@ let native_search_view ?base (_context : Lui_ui.ui_context) model_source send :
      (* Keep the chrome anchor present while idle so native route indices stay stable. *)
      ignore
        (mount context ~parent:node (column ~gap:0
-           [if_ ~test:(reactive View_base.search_editor_active_ model_source)
-              (main_bottom_chrome context model_source send)]));
+           [if_ ~test:(reactive (fun current ->
+              View_base.search_editor_active_ current || header_selection_active current) model_source)
+              (main_bottom_chrome ~search_page:true context model_source send)]));
      ignore (mount context ~parent:node (main_header_connection model_source send));
      ignore
        (mount context ~parent:node (native_node_stack context model_source
@@ -827,11 +829,13 @@ let android_main_header context model_source send =
       (round_action (main_header_leading context model_source send) :: controls) in
   let default_header = header [
     main_header_title context model_source;
-    box ~corner_radius:22 ~background:"glass" ~padding_horizontal:6
-      [row ~cross:`center ~gap:4 [
-        main_header_sync context model_source send;
-        main_header_connection model_source send;
-      ]];
+    reactive (fun selecting ->
+      if selecting then round_action (selection_done model_source send)
+      else box ~corner_radius:22 ~background:"glass" ~padding_horizontal:6
+        [row ~cross:`center ~gap:4 [
+          main_header_sync context model_source send;
+          main_header_connection model_source send;
+        ]]) (Signal.map header_selection_active model_source);
   ] in
   let flashcard_header =
     View_flashcards.android_flashcard_header model_source send
@@ -880,7 +884,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
    Lui_ui.extension_property_signal context node "title"
      (Signal.map View_base.string_wire_value title_source);
    Lui_ui.extension_property_signal context node "selection-active"
-     (Signal.map (fun current -> BoolValue (header_selection_active context current)) model_source);
+     (Signal.map (fun current -> BoolValue (header_selection_active current)) model_source);
    Lui_ui.on_event context node (fun input_event ->
        ignore
          (View_base.handle_native_navigation_event input_event send));
@@ -911,14 +915,9 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
      node)
    else (
      ignore
-       (mount context ~parent:node (column
-           [
-             logseq_main_view context (Signal.map View_base.navigation_root_model model_source) send;
-             if_
-               ~test:(Signal.map View_base.bottom_chrome_selection_
-                        model_source)
-               (View_outliner.outliner_selection_toolbar context model_source send);
-           ]));
+       (mount context ~parent:node (column [
+          logseq_main_view context (Signal.map View_base.navigation_root_model model_source) send;
+        ]));
      ignore
        (mount context ~parent:node (main_header_leading context model_source send));
      let title = main_header_title context model_source in

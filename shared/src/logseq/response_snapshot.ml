@@ -375,8 +375,11 @@ let selection_member fields =
   string_list_member "selectedBlockIds"
     (object_member "outlinerState" fields)
 
-let selected_tasks_only fields =
-  bool_member "selectedTasksOnly" (object_member "outlinerState" fields)
+let selected_task_block_ids fields =
+  let state = object_member "outlinerState" fields in
+  if List.mem_assoc "selectedTaskBlockIds" state then string_list_member "selectedTaskBlockIds" state
+  else if bool_member "selectedTasksOnly" state then selection_member fields
+  else []
 
 let outliner_row_splice input =
   let fields = object_fields input in
@@ -436,7 +439,7 @@ let node_route input =
         node_outliner_autocomplete_candidates =
           autocomplete_candidates_member fields;
         node_outliner_selected_block_ids = selection_member fields;
-        node_outliner_selected_tasks_only = selected_tasks_only fields }
+        node_outliner_selected_task_block_ids = selected_task_block_ids fields }
   | None -> None
 
 let sidebar_projection fields =
@@ -527,9 +530,9 @@ let core_projection fields =
         (fun (route : Model.node_projection) ->
           route.node_outliner_selected_block_ids)
         (selection_member fields);
-    projection_outliner_selected_tasks_only =
-      or_route (fun (route : Model.node_projection) -> route.node_outliner_selected_tasks_only)
-        (selected_tasks_only fields);
+    projection_outliner_selected_task_block_ids =
+      or_route (fun (route : Model.node_projection) -> route.node_outliner_selected_task_block_ids)
+        (selected_task_block_ids fields);
     has_older_journals = bool_member "hasOlderJournals" fields;
     is_outliner_patch = is_patch;
     pdf_update = (match List.assoc_opt "pdfWorkspace" fields with

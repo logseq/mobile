@@ -5,7 +5,7 @@ import SwiftUI
 
 @main struct SelectionToolbarLayoutCheck {
     @MainActor static func main() async throws {
-        let snapshot = #"{"ok":true,"result":{"graphName":"Work","selectedGraphId":"work","outlinerRows":[{"block":{"uuid":"selected","title":"Selected block","pageId":"page"},"depth":0}],"outlinerState":{"selectedBlockIds":["selected"]}}}"#
+        let snapshot = #"{"ok":true,"result":{"graphName":"Work","selectedGraphId":"work","outlinerRows":[{"block":{"uuid":"selected","title":"Selected block","pageId":"page"},"depth":0}],"outlinerState":{"selectedBlockIds":["selected"],"selectedTaskBlockIds":["selected"]}}}"#
         let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: LGCoreEffectExecutor(callCore: { _ in snapshot }))
         try runtime.applyCoreResponse(snapshot)
         try runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
@@ -31,43 +31,27 @@ import SwiftUI
             window.frame = CGRect(x: 0, y: 0, width: width, height: scene.screen.bounds.height)
             window.layoutIfNeeded()
             try await Task.sleep(for: .milliseconds(900))
-            let toolbar = try model("toolbar.outliner.selection")
-            guard toolbar.property(.placement)?.stringValue == "bottom" else {
-                throw failure("Selection actions must use native bottom-toolbar capsules")
+            for action in ["copy", "tag", "status", "scheduled", "deadline", "outdent", "indent", "moveUp", "moveDown", "more", "done"] {
+                _ = try model("button.outliner.selection." + action)
             }
-            // Hoisted controls intentionally omit LUI's inline frame reports.
-            // Measure the actual native scroll viewport and its laid-out cells.
             func descendants(_ view: UIView) -> [UIView] {
                 [view] + view.subviews.flatMap(descendants)
             }
-            let views = descendants(window)
             func rect(_ view: UIView) -> CGRect { view.convert(view.bounds, to: window) }
-            guard let scroll = views.compactMap({ $0 as? UIScrollView }).first(where: {
-                $0.bounds.height >= 44 && $0.bounds.height <= 60 && rect($0).minY > window.bounds.height - 120
-            }) else { throw failure("Missing native selection scroll viewport") }
-            let viewport = rect(scroll)
-            let minimumWidth: CGFloat = width >= 600 ? 58 : (width >= 390 ? 50 : 46)
-            guard let cells = descendants(scroll).first(where: {
-                $0.subviews.count == 6 && $0.subviews.allSatisfy {
-                    $0.bounds.width >= 44 && $0.bounds.height >= 44
-                }
-            })?.subviews else { throw failure("Missing native selection action cells") }
-            for (index, name) in ["copy", "outdent", "indent", "delete", "copyReference"].enumerated() {
-                _ = try model("button.outliner.selection." + name)
-                let frame = rect(cells[index])
-                guard frame.minX >= viewport.minX - 0.5, frame.maxX <= viewport.maxX + 0.5,
-                    frame.width >= minimumWidth, frame.height >= 44 else {
-                    throw failure("Five full-size actions must fit in the capsule at width \(width): \(name), \(frame), viewport \(viewport)")
-                }
-                print("SELECTION width=\(width) action=\(name) frame=\(frame)")
+            let scrollViews = descendants(window).compactMap { $0 as? UIScrollView }
+            guard let scroll = scrollViews.first(where: {
+                (44...80).contains(rect($0).height) && rect($0).minY > window.bounds.height - 120
+            }) else {
+                throw failure("Missing selection scroll viewport for \(window.bounds). Scroll frames: \(scrollViews.map(rect))")
             }
-            let unselect = try model("button.outliner.selection.unselect")
-            let unselectWidth = CGFloat(unselect.property(.width)?.intValue ?? 0)
-            guard let trailing = views.first(where: {
-                abs($0.bounds.width - unselectWidth) < 0.5 && abs($0.bounds.height - 46) < 0.5
-                    && rect($0).minX > viewport.maxX && rect($0).maxX <= width
-            }) else { throw failure("Unselect must remain fully visible beside the capsule at width \(width)") }
-            print("SELECTION width=\(width) viewport=\(viewport) unselect=\(rect(trailing))")
+            let viewport = rect(scroll)
+            let actionsWidth: CGFloat = 9 * 44
+            let allowedWidth = window.bounds.width - 2 * 16 - 44 - 12
+            guard abs(viewport.width - min(actionsWidth, allowedWidth)) < 1,
+                  abs(scroll.contentSize.width - actionsWidth) < 1 else {
+                throw failure("Selection viewport at width \(width) must fit the actions or allow horizontal scrolling: \(viewport)")
+            }
+            print("SELECTION width=\(width) viewport=\(viewport), content=\(scroll.contentSize.width)")
             if let directory = ProcessInfo.processInfo.environment["LOGSEQ_LAYOUT_SCREENSHOTS"] {
                 let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                     window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
@@ -77,7 +61,7 @@ import SwiftUI
             }
 
         }
-        print("PASS: five selection actions fit in the native capsule with Unselect pinned separately at phone and tablet widths")
+        print("PASS: selection capsule fits its actions on wide screens and scrolls at phone widths")
     }
 
     static func failure(_ message: String) -> NSError {

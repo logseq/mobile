@@ -44,10 +44,13 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -100,6 +103,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.logseq.logseq.AndroidAudioPlayer
+import com.logseq.logseq.runtime.logseqIconResolver
 import kotlin.math.abs
 import com.logseq.logseq.runtime.AndroidLaunchMetrics
 import dev.lui.LuiExtensionContext
@@ -173,8 +177,16 @@ internal fun OutlinerBlockContent(
     val completed = context.flag("is-completed")
     val isAsset = context.flag("is-asset")
     val linkOnly = remember(markupJson) { isLinkOnlyMarkup(markupJson) }
+    val actionsJson = context.string("row-actions")
+    val actions = remember(actionsJson) { actionsJson?.let { runCatching { JSONObject(it) }.getOrNull() } }
+    val selectionMode = actions?.optBoolean("selectionMode") == true
     val currentContext by rememberUpdatedState(context)
-    val selectBlock: () -> Unit = { currentContext.emit("drag-start", "uuid" to uuid) }
+    var menuOpen by remember(uuid) { mutableStateOf(false) }
+    val pressBlock: () -> Unit = { currentContext.emit(if (selectionMode) "toggle-selection" else "edit", "uuid" to uuid) }
+    val holdBlock: () -> Unit = {
+        if (actions == null) currentContext.emit("drag-start", "uuid" to uuid)
+        else menuOpen = true
+    }
     var swipeOffset by remember(uuid) { mutableFloatStateOf(0f) }
     var swiping by remember(uuid) { mutableStateOf(false) }
     val displayedSwipeOffset by animateFloatAsState(
@@ -187,7 +199,11 @@ internal fun OutlinerBlockContent(
     var hoverPlacement by remember { mutableStateOf("after") }
     var dragHover by remember { mutableStateOf(false) }
     val hoverColor by animateColorAsState(
-        if (dragHover) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        when {
+            dragHover -> MaterialTheme.colorScheme.primaryContainer
+            menuOpen -> MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+            else -> Color.Transparent
+        },
         label = "dropHighlight",
     )
 
@@ -275,13 +291,20 @@ internal fun OutlinerBlockContent(
                     }
                 }
             }
-            .then(if (linkOnly) Modifier else Modifier.pointerInput(uuid) {
-                detectTapGestures(
-                    onTap = {
-                        currentContext.emit("edit", "uuid" to uuid)
-                    },
-                    onLongPress = { selectBlock() },
-                )
+            .then(when {
+                linkOnly && !selectionMode && actions == null -> Modifier
+                linkOnly && !selectionMode -> Modifier.pointerInput(uuid) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        awaitLongPressOrCancellation(down.id)?.let { change ->
+                            change.consume()
+                            menuOpen = true
+                        }
+                    }
+                }
+                else -> Modifier.pointerInput(uuid, selectionMode, actions != null) {
+                    detectTapGestures(onTap = { pressBlock() }, onLongPress = { holdBlock() })
+                }
             })
             .dragAndDropTarget(
                 shouldStartDragAndDrop = { true },
@@ -299,23 +322,32 @@ internal fun OutlinerBlockContent(
                     title = title,
                     assetType = context.string("asset-type") ?: "",
                     localPath = resolveAssetPath(context.string("local-path") ?: ""),
-                    onPreview = onOpenImage?.let { open ->
+                    onPreview = if (selectionMode) ({ _ -> pressBlock() }) else onOpenImage?.let { open ->
                         { path -> open(uuid, path) }
                     },
-                    onLongPress = selectBlock,
+                    onLongPress = holdBlock,
                 )
             } else {
-                CompositionLocalProvider(LocalShowCodeLanguage provides (context.bool("show-code-language") ?: true)) {
+                CompositionLocalProvider(
+                    LocalShowCodeLanguage provides (context.bool("show-code-language") ?: true),
+                    LocalOutlinerBlockActions provides (actions != null),
+                    LocalOutlinerSelection provides selectionMode,
+                ) {
                     ProjectedMarkup(
                         youtubeStarts = youtubeStarts,
                         encoded = markupJson,
                         fallback = title,
                         completedDecoration = decoration,
                         onOpenNode = { context.emit("open-node", "uuid" to it) },
-                        onTapFallback = { context.emit("edit", "uuid" to uuid) },
+                        onTapFallback = { pressBlock() },
                     )
                 }
             }
+        }
+        if (actions != null) {
+            AndroidBlockActionMenu(actions, expanded = menuOpen, onDismiss = { menuOpen = false },
+                onAction = { action -> currentContext.emit("menu-action", "payload" to action) },
+                onStatus = { index -> currentContext.emit("set-status", "uuid" to uuid, "count" to index) })
         }
         if (dragHover) {
             val indicator = MaterialTheme.colorScheme.primary
@@ -327,6 +359,72 @@ internal fun OutlinerBlockContent(
             }
         }
     }
+}
+
+private val LocalOutlinerBlockActions = compositionLocalOf { false }
+private val LocalOutlinerSelection = compositionLocalOf { false }
+
+@Composable
+private fun AndroidBlockActionMenu(
+    actions: JSONObject,
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onAction: (String) -> Unit,
+    onStatus: (Int) -> Unit,
+) {
+    val labels = actions.optJSONObject("labels")
+    val statuses = actions.optJSONArray("statuses") ?: JSONArray()
+    var submenu by remember(expanded) { mutableStateOf<String?>(null) }
+    fun label(key: String) = labels?.optString(key, key) ?: key
+    fun perform(action: String) { onDismiss(); onAction(action) }
+
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, modifier = Modifier.testTag("outliner.block.menu")) {
+        when (submenu) {
+            "Move" -> {
+                BlockActionItem(label("Move up"), "toolbar-move-up") { perform("moveUp") }
+                BlockActionItem(label("Move down"), "toolbar-move-down") { perform("moveDown") }
+                BlockActionItem(label("Outdent"), "toolbar-outdent") { perform("outdent") }
+                BlockActionItem(label("Indent"), "toolbar-indent") { perform("indent") }
+            }
+            "Status" -> for (index in 0 until statuses.length()) {
+                val status = statuses.optJSONObject(index) ?: continue
+                BlockActionItem(status.optString("title"), status.optString("icon"),
+                    iconTint = luiThemeColor(status.optString("foreground"), foreground = true)) {
+                    onDismiss()
+                    onStatus(index)
+                }
+            }
+            else -> {
+                BlockActionItem(label("Open block"), "external-link") { perform("open") }
+                if (actions.optBoolean("isTask")) {
+                    BlockActionItem(label("Scheduled"), "calendar") { perform("scheduled") }
+                    BlockActionItem(label("Deadline"), "deadline") { perform("deadline") }
+                    if (statuses.length() > 0) BlockActionItem(label("Status"), "toolbar-task") { submenu = "Status" }
+                }
+                BlockActionItem(label("Copy"), "toolbar-copy") { perform("copy") }
+                BlockActionItem(label("Cut"), "toolbar-cut") { perform("cut") }
+                BlockActionItem(label("Copy reference"), "toolbar-copy-reference") { perform("copyReference") }
+                BlockActionItem(label("Copy URL"), "toolbar-copy-url") { perform("copyURL") }
+                BlockActionItem(label("Move"), "toolbar-move-up") { submenu = "Move" }
+                BlockActionItem(label("Delete"), "toolbar-delete", destructive = true) { perform("delete") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BlockActionItem(
+    label: String,
+    iconName: String,
+    iconTint: Color? = null,
+    destructive: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    val icon = logseqIconResolver.icon(iconName)
+    DropdownMenuItem(text = { Text(label, color = tint) }, onClick = onClick, leadingIcon = {
+        if (icon != null) Icon(icon, contentDescription = null, tint = iconTint ?: tint)
+    })
 }
 
 internal fun isLinkOnlyMarkup(encoded: String): Boolean = try {
@@ -575,10 +673,12 @@ private fun MarkupInlineText(
     val openNode by rememberUpdatedState(onOpenNode)
     val edit by rememberUpdatedState(onTapFallback)
     val linkColor = luiThemeColor("link", foreground = true) ?: MaterialTheme.colorScheme.primary
-    val linked = remember(annotated, context, linkColor) {
+    val selectionMode = LocalOutlinerSelection.current
+    val usesBlockMenu = LocalOutlinerBlockActions.current
+    val linked = remember(annotated, context, linkColor, selectionMode) {
         val links = annotated.getStringAnnotations(0, annotated.length)
             .filter { it.tag in setOf(TAG_NODE, TAG_URL, TAG_TIMESTAMP) }
-        if (links.isEmpty()) annotated else AnnotatedString.Builder(annotated).apply {
+        if (links.isEmpty() || selectionMode) annotated else AnnotatedString.Builder(annotated).apply {
             for (link in links) {
                 addStyle(SpanStyle(color = linkColor), link.start, link.end)
                 addLink(LinkAnnotation.Clickable(link.tag,
@@ -607,7 +707,7 @@ private fun MarkupInlineText(
             // editing: Text consumes every short tap to open the URL. Observe
             // a hold before the link handler and turn it into the block's edit
             // action, while leaving ordinary taps to native link semantics.
-            .pointerInput(edit) {
+            .then(if (usesBlockMenu) Modifier else Modifier.pointerInput(edit) {
                 awaitEachGesture {
                     val down = awaitFirstDown(
                         requireUnconsumed = false,
@@ -618,7 +718,7 @@ private fun MarkupInlineText(
                         edit()
                     }
                 }
-            }
+            })
             .semantics {
                 onClick(label = "Edit block") { onTapFallback(); true }
             },

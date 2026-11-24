@@ -67,10 +67,10 @@ private const val RICH_FINGERPRINT =
     "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin," +
         "ios/swiftui|standard-children:0|children:|" +
         "properties:10:asset-type:string:required:none,10:local-path:string:" +
-        "required:none,11:markup-json:string:required:none,12:is-completed:bool:" +
+        "required:none,11:markup-json:string:required:none,11:row-actions:string:optional:none,12:is-completed:bool:" +
         "required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:" +
         "required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|" +
-        "events:10:drag-start[4:uuid:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required," +
+        "events:10:drag-start[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],11:menu-action[7:payload:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required," +
         "9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[" +
         "4:uuid:string:required]"
 private const val NAVIGATION_FINGERPRINT =
@@ -161,6 +161,7 @@ fun logseqExtensionRegistry(
             LuiExtensionProperty("asset-type", LuiExtensionValueKind.STRING),
             LuiExtensionProperty("local-path", LuiExtensionValueKind.STRING),
             LuiExtensionProperty("markup-json", LuiExtensionValueKind.STRING),
+            LuiExtensionProperty("row-actions", LuiExtensionValueKind.STRING, required = false),
             LuiExtensionProperty("is-completed", LuiExtensionValueKind.BOOLEAN),
             LuiExtensionProperty("show-code-language", LuiExtensionValueKind.BOOLEAN, required = false),
             LuiExtensionProperty("youtube-target-url", LuiExtensionValueKind.STRING),
@@ -177,6 +178,11 @@ fun logseqExtensionRegistry(
                 "toggle-selection",
                 listOf(LuiExtensionProperty("uuid", LuiExtensionValueKind.STRING, required = true)),
             ),
+            LuiExtensionEventSchema("menu-action", listOf(LuiExtensionProperty("payload", LuiExtensionValueKind.STRING))),
+            LuiExtensionEventSchema("set-status", listOf(
+                LuiExtensionProperty("uuid", LuiExtensionValueKind.STRING),
+                LuiExtensionProperty("count", LuiExtensionValueKind.INTEGER),
+            )),
             LuiExtensionEventSchema(
                 "drop",
                 listOf(

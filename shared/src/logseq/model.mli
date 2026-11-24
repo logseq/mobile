@@ -219,7 +219,7 @@ type node_projection =
   ; node_outliner_autocomplete_candidates :
       outliner_autocomplete_candidate list
   ; node_outliner_selected_block_ids : string list
-  ; node_outliner_selected_tasks_only : bool
+  ; node_outliner_selected_task_block_ids : string list
   }
 
 type outline_row_splice =
@@ -272,7 +272,7 @@ type core_projection =
   ; projection_outliner_autocomplete_candidates :
       outliner_autocomplete_candidate list
   ; projection_outliner_selected_block_ids : string list
-  ; projection_outliner_selected_tasks_only : bool
+  ; projection_outliner_selected_task_block_ids : string list
   ; outliner_rows : outline_row list
   ; has_older_journals : bool
   ; is_outliner_patch : bool
@@ -463,7 +463,7 @@ type logseq_model =
   ; journal_outliner_rows : outline_row list
   ; outliner_rows : outline_row list
   ; outliner_selected_block_ids : string list
-  ; outliner_selected_tasks_only : bool
+  ; outliner_selected_task_block_ids : string list
   ; outliner_editing : outliner_editing option
   ; outliner_edit_scope : (string * string) option
   ; outliner_selection_revision : int

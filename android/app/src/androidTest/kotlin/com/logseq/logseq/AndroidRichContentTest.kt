@@ -1,10 +1,16 @@
 package com.logseq.logseq
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
@@ -20,6 +26,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.text.TextLayoutResult
@@ -43,6 +50,7 @@ import org.junit.runner.RunWith
 import dev.lui.LocalLuiSemanticColors
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
 @RunWith(AndroidJUnit4::class)
 class AndroidRichContentTest {
@@ -51,6 +59,8 @@ class AndroidRichContentTest {
 
     private fun render(markup: String, completed: Boolean = false, secondMarkup: String? = null,
         linkColor: Color? = null, dark: Boolean = false, imagePath: String? = null,
+        rowActions: JSONObject? = null,
+        scrollState: ScrollState? = null,
         onOpenImage: ((String, String) -> Unit)? = null): LuiBackend {
         val registry = logseqExtensionRegistry(onOpenImage = onOpenImage)
         val backend = LuiBackend(onEvent = { events.add(it) }, extensions = registry)
@@ -66,6 +76,7 @@ class AndroidRichContentTest {
             "asset-type" to (if (imagePath != null) "png" else ""),
             "local-path" to imagePath.orEmpty(), "youtube-target-url" to "",
         ).forEach { (key, value) -> ops.put(property(key, value)) }
+        rowActions?.let { ops.put(property("row-actions", it.toString())) }
         if (secondMarkup != null) {
             ops.put(JSONObject().put("op", "create-extension").put("id", 3)
                 .put("identifier", "outliner-block-content")
@@ -82,7 +93,15 @@ class AndroidRichContentTest {
                 typography = LogseqTheme.typography) {
                 CompositionLocalProvider(LocalLuiSemanticColors provides
                     (linkColor?.let { mapOf("link" to it) } ?: emptyMap())) {
-                    Box(Modifier.fillMaxSize()) { backend.Content(1) }
+                    if (scrollState == null) {
+                        Box(Modifier.fillMaxSize()) { backend.Content(1) }
+                    } else {
+                        Column(Modifier.fillMaxSize().verticalScroll(scrollState)) {
+                            Spacer(Modifier.height(80.dp))
+                            backend.Content(1)
+                            Spacer(Modifier.height(1200.dp))
+                        }
+                    }
                 }
             }
         }
@@ -110,6 +129,18 @@ class AndroidRichContentTest {
 
     @Test fun plainBodyLongPressSelectsInsteadOfEditing() =
         assertLongPressSelects("""[{"type":"text","text":"Plain block"}]""", "Plain block")
+
+    @Test fun longPressOnTaskOpensMenuWithoutEnteringSelection() {
+        render("""[{"type":"text","text":"Task block"}]""", rowActions = JSONObject().put("isTask", true))
+        ui.onNodeWithTag("outliner-block-content-rich-block").performTouchInput { longClick() }
+        ui.onNodeWithTag("outliner.block.menu").assertIsDisplayed()
+        ui.onNodeWithText("Deadline").assertIsDisplayed()
+        ui.runOnIdle { assertTrue(events.filterIsInstance<LuiEvent.Extension>().isEmpty()) }
+        ui.onNodeWithText("Scheduled").performClick()
+        ui.runOnIdle {
+            assertEquals(listOf("menu-action"), events.filterIsInstance<LuiEvent.Extension>().map { it.name })
+        }
+    }
 
     @Test fun richBodyLongPressSelectsInsteadOfEditing() =
         assertLongPressSelects("""[{"type":"emphasis","style":"bold","children":[{"type":"text","text":"Bold block"}]}]""", "Bold block")
@@ -180,6 +211,23 @@ class AndroidRichContentTest {
             assertEquals(List(2) { "toggle-selection" to "rich-block" },
                 events.filterIsInstance<LuiEvent.Extension>().map { it.name to it.values["uuid"] })
         }
+    }
+
+    @Test fun diagonalLeftSwipeKeepsVerticalScrollAtRest() {
+        val scroll = ScrollState(0)
+        render("""[{"type":"text","text":"Selectable block"}]""", scrollState = scroll)
+        val block = ui.onNodeWithTag("outliner-block-content-rich-block")
+        block.performTouchInput {
+            swipe(Offset(width * 0.8f, centerY), Offset(width * 0.2f, centerY - 52), durationMillis = 300)
+        }
+        ui.runOnIdle {
+            assertEquals(0, scroll.value)
+            assertEquals(listOf("toggle-selection"), events.filterIsInstance<LuiEvent.Extension>().map { it.name })
+        }
+        block.performTouchInput {
+            swipe(center, Offset(centerX, centerY - 72), durationMillis = 300)
+        }
+        ui.runOnIdle { assertTrue(scroll.value > 0) }
     }
 
     @Test fun holdingALinkOnlyBlockEntersEditingInsteadOfOpeningIt() {

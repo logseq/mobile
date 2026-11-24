@@ -26,6 +26,9 @@ enum LGExtensionRegistry {
             playback: LGYouTubePlaybackState()
         )
         try OutlinerRowExtension.register(in: registry, playback: LGYouTubePlaybackState())
+        #if os(iOS)
+        try OutlinerSelectionToolbar.register(in: registry)
+        #endif
         return registry
     }
 }
@@ -104,7 +107,7 @@ struct OutlinerRowDropDelegate: DropDelegate {
 @MainActor
 private enum LGRichBlockExtension {
     static let identifier = "outliner-block-content"
-    static let fingerprint = "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
+    static let fingerprint = "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,11:row-actions:string:optional:none,12:is-completed:bool:required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],11:menu-action[7:payload:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
 
     static func register(
         in registry: LUIAppleExtensionRegistry,
@@ -124,6 +127,7 @@ private enum LGRichBlockExtension {
                     .init(name: "show-code-language", kind: .bool, isRequired: false),
                     .init(name: "asset-type", kind: .string, isRequired: true),
                     .init(name: "local-path", kind: .string, isRequired: true),
+                    .init(name: "row-actions", kind: .string),
                 ],
                 events: [
                     .init(name: "drag-start", fields: [
@@ -131,6 +135,11 @@ private enum LGRichBlockExtension {
                     ]),
                     .init(name: "toggle-selection", fields: [
                         .init(name: "uuid", kind: .string, isRequired: true),
+                    ]),
+                    .init(name: "menu-action", fields: [.init(name: "payload", kind: .string, isRequired: true)]),
+                    .init(name: "set-status", fields: [
+                        .init(name: "uuid", kind: .string, isRequired: true),
+                        .init(name: "count", kind: .int, isRequired: true),
                     ]),
                     .init(name: "drop", fields: [
                         .init(name: "uuid", kind: .string, isRequired: true),
