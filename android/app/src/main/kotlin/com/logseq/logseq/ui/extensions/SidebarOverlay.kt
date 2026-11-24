@@ -23,7 +23,9 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.hideFromAccessibility
@@ -38,6 +40,7 @@ import dev.lui.LuiExtensionProperty
 import dev.lui.LuiExtensionRegistry
 import dev.lui.LuiExtensionValueKind
 import kotlinx.coroutines.flow.drop
+import kotlin.math.pow
 
 internal fun LuiExtensionRegistry.registerSidebarOverlay() {
     register(
@@ -68,12 +71,14 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
     val enabled = context.flag("enabled")
     val latestContext by rememberUpdatedState(context)
     val modelOpen by rememberUpdatedState(open)
+    val haptics by rememberUpdatedState(LocalHapticFeedback.current)
     val drawer = rememberDrawerState(if (open) DrawerValue.Open else DrawerValue.Closed)
     LaunchedEffect(open) {
         if (open) drawer.open() else drawer.close()
     }
     LaunchedEffect(drawer) {
         snapshotFlow { drawer.currentValue }.drop(1).collect { value ->
+            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
             val selected = value == DrawerValue.Open
             if (selected != modelOpen) latestContext.emit(if (selected) "open" else "close")
         }
@@ -84,14 +89,14 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
     BoxWithConstraints(Modifier.fillMaxSize().testTag("application.shell")) {
         val width = minOf((context.int("width") ?: 320).dp, maxWidth * 0.80f)
         val widthPx = with(LocalDensity.current) { width.toPx() }.coerceAtLeast(1f)
-        val slidePx = with(LocalDensity.current) { 38.dp.toPx() }.coerceAtMost(widthPx)
         val direction = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1f else -1f
-        fun revealFraction(): Float {
+        fun drawerFraction(): Float {
             val offset = drawer.currentOffset
             return if (offset.isFinite()) (1f + offset / widthPx).coerceIn(0f, 1f)
             else if (open) 1f else 0f
         }
-        fun sidebarTranslation(progress: Float) = direction * (progress - 1f) * slidePx
+        fun revealFraction(fraction: Float = drawerFraction()): Float =
+            if (drawer.currentValue == DrawerValue.Closed) 1f - (1f - fraction).pow(5) else fraction
         ModalNavigationDrawer(
             drawerState = drawer,
             gesturesEnabled = enabled || open,
@@ -102,13 +107,12 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
                     drawerShape = RectangleShape,
                     drawerContainerColor = Color.Transparent,
                     modifier = Modifier.width(width).graphicsLayer {
-                        val progress = revealFraction()
-                        alpha = progress
-                        // Keep the closed sheet offscreen for Material's hit testing.
-                        translationX = if (progress > 0f) {
-                            sidebarTranslation(progress) + direction * (1f - progress) * widthPx
-                        } else 0f
-                    }.then(if (!open) Modifier.semantics { hideFromAccessibility() } else Modifier),
+                        val fraction = drawerFraction()
+                        val reveal = revealFraction(fraction)
+                        alpha = reveal
+                        translationX = direction * (reveal - fraction) * widthPx
+                    }
+                        .then(if (!open) Modifier.semantics { hideFromAccessibility() } else Modifier),
                 ) {
                     // Rows share the drawer's backdrop while retaining their selected semantics.
                     MaterialTheme(colorScheme = colors.copy(
@@ -139,7 +143,7 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
                 .graphicsLayer {
                     val reveal = revealFraction()
                     alpha = reveal
-                    translationX = sidebarTranslation(reveal)
+                    translationX = direction * (reveal - 1f) * widthPx
                 }
                 .then(if (!open) Modifier.semantics { hideFromAccessibility() } else Modifier),
             ) { context.child(settings) }

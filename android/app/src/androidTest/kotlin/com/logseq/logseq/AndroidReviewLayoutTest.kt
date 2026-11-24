@@ -7,6 +7,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -59,7 +62,11 @@ class AndroidReviewLayoutTest {
 
     @After fun closeBridge() { bridge?.let { ui.runOnIdle { it.close() } } }
 
-    private fun app(error: String? = null, projection: JSONObject? = null): (JSONObject) -> Unit {
+    private fun app(
+        error: String? = null,
+        projection: JSONObject? = null,
+        hapticFeedback: HapticFeedback? = null,
+    ): (JSONObject) -> Unit {
         lateinit var native: LogseqNativeBridge
         val backend = LuiBackend(onEvent = { events.add(it); dispatchLuiEvent(it, native) },
             extensions = logseqExtensionRegistry { it }, icons = logseqIconResolver)
@@ -77,7 +84,9 @@ class AndroidReviewLayoutTest {
         applyProjection(projection ?: JSONObject())
         ui.setContent {
             MaterialExpressiveTheme(colorScheme = LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
-                Box(Modifier.fillMaxSize()) { backend.Content(root) }
+                CompositionLocalProvider(LocalHapticFeedback provides (hapticFeedback ?: LocalHapticFeedback.current)) {
+                    Box(Modifier.fillMaxSize()) { backend.Content(root) }
+                }
             }
         }
         return ::applyProjection
@@ -175,9 +184,27 @@ class AndroidReviewLayoutTest {
     }
 
     @Test fun sidebarOverlaysTheStationaryPageAndClosesFromTheBackdrop() {
-        app()
+        val hapticEvents = mutableListOf<HapticFeedbackType>()
+        app(hapticFeedback = object : HapticFeedback {
+            override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {
+                hapticEvents.add(hapticFeedbackType)
+            }
+        })
         val toolbar = ui.onNodeWithTag("header.main", useUnmergedTree = true)
         val initial = toolbar.getUnclippedBoundsInRoot()
+        ui.onRoot().performTouchInput {
+            val y = height * 0.55f
+            down(Offset(width * 0.08f, y))
+            moveTo(Offset(width * 0.36f, y), delayMillis = 450)
+        }
+        val journalLabel = ui.onNodeWithText("Journals", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertTrue("The sidebar label becomes visible before the gesture reaches its opening threshold", journalLabel.right > 0.dp)
+        ui.onRoot().performTouchInput {
+            advanceEventTime(200)
+            up()
+        }
+        ui.onNodeWithTag("button.sidebar").assertIsDisplayed()
+        ui.runOnIdle { assertTrue("A cancelled swipe is silent", hapticEvents.isEmpty()) }
         ui.onRoot().performTouchInput {
             swipeRight(startX = width * 0.08f, endX = width * 0.78f, durationMillis = 350)
         }
@@ -187,6 +214,7 @@ class AndroidReviewLayoutTest {
         ui.runOnIdle {
             assertEquals(listOf("open", "close"), events.filterIsInstance<LuiEvent.Extension>()
                 .filter { it.identifier == "sidebar-overlay" }.map { it.name })
+            assertEquals(listOf(HapticFeedbackType.SegmentTick, HapticFeedbackType.SegmentTick), hapticEvents)
         }
         ui.onNodeWithTag("button.sidebar").assertIsDisplayed().performTouchInput { click(center) }
         ui.onNodeWithTag("link.sidebar.journals").assertIsDisplayed()

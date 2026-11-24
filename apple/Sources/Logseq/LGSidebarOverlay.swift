@@ -124,7 +124,13 @@ private struct LGPhoneSidebar: View {
                         if dragStart == nil { dragStart = presentation.progress }
                         guard let dragStart else { return }
                         hasOpened = true
-                        progress = min(1, max(0, dragStart + translation / max(panelWidth, 1)))
+                        let fraction = translation / max(panelWidth, 1)
+                        if fraction > 0 {
+                            // Reveal the rows before their leading edge has crossed the whole panel width.
+                            progress = 1 - (1 - dragStart) * pow(max(0, 1 - fraction), 5)
+                        } else {
+                            progress = max(0, dragStart + fraction)
+                        }
                     },
                     ended: { translation, velocity in
                         guard let dragStart else { return }
@@ -140,6 +146,7 @@ private struct LGPhoneSidebar: View {
             }
         }
         .ignoresSafeArea(.container)
+        .sensoryFeedback(.selection, trigger: open)
         .onAppear {
             progress = open ? 1 : 0
             hasOpened = open
@@ -240,7 +247,7 @@ private struct LGSidebarLayers: View, Animatable {
                         settings.padding(settingsInsets)
                     }
                     .opacity(visible)
-                    .offset(x: reduceMotion ? 0 : (visible - 1) * 38)
+                    .offset(x: reduceMotion ? 0 : (visible - 1) * panelWidth)
                     .allowsHitTesting(open && visible > 0.95)
                     .accessibilityHidden(!open)
                     .accessibilityAction(.escape, dismiss)

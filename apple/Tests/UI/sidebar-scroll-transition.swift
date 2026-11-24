@@ -85,11 +85,24 @@ import SwiftUI
         }) else { throw failure("Missing Recent/Favorites scroller") }
         print("SIDEBAR_SCROLL type=\(type(of: scroll)) size=\(scroll.contentSize) frame=\(scroll.frame) inset=\(scroll.adjustedContentInset)")
         let bottom = scroll.contentSize.height - scroll.bounds.height
-        guard let settingsID = find("button.sidebar.settings"), let settings = frames[settingsID],
+        guard let settingsID = find("button.sidebar.settings"),
               let panelID = find("sidebar.navigation"), let panel = frames[panelID],
               let lastRecentID = find("link.sidebar.page.recent-39") else {
             throw failure("Missing sidebar footer or last Recent row")
         }
+        func waitForSettingsToSettle() async throws {
+            guard overlay else { return }
+            let bottom = max(window.safeAreaInsets.bottom, LGNavigationSurfacePolicy.collapsedComposerCenterFromBottom - 22)
+            for _ in 0..<50 {
+                if let frame = frames[settingsID],
+                   abs(window.bounds.maxX - frame.maxX - window.safeAreaInsets.right - 16) < 1,
+                   abs(window.bounds.maxY - frame.maxY - bottom) < 1 { return }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            throw failure("Settings must settle at the bottom-right of the window")
+        }
+        try await waitForSettingsToSettle()
+        guard let settings = frames[settingsID] else { throw failure("Missing Settings frame") }
         func settingsStayedInPlace() -> Bool {
             guard let actual = frames[settingsID] else { return false }
             return abs(actual.minX - settings.minX) < 1 && abs(actual.minY - settings.minY) < 1 && actual.size == settings.size
@@ -100,11 +113,6 @@ import SwiftUI
         if overlay {
             guard let journal, journal.convert(journal.bounds, to: window) == journalFrame,
                   journal.contentOffset == journalOffset else { throw failure("Opening the overlay moved the journal") }
-            let bottom = max(window.safeAreaInsets.bottom, LGNavigationSurfacePolicy.collapsedComposerCenterFromBottom - 22)
-            guard abs(window.bounds.maxX - settings.maxX - window.safeAreaInsets.right - 16) < 1,
-                  abs(window.bounds.maxY - settings.maxY - bottom) < 1 else {
-                throw failure("Settings must be at the bottom-right of the window")
-            }
         }
         for offset: CGFloat in [0, 400, 2200, bottom] {
             scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
@@ -117,6 +125,7 @@ import SwiftUI
                 try backend.performToggle(node: drawer, checked: selected)
                 try await Task.sleep(for: .milliseconds(500))
             }
+            try await waitForSettingsToSettle()
             sampler.stop()
             print("SIDEBAR offset=\(offset) frames=\(sampler.frames) modelShift=\(sampler.maximumModelShift) displayedShift=\(sampler.maximumDisplayedShift) viewportShift=\(sampler.maximumViewportShift)")
             guard sampler.maximumModelShift < 1, sampler.maximumDisplayedShift < 1, sampler.maximumViewportShift < 1 else {
