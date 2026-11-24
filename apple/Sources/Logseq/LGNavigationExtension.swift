@@ -546,18 +546,17 @@ enum LGSearchPresentationExtension {
 @MainActor
 @Observable
 private final class LGNativeSearchState {
-    private enum Phase { case inactive, active }
+    private enum Phase { case inactive, active, closing, awaitingCoreDismissal }
     let context: LUIAppleExtensionViewContext
     private var phase = Phase.inactive
-    // Keep the content tree stable while UIKit moves its keyboard and toolbar.
-    @ObservationIgnored private var isClosing = false
     private var pendingQuery: String?
     private(set) var nativePresented = false
 
     init(context: LUIAppleExtensionViewContext) { self.context = context }
 
-    var isVisible: Bool { phase == .active }
-    var resultsAreVisible: Bool { nativePresented || !isClosing }
+    // Keep the content tree stable while UIKit moves its keyboard and toolbar.
+    var isVisible: Bool { phase == .active || phase == .closing }
+    var resultsAreVisible: Bool { phase == .active }
     var corePresented: Bool {
         guard case let .bool(value) = context.property("presented") else { return false }
         return value
@@ -581,20 +580,19 @@ private final class LGNativeSearchState {
 
     func synchronizeCore() {
         if corePresented {
-            guard !isClosing else { return }
+            guard phase != .closing, phase != .awaitingCoreDismissal else { return }
             if phase != .active { pendingQuery = nil }
             phase = .active
             nativePresented = depth == 0
         } else {
             phase = .inactive
-            isClosing = false
             nativePresented = false
             pendingQuery = nil
         }
     }
 
     func synchronizeDepth() {
-        if isVisible && depth == 0 { nativePresented = true }
+        if phase == .active && depth == 0 { nativePresented = true }
     }
     func suspendInput() {
         if depth > 0 { nativePresented = false }
@@ -602,8 +600,8 @@ private final class LGNativeSearchState {
     func acknowledgeQuery() { if pendingQuery == query { pendingQuery = nil } }
 
     private func open() {
+        guard phase != .closing, phase != .awaitingCoreDismissal else { return }
         nativePresented = true
-        isClosing = false
         guard phase != .active else { return }
         phase = .active
         pendingQuery = nil
@@ -612,7 +610,7 @@ private final class LGNativeSearchState {
 
     func close() {
         guard phase == .active else { return }
-        isClosing = true
+        phase = .closing
     }
 
     func nativeWillDismiss() {
@@ -623,11 +621,10 @@ private final class LGNativeSearchState {
     func finishDismissal() {
         // Let UIKit commit the keyboard and toolbar transition before core cleanup.
         Task { @MainActor in
-            guard self.isClosing else { return }
-            self.phase = .inactive
+            guard self.phase == .closing else { return }
+            self.phase = self.corePresented ? .awaitingCoreDismissal : .inactive
             self.nativePresented = false
             if self.corePresented { try? self.context.emit(name: "dismiss", values: [:]) }
-            self.isClosing = false
         }
     }
 
@@ -650,11 +647,11 @@ private final class LGNativeSearchState {
 
     var queryBinding: Binding<String> {
         Binding(get: { self.pendingQuery ?? self.query }, set: { value in
-            guard self.isVisible, !self.isClosing, self.nativePresented else { return }
+            guard self.phase == .active, self.nativePresented else { return }
             self.pendingQuery = value
             // Native Cancel clears text too. Its dismissal must win over that change.
             Task { @MainActor in
-                guard self.isVisible, !self.isClosing, self.nativePresented, self.pendingQuery == value else { return }
+                guard self.phase == .active, self.nativePresented, self.pendingQuery == value else { return }
                 try? self.context.emit(name: "query-changed", values: ["query": .string(value)])
             }
         })
@@ -1225,6 +1222,7 @@ private struct LGNavigationContent: View {
                             }
                         }
                         .opacity(search.resultsAreVisible ? 1 : 0)
+                        .allowsHitTesting(search.resultsAreVisible)
                         .accessibilityHidden(!search.resultsAreVisible)
                         .animation(nil, value: search.resultsAreVisible)
                         .transition(.identity)
@@ -1615,6 +1613,8 @@ private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
                     if !controller.isActive { controller.isActive = true }
                 }
             } else if !state.nativePresented, controller.isActive {
+                needsInitialFocus = false
+                controller.searchBar.searchTextField.resignFirstResponder()
                 controller.isActive = false
             } else if !state.isVisible, !controller.isActive {
                 detach()
@@ -1623,6 +1623,8 @@ private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
 
         func detach() {
             guard let host, host.navigationItem.searchController === controller else { return }
+            needsInitialFocus = false
+            controller.searchBar.searchTextField.resignFirstResponder()
             let item = host.navigationItem.searchBarPlacementBarButtonItem
             host.toolbarItems = host.toolbarItems?.filter { $0 !== item }
             if (host.toolbarItems ?? []).isEmpty { host.navigationController?.setToolbarHidden(true, animated: false) }
@@ -1644,6 +1646,7 @@ private struct LGNativeSearchControllerBridge: UIViewControllerRepresentable {
             LogseqCrashReporting.uiState(nativeSearchActive: false)
             needsInitialFocus = false
             state.nativeWillDismiss()
+            searchController.searchBar.searchTextField.resignFirstResponder()
         }
         func didDismissSearchController(_ searchController: UISearchController) {
             detach()
