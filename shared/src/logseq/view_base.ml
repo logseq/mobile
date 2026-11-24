@@ -1447,6 +1447,7 @@ let selected_page_content_title_visible_ (current : Model.logseq_model) =
 let without_outliner_interaction (current : Model.logseq_model) =
   { current with
     outliner_selected_block_ids = [];
+    outliner_selected_task_block_ids = [];
     outliner_editing = None;
     outliner_autocomplete = None;
     outliner_autocomplete_candidates = [];
@@ -1500,7 +1501,7 @@ let node_route_model ~active (current : Model.logseq_model)
     outliner_rows = route.node_outliner_rows;
     outliner_section_markers = [];
     outliner_selected_block_ids = route.node_outliner_selected_block_ids;
-    outliner_selected_tasks_only = route.node_outliner_selected_tasks_only;
+    outliner_selected_task_block_ids = route.node_outliner_selected_task_block_ids;
     outliner_editing = route.node_outliner_editing;
     outliner_autocomplete = route.node_outliner_autocomplete;
     outliner_autocomplete_candidates =

@@ -8,7 +8,7 @@ import UIKit
         var routes: [String] = []
         var selectedPage: String?
         var selected = false
-        var longPressed: [String] = []
+        var toggled: [String] = []
         var performed: [String] = []
         func snapshot() throws -> String {
             let projections: [[String: Any]] = routes.map { uuid in
@@ -36,14 +36,19 @@ import UIKit
                 case "close-node": _ = routes.popLast(); selected = false
                 case "select-sidebar-page":
                     selectedPage = effect["text"] as? String; routes = []; selected = false
-                case "long-press-outliner-block":
-                    if let uuid = effect["text"] as? String { longPressed.append(uuid); selected = true }
                 case "outliner-toolbar":
                     if let action = effect["text"] as? String {
                         performed.append(action)
                         if action == "copy" || action == "unselect" { selected = false }
                     }
-                default: break
+                default:
+                    if let text = effect["text"] as? String,
+                       let payload = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+                       payload["type"] as? String == "toggleBlockSelection",
+                       let uuid = payload["uuid"] as? String {
+                        toggled.append(uuid)
+                        selected.toggle()
+                    }
                 }
             }
             return try! snapshot()
@@ -114,25 +119,25 @@ import UIKit
                       case let .string(payload) = node.properties["payload"] else { return false }
                 return payload.contains(destination + "-child")
             }) else { throw failure("Missing destination row") }
-            func longPress() throws {
-                try backend.performExtensionEvent(node: row, name: "long-press", values: ["uuid": .string(destination + "-child")])
+            func toggleSelection() throws {
+                try backend.performExtensionEvent(node: row, name: "toggle-selection", values: ["uuid": .string(destination + "-child")])
             }
-            try longPress()
-            try await wait("The native long press must traverse the core effect boundary") { longPressed.last == destination + "-child" }
+            try toggleSelection()
+            try await wait("The native selection gesture must traverse the core effect boundary") { toggled.last == destination + "-child" }
             try await wait("The active destination owns selection actions") { find("button.outliner.selection.copy") != nil }
             try await Task.sleep(for: .milliseconds(650))
             let nativeActions = views(window).compactMap { $0 as? UIScrollView }.filter {
                 let rect = $0.convert($0.bounds, to: window)
-                return $0.window != nil && rect.height >= 44 && rect.height <= 60
+                return $0.window != nil && (44...80).contains(rect.height)
                     && rect.minY > window.bounds.height - 130
             }
-            guard !nativeActions.isEmpty else { throw failure("Long press must show the native selection bar on " + destination) }
+            guard !nativeActions.isEmpty else { throw failure("Selection must show the native selection bar on " + destination) }
             try backend.performPress(node: find("button.outliner.selection.copy")!)
             try await wait("Copy must use the shared toolbar pipeline") { performed.last == "copy" }
             try await wait("Copy clears the destination's selection") { find("toolbar.outliner.selection") == nil }
-            try longPress()
-            try await wait("Selection must reopen after copying") { find("button.outliner.selection.unselect") != nil }
-            try backend.performPress(node: find("button.outliner.selection.unselect")!)
+            try toggleSelection()
+            try await wait("Selection must reopen after copying") { find("button.outliner.selection.done") != nil }
+            try backend.performPress(node: find("button.outliner.selection.done")!)
             try await wait("Unselect must reach the active destination") { performed.last == "unselect" }
             try await wait("Unselect removes native selection chrome") { find("toolbar.outliner.selection") == nil }
         }

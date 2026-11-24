@@ -148,9 +148,11 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let playback: LGYouTubePlaybackState
     @State private var dropGeometry = OutlinerRowDropGeometry()
     @State private var titleWidth: CGFloat = 0
+    @State private var rowWidth: CGFloat = 0
     @Environment(\.luiSemanticColors) private var semanticColors
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.lgOpenPDFAnnotation) private var openPDFAnnotation
 
     private var bulletForeground: Color {
@@ -170,9 +172,21 @@ struct OutlinerRowPayload: Decodable, Equatable {
         if !(row.editing ?? !context.childIDs.isEmpty) {
             let selectable = content
                 .contentShape(Rectangle())
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
                 .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 10))
-                .contextMenu { blockMenu }
+                .contextMenu { blockMenu } preview: {
+                    content.frame(width: rowWidth > 0 ? rowWidth : nil)
+                        .background {
+                            (semanticColors["surface"] ?? Color(uiColor: .secondarySystemBackground))
+                                .overlay(Color.accentColor.opacity(0.14))
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .accessibilityHidden(true)
+                }
                 .modifier(OutlinerSelectionSwipe { emit("toggle-selection") })
+                .accessibilityAction(named: menuText(row.selectionMember == true ? "Unselect" : "Select")) {
+                    emit("toggle-selection")
+                }
             if row.allowsDrag != false {
                 selectable
                 .overlay { OutlinerDropIndicator(placement: dropGeometry.placement, depth: row.depth) }
@@ -208,24 +222,6 @@ struct OutlinerRowPayload: Decodable, Equatable {
         }
         .tint(semanticColors["link"] ?? LogseqThemePolicy.linkColor(isDark: colorScheme == .dark))
         .padding(.trailing, row.hasChildren ? 0 : row.trailingInset ?? 0)
-        #if os(iOS)
-        .padding(.trailing, row.selectionMode == true ? 34 : 0)
-        .overlay(alignment: .topTrailing) {
-            if row.selectionMode == true {
-                let isSelected = row.selectionMember ?? row.selected
-                Button { emit("toggle-selection") } label: {
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 15))
-                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                        .frame(width: 34, height: 30)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(menuText(isSelected ? "Unselect" : "Select"))
-                .accessibilityIdentifier("button.outliner.select." + row.uuid)
-            }
-        }
-        #endif
     }
 
     #if os(iOS)
@@ -241,7 +237,11 @@ struct OutlinerRowPayload: Decodable, Equatable {
                     Menu {
                         ForEach(Array(row.statuses.enumerated()), id: \.element.id) { index, status in
                             Button { emit("set-status", extra: ["count": .int(index)]) } label: {
-                                Text(verbatim: status.title)
+                                Label { Text(verbatim: status.title) } icon: {
+                                    if let image = status.menuImage(in: semanticColors) {
+                                        Image(uiImage: image).renderingMode(.original)
+                                    }
+                                }
                             }
                         }
                     } label: { Label { menuText("Status") } icon: { Image(systemName: "checkmark.circle") } }
@@ -381,7 +381,9 @@ struct OutlinerRowPayload: Decodable, Equatable {
                         .font(row.markup.contains { $0.type == .codeBlock } ? .caption : .body)
                 } else if row.isAsset {
                     LGAssetPreview(uuid: row.uuid, title: row.title, assetType: row.assetType, localPath: row.localPath,
-                        allowsInteraction: { context.isUserInteractionEnabled })
+                        allowsInteraction: { context.isUserInteractionEnabled && row.selectionMode != true })
+                        .gesture(TapGesture().onEnded { emit("toggle-selection") },
+                                 including: row.selectionMode == true ? .all : .subviews)
                 } else {
                     title
                         .accessibilityIdentifier("outliner.block-action." + row.uuid)
@@ -446,8 +448,11 @@ struct OutlinerRowPayload: Decodable, Equatable {
         .font(.body)
         .padding(.vertical, 2)
         .background { OutlinerIndentGuides(row: row) }
-        .background(row.selected ? Color.accentColor.opacity(0.12) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 10))
+        .background {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.accentColor.opacity(row.selected ? 0.12 : 0))
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: row.selected)
+        }
     }
 
     private var title: some View {

@@ -14,7 +14,8 @@ struct OutlinerSelectionSwipe: ViewModifier {
                 .gesture(OutlinerLeftSwipe(track: { displacement = Self.offset(for: $0) }, finish: finish))
         } else {
             content.offset(x: -legacyDisplacement)
-                .simultaneousGesture(DragGesture(minimumDistance: 24)
+                .background(OutlinerLegacyScrollLock(active: legacyDisplacement > 0))
+                .simultaneousGesture(DragGesture(minimumDistance: 12)
                     .updating($legacyDisplacement) { value, offset, _ in
                         let distance = -value.translation.width
                         if distance > abs(value.translation.height) * 1.5 { offset = Self.offset(for: distance) }
@@ -62,7 +63,7 @@ private struct OutlinerLeftSwipe: UIGestureRecognizerRepresentable {
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
-                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+                               shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
             guard let scroll = other.view as? UIScrollView else { return false }
             return other === scroll.panGestureRecognizer
         }
@@ -91,6 +92,48 @@ private struct OutlinerLeftSwipe: UIGestureRecognizerRepresentable {
         default:
             break
         }
+    }
+}
+
+private struct OutlinerLegacyScrollLock: UIViewRepresentable {
+    let active: Bool
+
+    final class Coordinator {
+        weak var pan: UIPanGestureRecognizer?
+
+        func release() {
+            pan?.isEnabled = true
+            pan = nil
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        guard active else {
+            context.coordinator.release()
+            return
+        }
+        guard context.coordinator.pan == nil else { return }
+        var ancestor = view.superview
+        while let current = ancestor {
+            if let scroll = current as? UIScrollView, scroll.panGestureRecognizer.isEnabled {
+                context.coordinator.pan = scroll.panGestureRecognizer
+                scroll.panGestureRecognizer.isEnabled = false
+                break
+            }
+            ancestor = current.superview
+        }
+    }
+
+    static func dismantleUIView(_ view: UIView, coordinator: Coordinator) {
+        coordinator.release()
     }
 }
 #endif

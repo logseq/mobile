@@ -341,7 +341,7 @@ let node_projection uuid page_uuid title related_rows linked_reference_rows =
     node_outliner_autocomplete = None;
     node_outliner_autocomplete_candidates = [];
     node_outliner_selected_block_ids = [];
-    node_outliner_selected_tasks_only = false;
+    node_outliner_selected_task_block_ids = [];
   }
 
 let empty_core_projection () =
@@ -380,7 +380,7 @@ let empty_core_projection () =
     projection_outliner_autocomplete = None;
     projection_outliner_autocomplete_candidates = [];
     projection_outliner_selected_block_ids = [];
-    projection_outliner_selected_tasks_only = false;
+    projection_outliner_selected_task_block_ids = [];
     outliner_rows = [];
     has_older_journals = false;
     is_outliner_patch = false;
@@ -2207,7 +2207,7 @@ let outliner_editor_extension_contract_is_pinned () =
 let outliner_block_content_extension_contract_is_pinned () =
   check_eq ~msg:"the rich block renderer must match the LG wire schema"
     (Lui_extension.fingerprint (View.outliner_block_content_schema ()))
-    "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
+    "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,11:row-actions:string:optional:none,12:is-completed:bool:required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],11:menu-action[7:payload:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
 
 let native_navigation_stack_extension_contract_is_pinned () =
   let schema =
@@ -7796,15 +7796,19 @@ let journal_task_results_edit_and_select_the_source_block () =
     let scheduled () = find "button.outliner.selection.scheduled" in
     let deadline () = find "button.outliner.selection.deadline" in
     apply selected;
-    check ~msg:"ordinary or mixed selections hide date actions" (scheduled () = -1 && deadline () = -1);
-    let targets = [uuid; "second-task"] in
-    apply {selected with projection_outliner_selected_block_ids = targets;
-      projection_outliner_selected_tasks_only = true};
+    check ~msg:"ordinary selections hide date actions" (scheduled () = -1 && deadline () = -1);
+    check ~msg:"ordinary selections still expose Status"
+      (find "button.outliner.selection.status" <> -1);
+    let targets = [uuid] in
+    apply {selected with projection_outliner_selected_block_ids = [uuid; "ordinary-block"];
+      projection_outliner_selected_task_block_ids = targets};
+    check ~msg:"mixed selections expose both date actions"
+      (scheduled () <> -1 && deadline () <> -1);
     List.iter (fun (field, image, button) ->
       check_eq (property_string runtime button Lui_protocol.InlineIconName) ("app:" ^ image);
       dispatch app (Lui_protocol.Press button);
       flush app;
-      check ~msg:"the matching date editor captures all selected Tasks"
+      check ~msg:"the date editor captures only the selected Tasks"
         (Option.exists (fun (editor : Model.task_date_editor) ->
           editor.task_date_targets = targets && editor.task_date_field = field)
           (App.model app).task_date_editor);
@@ -10268,10 +10272,7 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
     descendant_with_identifier renderer outliner "outliner.block.parent"
   in
   let navigation = extension_node application "native-navigation-stack" in
-  let wrapper = List.nth (children renderer navigation) 0 in
-  let toolbar =
-    descendant_with_identifier renderer wrapper
-      "toolbar.outliner.selection"
+  let toolbar = descendant_with_identifier renderer chrome "toolbar.outliner.selection"
   in
   check_eq ~msg:"selection uses the system bottom-toolbar capsules"
     (property renderer toolbar Lui_protocol.PlacementValue)
@@ -10279,7 +10280,7 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
   check_eq ~msg:"compact selection actions leave room for at least five controls"
     (property_int renderer toolbar Lui_protocol.Gap) 2;
   let selection_buttons = children renderer toolbar in
-  let copy_button = List.nth selection_buttons 0 in
+  let copy_button = descendant_with_identifier renderer toolbar "button.outliner.selection.copy" in
   check ~msg:"the selected block is projected into retained row state"
     (property_bool renderer rendered_row Lui_protocol.Selected);
   check_eq ~msg:"selection exposes main's stable toolbar identifier"
@@ -10302,10 +10303,12 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
          (property_int renderer button Lui_protocol.WidthValue)
          44)
     [
-      (0, "app:toolbar-copy");
-      (1, "app:toolbar-tag");
-      (2, "app:toolbar-outdent");
-      (3, "app:toolbar-indent");
+      (1, "app:toolbar-outdent");
+      (2, "app:toolbar-indent");
+      (3, "app:toolbar-move-up");
+      (4, "app:toolbar-move-down");
+      (5, "app:toolbar-copy");
+      (6, "app:toolbar-tag");
     ];
   let menu = List.hd (List.rev selection_buttons) in
   check_eq ~msg:"the trailing control is the selection menu"
@@ -10410,9 +10413,9 @@ let pushed_node_selection_has_a_destination_toolbar () =
     node_routes = [route]; outliner_rows = route.node_outliner_rows });
   flush application;
   let renderer = Lui_app.runtime application in
-  let destination = extension_node application "native-navigation-title" in
-  let toolbar = descendant_with_identifier renderer destination "toolbar.outliner.selection" in
-  check ~msg:"a pushed node owns its selection toolbar inside the navigation destination" (toolbar <> -1);
+  let chrome = native_bottom_chrome renderer application in
+  let toolbar = descendant_with_identifier renderer chrome "toolbar.outliner.selection" in
+  check ~msg:"the navigation chrome shows the active pushed node’s selection toolbar" (toolbar <> -1);
   let copy = descendant_with_identifier renderer toolbar "button.outliner.selection.copy" in
   dispatch application (Lui_protocol.Press copy);
   flush application;
@@ -10427,13 +10430,13 @@ let pushed_node_selection_has_a_destination_toolbar () =
   in
   apply [unselected_route];
   check_eq ~msg:"clearing route selection removes its toolbar"
-    (descendant_with_identifier renderer destination "toolbar.outliner.selection") (-1);
+    (descendant_with_identifier renderer chrome "toolbar.outliner.selection") (-1);
   send application (Model.RequestAppNode "grandchild");
   let nested = { (node_projection "grandchild" "page" "Grandchild" [] []) with
     Model.node_outliner_rows = [outline_row "grandchild" "Grandchild"] } in
   apply [route; nested];
   check_eq ~msg:"a covered destination cannot keep its selection toolbar active"
-    (descendant_with_identifier renderer destination "toolbar.outliner.selection") (-1);
+    (descendant_with_identifier renderer chrome "toolbar.outliner.selection") (-1);
   apply [route; {nested with Model.node_outliner_selected_block_ids = ["grandchild"]}];
   let toolbar_count = descendant_count_with_identifier renderer
     (Lui_app.root_node application) "toolbar.outliner.selection" in
@@ -10455,7 +10458,8 @@ let kotlin_outliner_selection_toolbar_uses_compact_material_actions () =
   let toolbar =
     descendant_with_identifier renderer root "toolbar.outliner.selection"
   in
-  let buttons = children renderer toolbar in
+  let actions = children renderer toolbar in
+  let buttons = List.filter (fun id -> node renderer id = Some Lui_protocol.Button) actions in
   check_eq ~msg:"Kotlin keeps the editor-compatible row surface"
     (node renderer selected_row)
     (Some Lui_protocol.Box);
@@ -10463,9 +10467,15 @@ let kotlin_outliner_selection_toolbar_uses_compact_material_actions () =
     (property_bool renderer selected_row Lui_protocol.Selected);
   check_eq ~msg:"Android uses compact Material action spacing"
     (property_int renderer toolbar Lui_protocol.Gap)
-    4;
-  check_eq ~msg:"all selection actions remain directly reachable"
-    (List.length buttons) 8;
+    2;
+  check_eq ~msg:"common selection actions remain directly reachable"
+    (List.length buttons) 6;
+  check ~msg:"Status remains visible for ordinary blocks"
+    (descendant_with_identifier renderer toolbar "button.outliner.selection.status" <> -1);
+  check ~msg:"the selection surface exposes More and Cut"
+    (descendant_with_identifier renderer root "button.outliner.selection.menu.cut" <> -1);
+  check ~msg:"selection provides a Done button in the header"
+    (descendant_with_identifier renderer root "button.outliner.selection.done" <> -1);
   List.iter
     (fun button ->
        check_eq ~msg:"Android selection actions use compact 48dp targets"
@@ -10488,7 +10498,7 @@ let kotlin_outliner_selection_toolbar_uses_compact_material_actions () =
   dispatch application (Lui_protocol.Press (List.nth buttons 0));
   flush application;
   check ~msg:"Android selection actions cross the typed core boundary"
-    (List.exists (function Model.OutlinerToolbarEffect (_, "copy") -> true
+    (List.exists (function Model.OutlinerToolbarEffect (_, "outdent") -> true
        | _ -> false) (App.model application).pending_effects)
 
 let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =

@@ -825,6 +825,7 @@ private struct LGNavigationContent: View {
     @Environment(\.lgPDFMainHidden) private var pdfMainHidden
     @Environment(\.luiSemanticColors) private var semanticColors
     @Environment(\.locale) private var locale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var search: LGNativeSearchState? { toolbarStartIndex == nil ? nil : inheritedSearch }
     private var searchVisible: Bool { search?.isVisible == true }
@@ -835,6 +836,15 @@ private struct LGNavigationContent: View {
     private var showsSearchPage: Bool { searchVisible && (search?.depth ?? 0) > 0 }
     private var chromeContext: LUIAppleExtensionViewContext { showsSearchPage ? search!.context : context }
     private var showsBottomChrome: Bool { !searchVisible || showsSearchPage || hasCollapsedComposer }
+
+    private var selectionActive: Bool {
+        if case .bool(true) = context.property("selection-active") { return true }
+        return false
+    }
+
+    private var selectionAnimation: Animation? {
+        reduceMotion ? nil : .easeInOut(duration: 0.18)
+    }
 
     private var captureActionIDs: [Int] {
         // The final child owns the shared camera/audio/search/capture actions; routes
@@ -847,7 +857,7 @@ private struct LGNavigationContent: View {
     }
 
     private var usesSideCaptureActions: Bool {
-        verticalToolbar && hasCollapsedComposer && captureActionIDs.count == 4
+        verticalToolbar && !selectionActive && hasCollapsedComposer && captureActionIDs.count == 4
     }
 
     private var flashcardsToolbar: (container: Int, title: Int, add: Int)? {
@@ -872,7 +882,7 @@ private struct LGNavigationContent: View {
 
     private var hasCollapsedComposer: Bool {
         #if os(iOS)
-        guard toolbarStartIndex != nil, !showsSearchPage, !bottomOccupiesLayoutSpace, !composerDismissalEnabled,
+        guard toolbarStartIndex != nil, !selectionActive, !showsSearchPage, !bottomOccupiesLayoutSpace, !composerDismissalEnabled,
               let index = bottomChromeIndex, let chrome = childID(at: index) else { return false }
         let _ = context.measureStamp(of: chrome)
         return !context.childIDs(of: chrome).isEmpty
@@ -946,26 +956,35 @@ private struct LGNavigationContent: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                if active && !bottomOccupiesLayoutSpace && showsBottomChrome && !usesSideCaptureActions {
-                    if usesFloatingComposerChrome {
-                        VStack {
-                            Spacer(minLength: 0)
-                            floatingBottomChrome
+                ZStack(alignment: .bottom) {
+                    if active && !bottomOccupiesLayoutSpace && showsBottomChrome && !usesSideCaptureActions {
+                        if selectionActive {
+                            VStack {
+                                Spacer(minLength: 0)
+                                floatingBottomChrome
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .ignoresSafeArea(.all, edges: .bottom)
+                            .transition(.opacity)
+                        } else if usesFloatingComposerChrome {
+                            VStack {
+                                Spacer(minLength: 0)
+                                floatingBottomChrome
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .ignoresSafeArea(hasCollapsedComposer ? .all : .container, edges: .bottom)
+                            // Keep capture controls mounted underneath the native search surface.
+                            .opacity(searchVisible ? 0 : 1)
+                            .animation(nil, value: searchVisible)
+                            .allowsHitTesting(!searchVisible)
+                            .accessibilityHidden(searchVisible)
+                            .transition(.opacity)
+                        } else {
+                            sizedBottomChrome
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        // The expanded composer keeps the collapsed baseline until the
-                        // keyboard arrives, so expansion grows in place instead of jumping.
-                        .ignoresSafeArea(hasCollapsedComposer ? .all : .container, edges: .bottom)
-                        // Keep the layout mounted without drawing the capture controls
-                        // beneath the native search bar and its Cancel button.
-                        .opacity(searchVisible ? 0 : 1)
-                        .animation(nil, value: searchVisible)
-                        .allowsHitTesting(!searchVisible)
-                        .accessibilityHidden(searchVisible)
-                    } else {
-                        sizedBottomChrome
                     }
                 }
+                .animation(selectionAnimation, value: selectionActive)
             }
             #if os(iOS)
             // Docked keyboards already resize the native navigation container.
@@ -1258,17 +1277,17 @@ private struct LGNavigationContent: View {
 
     @ToolbarContentBuilder
     private func trailingToolbar(searchPage: Bool) -> some ToolbarContent {
-        if case .bool(true) = context.property("selection-active"), let toolbarStartIndex {
-            let done = childContent(at: toolbarStartIndex + 3).frame(width: 44, height: 44)
-                .buttonStyle(.plain)
+        if let toolbarStartIndex {
             if #available(iOS 26.0, *) {
-                ToolbarItem(placement: trailingToolbarPlacement) {
-                    done.modifier(LGLiquidGlassSurface(shape: .circle))
+                ToolbarItem(id: "logseq.trailing-controls", placement: trailingToolbarPlacement) {
+                    trailingControls(searchPage: searchPage, index: toolbarStartIndex, glass: true)
                 }
                 .sharedBackgroundVisibility(.hidden)
                 .lgPrefersVerticalAxis()
             } else {
-                ToolbarItem(placement: trailingToolbarPlacement) { done }
+                ToolbarItem(id: "logseq.trailing-controls", placement: trailingToolbarPlacement) {
+                    trailingControls(searchPage: searchPage, index: toolbarStartIndex, glass: false)
+                }
             }
         } else if let item = trailingToolbarItem(searchPage: searchPage) {
             ToolbarItem(id: item.id, placement: trailingToolbarPlacement) {
@@ -1283,6 +1302,34 @@ private struct LGNavigationContent: View {
             }
             .lgPrefersVerticalAxis()
         }
+    }
+
+    private func trailingControls(searchPage: Bool, index: Int, glass: Bool) -> some View {
+        ZStack(alignment: .trailing) {
+            if selectionActive {
+                trailingChrome(childContent(at: index + 3).frame(width: 44, height: 44),
+                    glass: glass, shape: .circle)
+                    .transition(.opacity)
+            } else if let item = trailingToolbarItem(searchPage: searchPage) {
+                trailingChrome(item.content, glass: glass, shape: searchPage ? .circle : .capsule)
+                    .overlay {
+                        if composerDismissalEnabled {
+                            composerDismissalTarget.accessibilityHidden(true)
+                        }
+                    }
+                    .transition(.opacity)
+            }
+        }
+        .fixedSize()
+        .animation(selectionAnimation, value: selectionActive)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func trailingChrome<Content: View>(_ content: Content, glass: Bool, shape: LGLiquidGlassSurface.Shape) -> some View {
+        if glass { content.modifier(LGLiquidGlassSurface(shape: shape)) }
+        else { content }
     }
 
     private func trailingToolbarItem(searchPage: Bool) -> (id: String, content: AnyView)? {

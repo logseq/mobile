@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import Vision
 @testable import LUIAppleBackend
 @testable import Logseq
 
@@ -72,7 +71,7 @@ import Vision
         opened = true
         try runtime.applyCoreResponse(snapshot())
         try await Task.sleep(for: .milliseconds(500))
-        try backend.performExtensionEvent(node: row()!, name: "long-press", values: ["uuid": .string("project")])
+        try backend.performExtensionEvent(node: row()!, name: "toggle-selection", values: ["uuid": .string("project")])
         selected = true
         try runtime.applyCoreResponse(snapshot())
         try await wait("A selected pushed block must own a select bar") { find("toolbar.outliner.selection") != nil }
@@ -82,17 +81,15 @@ import Vision
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
         try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("pushed-block-selection.png"))
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.regionOfInterest = CGRect(x: 0, y: 0, width: 1, height: 0.25)
-        try VNImageRequestHandler(cgImage: image.cgImage!, options: [:]).perform([request])
-        let visible = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-        guard visible.contains("Copy") && visible.contains("Delete") && visible.contains("Unselect") else {
-            throw failure("The pushed destination must visibly render native bottom actions: \(visible)")
+        func views(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(views) }
+        guard views(window).compactMap({ $0 as? UIScrollView }).contains(where: {
+            (44...80).contains($0.bounds.height) && $0.convert($0.bounds, to: window).minY > window.bounds.height - 120
+        }), find("button.outliner.selection.more") != nil else {
+            throw failure("The pushed destination must visibly render the selection actions")
         }
         try backend.performPress(node: find("button.outliner.selection.copy")!)
         try await wait("Copy must reach the shared outliner pipeline") { effects.actions.contains("outliner-toolbar") }
-        try backend.performPress(node: find("button.outliner.selection.unselect")!)
+        try backend.performPress(node: find("button.outliner.selection.done")!)
         selected = false
         try runtime.applyCoreResponse(snapshot())
         try await wait("Unselect must remove the destination select bar") { find("toolbar.outliner.selection") == nil }

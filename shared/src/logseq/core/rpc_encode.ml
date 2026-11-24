@@ -345,6 +345,7 @@ let autocomplete_kind_json kind =
 
 let outliner_state_json ?(is_task = fun _ -> false) (state : Outliner.outliner_state) =
   let selected = Outliner.selected_uuids state in
+  let selected_tasks = List.filter is_task selected in
   Wire.json_object
     [
       ( "editing"
@@ -359,7 +360,8 @@ let outliner_state_json ?(is_task = fun _ -> false) (state : Outliner.outliner_s
             ]
         | None -> `Null )
     ; ("selectedBlockIds", Wire.json_strings selected)
-    ; ("selectedTasksOnly", `Bool (selected <> [] && List.for_all is_task selected))
+    ; ("selectedTasksOnly", `Bool (selected <> [] && selected_tasks = selected))
+    ; ("selectedTaskBlockIds", Wire.json_strings selected_tasks)
     ; ( "collapsedBlockIds"
       , Wire.json_strings (Outliner.collapsed_uuids state) )
     ; ("zoomedBlockIds", Wire.json_strings state.zoomed)
