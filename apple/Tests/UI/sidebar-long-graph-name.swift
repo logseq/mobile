@@ -18,6 +18,17 @@ import Vision
         try runtime.applyCoreResponse(first)
         try runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
         try runtime.applyHostUpdate(kind: "graph-loading", payload: "false")
+        let forwardEvent = runtime.renderer.onEvent
+        var delayedViewport: LGRendererEvent?
+        var waitingForViewport = true
+        runtime.renderer.onEvent = { event in
+            if waitingForViewport, event.extensionIdentifier == "native-navigation-stack",
+               event.extensionName == "viewport-changed" {
+                delayedViewport = event
+            } else {
+                forwardEvent?(event)
+            }
+        }
         let backend = runtime.renderer.backend
         var frames: [Int: CGRect] = [:]
         backend.frameReportingEnabled = true
@@ -37,6 +48,16 @@ import Vision
             return id
         }
         try await Task.sleep(for: .milliseconds(600))
+        let startupGraphID = try node("button.graph-switch")
+        guard let delayedViewport, frames[startupGraphID] == nil else {
+            throw failure("The graph switch must wait until the native viewport has been measured")
+        }
+        waitingForViewport = false
+        forwardEvent?(delayedViewport)
+        try await Task.sleep(for: .milliseconds(500))
+        guard frames[startupGraphID] != nil else {
+            throw failure("The graph switch must appear as soon as the measured viewport is applied")
+        }
         for name in ["My notes", "Short", "Query Demo 2026-10-22", "Abhilesh_Knowledge_Graph", String(repeating: "Long graph name ", count: 8), "Short again"] {
             try runtime.applyCoreResponse(snapshot(name))
             try await Task.sleep(for: .milliseconds(800))
@@ -65,7 +86,7 @@ import Vision
                 throw failure("The visible graph name must retain its leading characters: " + name)
             }
         }
-        print("PASS: long graph names remain readable and fit between the main header controls")
+        print("PASS: the graph switch waits for the measured viewport and keeps long names readable")
     }
 
     static func failure(_ message: String) -> NSError {
