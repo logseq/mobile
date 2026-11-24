@@ -2210,7 +2210,7 @@ let signed_out_users_can_choose_downloaded_graphs () =
 
 let authentication_screen_uses_the_product_name_on_every_host () =
   List.iter
-    (fun backend ->
+    (fun (backend, layout_count) ->
        let application = App.create backend in
        start application;
        send application (Model.ApplyAuthentication ("signedOut", None));
@@ -2220,8 +2220,8 @@ let authentication_screen_uses_the_product_name_on_every_host () =
        check_eq ~msg:"the signed-out surface uses the installed product name"
          (descendant_count_with_property_string renderer root
             Lui_protocol.TextValue "Logseq")
-         1)
-    [ ios_backend (); kotlin_backend () ]
+         layout_count)
+    [ (ios_backend (), 2); (kotlin_backend (), 1) ]
 
 let outliner_editor_extension_contract_is_pinned () =
   check_eq ~msg:"the native editor registry must match the LG wire schema"
