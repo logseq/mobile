@@ -17,6 +17,7 @@ module Unicode : sig
   val lowercase : string -> string
 end
 module Date_time_util : sig
+  val date_at_local_ms : int64 -> int -> int -> int -> int -> int64
   val journal_day_plus : int -> int -> int option
   val journal_day_to_local_ms : int -> int64
   val valid_journal_title : ?formatters:string list -> string -> bool

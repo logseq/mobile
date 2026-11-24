@@ -1602,7 +1602,38 @@ let journal_task_dates_batch_is_atomic_and_guarded () = R.with_runtime (fun sess
   check_eq (List.length (Graph_runtime.pending_operations runtime)) 1;
   check_eq (member "ok" (request ["scheduled", `Null; "deadline", `Null])) (`Bool false);
   check_eq (value runtime Q.alpha deadline) (Some (Ds.Int64 (local 20261124)));
-  check_eq (value runtime Q.beta scheduled) (Some (Ds.Int64 (Int64.of_int timestamp))))
+  check_eq (value runtime Q.beta scheduled) (Some (Ds.Int64 (Int64.of_int timestamp)));
+  ignore (result (request ["deadline", `Null]));
+  let db = Graph_runtime.db runtime in
+  let reloaded = Journal_task_dates.values db
+    (Journal_task_dates.targets db [`String Q.alpha; `String Q.beta]) in
+  check_eq (List.map (member "deadline") (items "targets" reloaded)) [`Null; `Null])
+
+let journal_task_dates_calendar_preserves_each_task_time () =
+  let module Date = Dev_query.Date_time_util in
+  let at day hour minute = Date.date_at_local_ms (Date.journal_day_to_local_ms day) hour minute 0 0 in
+  let deadline = Journal_task_dates.deadline in
+  let request session runtime uuids day =
+    let db = Graph_runtime.db runtime in
+    let targets = Journal_task_dates.values db (Journal_task_dates.targets db uuids) |> member "targets" in
+    Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
+      "action", `String "saveTaskDates"; "targets", targets;
+      "changes", `Assoc ["deadline", `Assoc ["day", `Int day]]])) |> result |> ignore in
+  R.with_runtime (fun session runtime conn ->
+    rebase runtime conn [
+      put Q.alpha deadline (Ds.Int64 (at 20261123 9 30));
+      put Q.beta deadline (Ds.Int64 (at 20261124 15 45))];
+    request session runtime [`String Q.alpha; `String Q.beta] 20261127;
+    check_eq (value runtime Q.alpha deadline) (Some (Ds.Int64 (at 20261127 9 30)));
+    check_eq (value runtime Q.beta deadline) (Some (Ds.Int64 (at 20261127 15 45))));
+  (* Both 01:30 instants on November 1 in America/New_York. *)
+  List.iter (fun stamp -> R.with_runtime (fun session runtime conn ->
+    rebase runtime conn [put Q.alpha deadline (Ds.Int64 stamp)];
+    let day = Cache_model.journal_day_for_ms (Int64.to_int stamp) in
+    request session runtime [`String Q.alpha] day;
+    check_eq (value runtime Q.alpha deadline) (Some (Ds.Int64 stamp));
+    check_eq (Graph_runtime.pending_operations runtime) []))
+    [1793511000000L; 1793514600000L]
 
 let task_date_sheet_rejects_invalid_text () =
   List.iter (fun (ios, backend) -> R.with_runtime (fun session _ _ ->
@@ -1753,6 +1784,7 @@ let cases = [
   case "journal tasks omit blocks from today's journal" journal_tasks_omit_blocks_from_today;
   case "journal task projection survives page navigation" journal_task_projection_survives_page_navigation;
   case "journal task dates batch uses atomic guarded properties" journal_task_dates_batch_is_atomic_and_guarded;
+  case "calendar task dates preserve individual times" journal_task_dates_calendar_preserves_each_task_time;
   case "date command NLP inputs open empty without initializing the engine" temporal_command_inputs_open_empty;
   case "date command calendars preview valid NLP input on both hosts" temporal_command_previews_follow_valid_input;
   case "date commands submit the previewed selection" temporal_commands_submit_the_previewed_selection;

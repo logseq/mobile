@@ -83,12 +83,15 @@ let task_dates_dialog model_source send : t =
           | ExtensionEvent (_, _, "clear", _) -> apply `Null
           | ExtensionEvent (_, _, "choose", fields) ->
             (match String_map.find_opt "value" fields with
-             | Some (StringValue value) -> Option.iter (fun millis -> apply (`Int millis)) (int_of_string_opt value)
+             | Some (StringValue value) ->
+               Option.iter (fun day -> apply (`Assoc ["day", `Int day])) (int_of_string_opt value)
              | _ -> ())
           | ExtensionEvent (_, _, "submit", fields) ->
             (match String_map.find_opt "value" fields with
              | Some (StringValue text) ->
-               (match Natural_date.timestamp text with
+               let current = Signal.sample model_source in
+               let locale = if current.language = "system" then current.system_language else current.language in
+               (match Natural_date.timestamp ~locale ~full_match:true text with
                 | Some value -> apply (`Int value)
                 | None -> Signal.set invalid true)
              | _ -> ())

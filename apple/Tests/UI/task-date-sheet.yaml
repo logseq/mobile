@@ -1,0 +1,15 @@
+appId: com.logseq.logseq.PageBenchmark
+---
+- tapOn:
+    id: journal-task.deadline.task
+- assertVisible:
+    id: task-dates.input
+- tapOn:
+    id: task-dates.clear
+- assertVisible: Deadline cleared
+- assertNotVisible:
+    id: task-dates.input
+- assertNotVisible:
+    id: journal-task.deadline.task
+- assertVisible:
+    id: journal-task.metadata.task

@@ -33,6 +33,20 @@ let timestamp_inputs_keep_local_time () =
      "1792719000000", 1792719000000.];
   check_eq (Natural_date.timestamp ~now_ms:now "not a date") None
 
+let localized_input_keeps_the_local_date_and_time () =
+  List.iter (fun (locale, input, expected) ->
+    check_eq ~msg:input (Natural_date.timestamp ~now_ms:now ~locale ~full_match:true input)
+      (Some (int_of_float expected)))
+    ["zh-CN", "明天下午三点", reference 2026 10 28 15 0;
+     "zh-Hant", "明天下午3點", reference 2026 10 28 15 0;
+     "fr-FR", "demain à 15h", reference 2026 10 28 15 0;
+     "zh-CN", "2026-10-31 09:45", reference 2026 10 31 9 45;
+     "zh-CN", "tomorrow at 3pm", reference 2026 10 28 15 0];
+  check_eq (Natural_date.day ~now_ms:now ~locale:"zh-CN" "下周五") (Some 20261106);
+  check_eq (Natural_date.timestamp ~now_ms:now ~locale:"fr-FR" ~full_match:true "après-demain") None;
+  check_eq (Natural_date.day ~now_ms:now ~locale:"ja-JP" "明日") (Some 20261028);
+  check_eq (Natural_date.day ~now_ms:now ~locale:"en-GB" "12/10/2030") (Some 20301012)
+
 let parallel_references_remain_independent () =
   let answers = Array.make 8 None in
   Array.init 8 (fun index -> Thread.create (fun () ->
@@ -44,5 +58,6 @@ let cases = [
   case "calendar input leaves the engine lazy" calendar_inputs_do_not_start_the_engine;
   case "English expressions match master" english_inputs_match_chrono;
   case "date-time expressions keep local time" timestamp_inputs_keep_local_time;
+  case "localized dates preserve date and time" localized_input_keeps_the_local_date_and_time;
   case "concurrent reference dates remain independent" parallel_references_remain_independent;
 ]

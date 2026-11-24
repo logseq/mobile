@@ -202,6 +202,21 @@ let values db targets =
     `Assoc (("uuid", `String uuid) :: List.map (fun (name, attr) ->
       name, json_int (date db eid attr)) fields)) targets)]
 
+let reschedule_on_day day current =
+  if Option.exists (fun value -> Cache_model.journal_day_for_ms value = day) current then current
+  else begin
+    let module Date = Dev_query.Date_time_util in
+    let midnight = Date.journal_day_to_local_ms day in
+    let stamp = match current with
+      | None -> midnight
+      | Some value ->
+        let time = Unix.localtime (floor (float_of_int value /. 1000.)) in
+        let millis = (value mod 1000 + 1000) mod 1000 in
+        Date.date_at_local_ms midnight time.tm_hour time.tm_min time.tm_sec millis in
+    let stamp = Int64.to_int stamp in
+    if valid_date stamp then Some stamp else invalid_arg "Choose a valid date and time"
+  end
+
 let mutation db input =
   let expected = Json.Util.to_list (member "targets" input) in
   let targets = targets db (List.map (member "uuid") expected) in
@@ -209,16 +224,18 @@ let mutation db input =
   let changes = Json.Util.to_assoc (member "changes" input) in
   let edits = List.map (fun (name, value) ->
     let attr = List.assoc name fields in
-    let next = match value with
-      | `Null -> None
-      | `Int value when valid_date value -> Some value
+    let resolve = match value with
+      | `Null -> (fun _ -> None)
+      | `Int value when valid_date value -> (fun _ -> Some value)
+      | `Assoc ["day", `Int day] when Journal.valid_day day -> reschedule_on_day day
       | _ -> invalid_arg "Choose a valid date and time" in
-    name, attr, next) changes in
+    name, attr, resolve) changes in
   let writes = List.map2 (fun (uuid, eid) expected ->
-    let changes = List.filter_map (fun (name, attr, next) ->
+    let changes = List.filter_map (fun (name, attr, resolve) ->
       let current = date db eid attr in
       if member name expected <> json_int current then
         invalid_arg "A task date changed. Reopen Task dates and try again";
+      let next = resolve current in
       if current = next then None else
         let value = Option.map (fun value -> Pending_ops.Int_value value) in
         Some {Pending_ops.attr; expected = value current; value = value next}) edits in

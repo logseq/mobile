@@ -80,6 +80,25 @@ public final class LGPlatformPresentationCoordinator {
     }
 
     #if os(iOS)
+    private(set) var taskDateSheet: LGTaskDateSheetRequest?
+
+    func presentTaskDateSheet(_ request: LGTaskDateSheetRequest) {
+        // Patches may disable animation while applying model changes. Let the
+        // persistent sheet host use the system presentation transaction.
+        withTransaction(Transaction()) { taskDateSheet = request }
+    }
+
+    func dismissTaskDateSheet(_ request: LGTaskDateSheetRequest) {
+        guard taskDateSheet === request else { return }
+        withTransaction(Transaction()) { taskDateSheet = nil }
+    }
+
+    func taskDateSheetDismissedByUser() {
+        guard let request = taskDateSheet else { return }
+        dismissTaskDateSheet(request)
+        try? request.context.emit(name: "dismiss", values: [:])
+    }
+
     @discardableResult
     public func presentPageShare(_ payload: LGPageSharePayload) -> Bool {
         return presentShareSheet(
@@ -134,6 +153,11 @@ public final class LGPlatformPresentationCoordinator {
     #endif
 }
 
+#if os(iOS)
+extension EnvironmentValues {
+    @Entry var lgPlatformPresentation: LGPlatformPresentationCoordinator? = nil
+}
+#endif
 
 #if os(iOS)
 private struct LGSheetSurface: ViewModifier {
@@ -147,6 +171,13 @@ private struct LGSheetSurface: ViewModifier {
             .background(background.ignoresSafeArea())
             .presentationBackground(background)
             .tint(LogseqThemePolicy.accent)
+    }
+}
+
+private extension View {
+    func lgCalendarSheet() -> some View {
+        modifier(LGSheetSurface())
+            .presentationDetents([.height(460)])
     }
 }
 
@@ -229,8 +260,10 @@ struct LGPlatformPresentationHost: ViewModifier {
                 Text("This deletes the block and all of its children. Pages use Recycle instead.")
             }
             #if os(iOS)
+            .environment(\.lgPlatformPresentation, coordinator)
             .onChange(of: coordinator.journalCalendarPresented || coordinator.graphDownloadProgress != nil
-                      || coordinator.attachmentService != nil || !coordinator.pendingDeletionBlockIDs.isEmpty,
+                      || coordinator.taskDateSheet != nil || coordinator.attachmentService != nil
+                      || !coordinator.pendingDeletionBlockIDs.isEmpty,
                       initial: true) { _, open in
                 LogseqCrashReporting.presentation(.platform, open: open)
             }
@@ -251,8 +284,14 @@ struct LGPlatformPresentationHost: ViewModifier {
                         catch { logger.error("Could not open journal: \(error.localizedDescription)") }
                     }
                 }
-                .modifier(LGSheetSurface())
-                .presentationDetents([.height(460)])
+                .lgCalendarSheet()
+            }
+            .sheet(item: Binding(
+                get: { coordinator.taskDateSheet },
+                set: { if $0 == nil { coordinator.taskDateSheetDismissedByUser() } }
+            )) { request in
+                LGTaskDateSheet(context: request.context, state: request.state)
+                    .lgCalendarSheet()
             }
             .sheet(isPresented: mediaPanelBinding) {
                 let request = coordinator.attachmentRequest
