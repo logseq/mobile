@@ -25,7 +25,9 @@ appId: com.logseq.logseq
 - tapOn:
     id: "button.connection.cancel"
 - tapOn:
-    id: "button.sidebar"
+    id: "button.sidebar.dismiss"
+- assertVisible:
+    id: "button.journal-calendar"
 - assertVisible:
     id: "button.composer.expand"
 - tapOn:
