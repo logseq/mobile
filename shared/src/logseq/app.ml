@@ -55,7 +55,8 @@ let update current action =
   let messages = match action with
     | Model.ResolveEffect (id, false, message) ->
       (match Model.effect_with_id current.in_flight_effects id with
-       | Some (Model.SignInEffect _) | Some (Model.ReportErrorEffect _) | None -> diagnostic_errors updated
+       | Some (Model.SignInEffect _) | Some (Model.ReportErrorEffect _)
+       | Some (Model.PushPreferenceEffect _) | None -> diagnostic_errors updated
        | Some (Model.CreateGraphEffect _) when updated.new_graph_password_required -> diagnostic_errors updated
        | Some _ -> message :: diagnostic_errors updated)
     | _ -> diagnostic_errors updated in
