@@ -20,7 +20,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -43,8 +47,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.logseq.logseq.runtime.logseqIconResolver
+import org.json.JSONArray
 import dev.lui.LuiExtensionContext
 import dev.lui.LuiExtensionEventSchema
 import dev.lui.LuiExtensionProperty
@@ -227,6 +235,49 @@ fun logseqExtensionRegistry(
         ),
     ) {
         OutlinerBlockContent(this, resolveAssetPath, youtubeStarts, onOpenImage, loadImage)
+    }
+    register(
+        "bottom-tab-strip",
+        "lui-extension-v1|16:bottom-tab-strip|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:cell-width:int:required:none,14:selected-index:int:required:none,5:inset:int:required:none,5:items:string:required:none|events:15:home-double-tap[],6:select[5:index:int:required]",
+        acceptsStandardChildren = true,
+        properties = listOf(
+            LuiExtensionProperty("cell-width", LuiExtensionValueKind.INTEGER, required = true),
+            LuiExtensionProperty("selected-index", LuiExtensionValueKind.INTEGER, required = true),
+            LuiExtensionProperty("inset", LuiExtensionValueKind.INTEGER, required = true),
+            LuiExtensionProperty("items", LuiExtensionValueKind.STRING, required = true),
+        ),
+        events = listOf(
+            LuiExtensionEventSchema("home-double-tap", emptyList()),
+            LuiExtensionEventSchema("select", listOf(LuiExtensionProperty("index", LuiExtensionValueKind.INTEGER, required = true))),
+        ),
+    ) {
+        val encoded = string("items") ?: "[]"
+        val items = remember(encoded) { JSONArray(encoded) }
+        val selected = int("selected-index")
+        NavigationBar {
+            for (index in 0 until items.length()) {
+                val item = items.getJSONObject(index)
+                val title = item.getString("title")
+                val name = item.getString("name")
+                val unreadLabel = if (item.isNull("unreadLabel")) null else item.getString("unreadLabel")
+                val icon = logseqIconResolver.icon(item.getString(if (index == selected) "selectedImage" else "image"))
+                NavigationBarItem(
+                    selected = index == selected,
+                    onClick = { emit("select", "index" to index) },
+                    modifier = Modifier.testTag("tab.bottom.$name").semantics {
+                        if (unreadLabel != null) stateDescription = unreadLabel
+                    },
+                    icon = {
+                        BadgedBox(badge = {
+                            if (unreadLabel != null) Badge(containerColor = MaterialTheme.colorScheme.primary)
+                        }) {
+                            if (icon != null) Icon(icon, contentDescription = null)
+                        }
+                    },
+                    label = { Text(title, maxLines = 1) },
+                )
+            }
+        }
     }
     register(
         "native-auth-input",

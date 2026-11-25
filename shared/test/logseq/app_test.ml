@@ -387,6 +387,7 @@ let empty_core_projection () =
     is_outliner_patch = false;
     is_outliner_content_patch = false;
     reference_update = None;
+    collaboration_update = None; is_collaboration_patch = false;
     pdf_update = None; is_pdf_patch = false; widget_block_uuid = None; query_update = None;
     pending_reference_uuid = None;
     hydrated_rows = [];
@@ -5201,7 +5202,7 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
     dispatch application (Lui_protocol.ExtensionEvent (current_strip (), "bottom-tab-strip", "select",
       Lui_protocol.String_map.singleton "index" (Lui_protocol.IntValue index)));
     flush application in
-  check_eq (children renderer tabs) (List.map tab ["home"; "tasks"; "flashcards"]);
+  check_eq (children renderer tabs) (List.map tab ["home"; "tasks"; "flashcards"; "notifications"]);
   check_eq (children renderer actions) [search; capture];
   List.iter (fun (id, width) ->
     check_eq (property_int renderer id Lui_protocol.WidthValue) width;
@@ -5218,7 +5219,10 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   check_eq (selected (tab "home")) false;
   check (descendant_with_identifier renderer (Lui_app.root_node application) "tasks.empty" <> -1);
   swipe_to 3;
-  check_eq (App.model application).destination Model.TasksDestination;
+  check_eq (App.model application).destination Model.NotificationsDestination;
+  check (descendant_with_identifier renderer (Lui_app.root_node application) "screen.notifications" <> -1);
+  swipe_to 4;
+  check_eq (App.model application).destination Model.NotificationsDestination;
   dispatch application (Lui_protocol.Press (tab "flashcards"));
   flush application;
   check_eq (App.model application).destination Model.FlashcardsDestination;

@@ -1,6 +1,6 @@
 # ADR 004 · Mobile comments, reactions, and notifications
 
-- Status · Proposed
+- Status · Accepted
 - Date · 2026-11-25
 
 ## Context
@@ -34,25 +34,23 @@ can read and update the same discussions, including in encrypted graphs.
 
 ### Notifications
 
-- Put **Notifications** in the bottom navigation on both iOS and Android. Show an unread badge
+- Put **Notifications** in the bottom navigation on both iOS and Android. Show a small unread dot in the accent color
   when another graph member comments on an owned page or block, replies in a thread the viewer
   participates in, or reacts to their block or comment. Exclude the viewer's own activity.
 - Derive the inbox from the synced graph, keyed by the stable event entity UUID, and list recent
   activity newest first. A notification opens its graph and originating block or comment thread.
   A missing target leaves the inbox usable and shows that the activity is unavailable.
 - Scope unread state to the signed-in account and graph. Persist read markers locally and support
-  marking individual items or all visible items as read. Include a graph's notifications once its
-  local mirror is available. Refresh from sync updates and retain the latest available results
+  marking individual items or all visible items as read. Display the active graph’s notifications
+  once its local mirror is available. Refresh from sync updates and retain the latest available results
   offline. Keep message text inside the encrypted graph boundary.
 - Deliver opted-in system alerts through APNs on iOS and FCM on Android. Request permission from
   the Notifications screen and let users change their preference there. Register device tokens
   with the signed-in account. Revoke registrations on sign-out and remove expired tokens.
-- Attach bounded routing hints to an authenticated sync transaction that creates a comment or
-  reaction. Hints contain only a graph ID, stable event UUID, and intended recipient account
-  IDs. The sync service can read those routing IDs, checks sender and recipient graph membership,
-  and limits fan-out and request frequency. It deduplicates on event ID and queues delivery only
-  after the corresponding write commits. Older writers can continue to sync; their events appear
-  in the in-app inbox once the local graph receives them.
+- Derive recipients in the sync worker from the structural references already visible during
+  sync. The service checks the authenticated author and recipient’s graph membership, limits
+  fan-out and frequency, deduplicates by graph and event UUID, and queues delivery after the
+  corresponding write commits. Desktop and mobile writes follow the same path.
 - Show generic alert text on the lock screen. Push payloads contain the graph and event IDs needed
   for navigation. Keep titles, message text, member names, and emoji inside the graph. After a
   notification tap, resolve the event against the synced graph and current account before
@@ -63,13 +61,21 @@ can read and update the same discussions, including in encrypted graphs.
 
 ### Platform interaction
 
-- On iOS, use native tab selection and badge behavior, app-standard bottom sheets for threads
-  and reaction selection, and VoiceOver labels that expose unread counts and selected reactions.
+- On iOS, use native tab selection and an unread dot, app-standard bottom sheets for threads
+  and reaction selection, and VoiceOver labels that expose unread state and selected reactions.
   Keep Search and Capture reachable on compact iPhones by adapting the tab widths.
-- On Android, use Material navigation, badges, sheets, and TalkBack semantics. The system Back
+- On Android, use Material navigation, an unread dot, sheets, and TalkBack semantics. The system Back
   action closes the reaction picker or thread before leaving the current destination. Keep the
   reply field visible above the keyboard on both platforms and use the existing LUI components
   where they provide equivalent behavior.
+
+## Staging configuration
+
+The iOS app reads the APNs environment from its provisioning profile. The Android build
+reads the Firebase app configuration from `LOGSEQ_ANDROID_FIREBASE_APP_ID`,
+`LOGSEQ_ANDROID_FIREBASE_API_KEY`, `LOGSEQ_ANDROID_FIREBASE_SENDER_ID`, and
+`LOGSEQ_ANDROID_FIREBASE_PROJECT_ID`. Enable worker delivery after applying the D1 migration
+and configuring provider credentials. [Sync service change](https://github.com/logseq/logseq/pull/14103)
 
 ## Verification
 

@@ -1,6 +1,7 @@
 ("Api"
 "Core_effect"
 "Created_by"
+"Collaboration"
 "Snapshot_download"
 "Shared_capture"
 "Media"

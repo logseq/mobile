@@ -113,6 +113,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
     private let copyText: @MainActor (String) -> Void
     private let signIn: (@MainActor (String) async throws -> String)?
     private let signOut: @MainActor () async -> Void
+    private let pushPreference: (@MainActor (Bool) async throws -> Void)?
     private let openExternalURL: (@MainActor (URL) async -> Bool)?
     private let exportGraphDatabase: (@MainActor () async -> Bool)?
     private let graphEffect: (@MainActor (LGEffect) async -> LGEffectResolution)?
@@ -130,6 +131,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
         copyText: @escaping @MainActor (String) -> Void,
         signIn: (@MainActor (String) async throws -> String)? = nil,
         signOut: @escaping @MainActor () async -> Void,
+        pushPreference: (@MainActor (Bool) async throws -> Void)? = nil,
         openExternalURL: (@MainActor (URL) async -> Bool)? = nil,
         exportGraphDatabase: (@MainActor () async -> Bool)? = nil,
         graphEffect: (@MainActor (LGEffect) async -> LGEffectResolution)? = nil,
@@ -146,6 +148,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
         self.copyText = copyText
         self.signIn = signIn
         self.signOut = signOut
+        self.pushPreference = pushPreference
         self.openExternalURL = openExternalURL
         self.exportGraphDatabase = exportGraphDatabase
         self.graphEffect = graphEffect
@@ -237,6 +240,12 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
                 }
                 let response = try await signIn(effect.text)
                 return LGEffectResolution(succeeded: true, message: response, output: .discard)
+            case "push-preference":
+                guard let pushPreference else {
+                    return LGEffectResolution(succeeded: false, message: "System notifications are unavailable", output: .discard)
+                }
+                try await pushPreference(effect.text == "true")
+                return LGEffectResolution(succeeded: true, message: "", output: .discard)
             case "sign-out":
                 await signOut()
                 return LGEffectResolution(
@@ -379,7 +388,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
         } catch {
             return LGEffectResolution(
                 succeeded: false,
-                message: String(describing: error),
+                message: effect.kind == "push-preference" ? error.localizedDescription : String(describing: error),
                 output: .discard
             )
         }
@@ -422,7 +431,7 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
     public func execute(_ effect: LGEffect) async -> LGEffectResolution {
         switch effect.kind {
         case "report-error", "persist-ui-session", "persist-composer-draft", "sign-in", "save-settings", "refresh-runtime-log",
-             "copy-runtime-log", "sign-out", "export-graph-database", "open-external-url",
+             "copy-runtime-log", "sign-out", "push-preference", "export-graph-database", "open-external-url",
              "present-attachment", "present-journal-calendar", "present-asset", "present-page-share", "sync-now", "sync-pending":
             guard let platformEffect else {
                 return LGEffectResolution(succeeded: false, message: "Platform settings handling is unavailable")

@@ -158,6 +158,12 @@ else
   "$repo_root/scripts/configure-ios-info-plist.sh" "$app_dir/Info.plist" "com.logseq.logseq" "$deployment_target" "iPhoneSimulator"
 fi
 cp "$swift_build_dir/LogseqShell" "$app_dir/Logseq"
+# APNs resolves localization keys against the app bundle, outside SwiftPM bundles.
+for localization in "$repo_root"/apple/App/PushLocalization/*.lproj; do
+  destination="$app_dir/$(basename "$localization")"
+  mkdir -p "$destination"
+  cp "$localization/Localizable.strings" "$destination/"
+done
 "$repo_root/scripts/compile-ios-app-assets.sh" "$app_dir" iphonesimulator "$deployment_target"
 
 for bundle in "$swift_build_dir"/*.bundle; do

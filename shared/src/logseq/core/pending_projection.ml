@@ -467,10 +467,89 @@ let activity_at_least db uuid timestamp =
   Option.exists (fun current -> current >= timestamp)
     (Graph_read.int_value (one_value db (lookup uuid) "block/updated-at"))
 
+let discussion_block_tx ~uuid ~title ~page ~parent ~order ~created_at ~tag extra =
+  entity_tx (Ds.Temp_id ("pending/" ^ uuid)) ([
+    "block/uuid", Ds.One_value (Ds.Uuid uuid);
+    "block/title", Ds.One_value (Ds.String title);
+    "block/page", Ds.One_value (Ds.Ref_to (lookup page));
+    "block/parent", Ds.One_value (Ds.Ref_to (lookup parent));
+    "block/order", Ds.One_value (Ds.String order);
+    "block/tags", Ds.Many_values [Ds.Ref_to (Ds.Ident tag)];
+    "block/created-at", Ds.One_value (Ds.Int64 (Int64.of_int created_at));
+    "block/updated-at", Ds.One_value (Ds.Int64 (Int64.of_int created_at))]
+    @ extra)
+
+let compile_comment db (write : Collaboration.comment_write) =
+  let module C = Collaboration in
+  let ( let* ) = Result.bind in
+  let required message = Option.to_result ~none:message in
+  if C.entity db write.uuid <> None then Ok []
+  else if String_kit.is_blank write.text || String.length write.text > 32_768 then Error "Enter a comment up to 32 KB"
+  else
+  let* target = required "Comment target no longer exists" (C.write_target db write.target) in
+  if C.thread_of_comment db target <> None then Error "Reply in the original thread"
+  else
+  let is_page = Graph_read.value db target "block/name" <> None in
+  let* page = if is_page then Ok write.target else
+    required "Comment page no longer exists"
+      (List.find_map (Graph_read.uuid_for_eid db) (C.refs db target "block/page")) in
+  let end_order parent = Fractional_order.between (Graph_read.last_order db "block/parent" parent) None in
+  let link = Ds.Ref_to (Ds.Entity_id target) in
+  let* thread_uuid, comment_order, thread_tx =
+    match C.existing_thread db target with
+    | Some thread ->
+      let* uuid = required "Missing discussion ID" (Graph_read.uuid_for_eid db thread) in
+      let* order = end_order thread in
+      let tx = if C.refs db thread C.thread_targets = [] then
+        [Ds.Add (Ds.Entity_id thread, C.thread_targets, link)] else [] in
+      Ok (uuid, order, tx)
+    | None ->
+      let* order = if is_page then
+        let first = C.referring db "block/parent" target
+          |> List.filter_map (fun child -> C.text db child "block/order")
+          |> List.sort String.compare |> (function first :: _ -> Some first | [] -> None) in
+        Fractional_order.between None first
+      else end_order target in
+      let* comment_order = Fractional_order.between None None in
+      let title = if is_page then "Comments on this page" else "Comments" in
+      let tx = discussion_block_tx ~uuid:write.thread ~title ~page ~parent:write.target
+        ~order ~created_at:write.created_at ~tag:C.thread_class [C.thread_targets, Ds.Many_values [link]] in
+      Ok (write.thread, comment_order, [tx]) in
+  Ok (thread_tx @ [discussion_block_tx ~uuid:write.uuid ~title:write.text ~page ~parent:thread_uuid
+    ~order:comment_order ~created_at:write.created_at ~tag:C.comment_class []])
+
+let reaction_satisfied db (write : Collaboration.reaction_write) =
+  let reactions = Collaboration.own_reactions db ~target:write.target ~actor:write.actor ~emoji:write.emoji in
+  (reactions <> []) = write.active
+
+let compile_reaction db (write : Collaboration.reaction_write) =
+  let module C = Collaboration in
+  if not (C.valid_emoji write.emoji) then Error "Invalid reaction"
+  else match C.write_target db write.target with
+  | None -> Error "Reaction target no longer exists"
+  | Some target ->
+    if write.active then
+      if reaction_satisfied db write then Ok []
+      else if C.entity db write.uuid <> None then Error "Reaction ID already exists"
+      else
+        let author = match C.entity db write.actor with
+          | Some actor -> [C.creator, Ds.One_value (Ds.Ref_to (Ds.Entity_id actor))]
+          | None -> [] in
+        Ok [entity_tx (Ds.Temp_id ("pending/" ^ write.uuid)) ([
+          "block/uuid", Ds.One_value (Ds.Uuid write.uuid);
+          "block/created-at", Ds.One_value (Ds.Int64 (Int64.of_int write.created_at));
+          C.reaction_emoji, Ds.One_value (Ds.String write.emoji);
+          C.reaction_target, Ds.One_value (Ds.Ref_to (Ds.Entity_id target))] @ author)]
+    else
+      Ok (C.own_reactions db ~target:write.target ~actor:write.actor ~emoji:write.emoji
+          |> List.map (fun reaction -> Ds.RetractEntity (Ds.Entity_id reaction)))
+
 let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
   let resolved = resolve_page_references literal_blocks db intent in
   if resolved <> intent then compile_with_literals literal_blocks db resolved else
   match intent with
+  | Ops.Add_comment write -> compile_comment db write
+  | Ops.Set_reaction write -> compile_reaction db write
   | Ops.Create_property value ->
     let existing = Ds.entid db "block/uuid" (Ds.Uuid value.uuid) in
     let valid_name = Dev_query.Unicode.trim value.title <> "" && not (String.contains value.title '#')
@@ -1023,6 +1102,8 @@ let block_location_matches db uuid page_uuid parent_uuid order =
 let rec satisfied db (intent : Ops.pending_intent) =
   match intent with
   | Ops.Atomic intents -> intents <> [] && List.for_all (satisfied db) intents
+  | Ops.Add_comment write -> Collaboration.entity db write.uuid <> None
+  | Ops.Set_reaction write -> reaction_satisfied db write
   | Ops.Set_key_value {key; value} ->
     semantic_value_equal db (property_value db (Ds.Ident key) "kv/value") value
   | Ops.Create_property_value value ->

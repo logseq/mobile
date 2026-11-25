@@ -188,6 +188,12 @@ cp "$repo_root/apple/App/Info.plist" "$app_dir/Info.plist"
 cp "$profile" "$app_dir/embedded.mobileprovision"
 "$repo_root/scripts/configure-ios-info-plist.sh" "$app_dir/Info.plist" "$bundle_id" "$deployment_target" "iPhoneOS"
 cp "$swift_build_dir/LogseqShell" "$app_dir/Logseq"
+# APNs resolves localization keys against the app bundle, outside SwiftPM bundles.
+for localization in "$repo_root"/apple/App/PushLocalization/*.lproj; do
+  destination="$app_dir/$(basename "$localization")"
+  mkdir -p "$destination"
+  cp "$localization/Localizable.strings" "$destination/"
+done
 "$repo_root/scripts/compile-ios-app-assets.sh" "$app_dir" iphoneos "$deployment_target"
 
 for bundle in "$swift_build_dir"/*.bundle; do
@@ -263,6 +269,13 @@ codesign "${codesign_keychain_args[@]}" --force --sign "$signing_identity" --tim
 
 write_development_entitlements "$repo_root/apple/App/Entitlements.plist" \
   "$profile_plist" "$bundle_id" "$entitlements"
+# Use the APNs environment granted by the app profile. Builds with a profile
+# that lacks the capability continue to support the in-app inbox.
+apns_environment=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' "$profile_plist" 2>/dev/null || true)
+if [[ $apns_environment == development || $apns_environment == production ]]; then
+  /usr/libexec/PlistBuddy -c "Add :aps-environment string $apns_environment" "$entitlements"
+  /usr/libexec/PlistBuddy -c "Add :LogseqAPNsEnvironment string $apns_environment" "$app_dir/Info.plist"
+fi
 codesign "${codesign_keychain_args[@]}" --force --sign "$signing_identity" --timestamp=none \
   --entitlements "$entitlements" "$app_dir"
 codesign --verify --deep --strict "$app_dir"

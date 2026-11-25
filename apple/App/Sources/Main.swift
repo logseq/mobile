@@ -1,6 +1,7 @@
 import SwiftUI
 import Logseq
 import AppIntents
+import UserNotifications
 
 private typealias AppRootView = LogseqRootView
 private typealias AppDelegate = LogseqAppDelegate
@@ -37,6 +38,7 @@ typealias AppType = UIApplication
 
 @MainActor final class AppMainDelegate: NSObject, AppMainDelegateBase {
     let application = AppType.shared
+    private let discussionNotifications = DiscussionNotificationDelegate()
 
     func application(_ application: UIApplication, willFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         AppDelegate.shared.onInit()
@@ -45,6 +47,7 @@ typealias AppType = UIApplication
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         AppDelegate.shared.onLaunch()
+        UNUserNotificationCenter.current().delegate = discussionNotifications
         LogseqBackgroundRefresh.register()
         LogseqBackgroundRefresh.schedule()
         return true
@@ -72,16 +75,22 @@ typealias AppType = UIApplication
         LogseqLogseqRuntime.shared.resumePendingWidgetRefresh()
     }
 
-    // Support notification token retrieval from the app runtime.
-
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
-        NotificationCenter.default.post(name: NSNotification.Name("didRegisterForRemoteNotificationsWithDeviceToken"), object: application, userInfo: ["deviceToken": deviceToken])
+        LGDiscussionPush.shared.registered(deviceToken: deviceToken)
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: any Error) {
-        NotificationCenter.default.post(name: NSNotification.Name("didFailToRegisterForRemoteNotificationsWithError"), object: application, userInfo: ["error": error])
+        LGDiscussionPush.shared.registrationFailed(error)
     }
+}
 
+private final class DiscussionNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        let payload = response.notification.request.content.userInfo
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+              let graph = payload["graphId"] as? String, let event = payload["eventId"] as? String else { return }
+        await LogseqLogseqRuntime.shared.openDiscussionPush(graphID: graph, eventID: event)
+    }
 }
 
 @MainActor final class QuickActionSceneDelegate: NSObject, UIWindowSceneDelegate {

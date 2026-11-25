@@ -155,6 +155,7 @@ let host_action (update : Host_update.host_update) =
       { Model.graph_id = session.graph_id;
         destination =
           (match session.destination with
+           | "notifications" -> Model.NotificationsDestination
            | "tasks" -> Model.TasksDestination
            | "flashcards" -> Model.FlashcardsDestination
            | "graphs" -> Model.GraphsDestination
@@ -172,7 +173,8 @@ let host_action (update : Host_update.host_update) =
         selected_page_id = session.selected_page_id;
         settings_open = session.settings_open;
         recent_graph_ids = session.recent_graph_ids;
-        tasks_view = Option.map decode_tasks_view session.tasks_view }
+        tasks_view = Option.map decode_tasks_view session.tasks_view;
+        read_notifications = session.read_notifications }
   | Composer_draft draft -> Model.ApplyComposerDraft draft
   | Graph_loading loading -> Model.ApplyGraphLoading loading
   | Authentication authentication ->
@@ -181,6 +183,8 @@ let host_action (update : Host_update.host_update) =
   | Open_quick_action kind -> Model.OpenQuickAction kind
   | Confirm_outliner_delete -> Model.ConfirmOutlinerDelete
   | Open_capture -> Model.ExpandComposer
+  | Open_pushed_discussion (graph, id) -> Model.OpenPushedDiscussion (graph, id)
+  | Push_preference enabled -> Model.ApplyPushPreference enabled
   | Open_node uuid -> Model.RequestAppNode uuid
   | Open_pdf (uuid, title, path) -> Model.OpenPdf (uuid, title, path)
   | Asset_preview_resolved (title, path) ->
@@ -228,10 +232,13 @@ let encode_ui_session (session : Model.ui_session) =
   ^ ",\"destination\":"
   ^ Lui_wire.quoted
       (match session.destination with
+       | Model.NotificationsDestination -> "notifications"
        | Model.TasksDestination -> "tasks"
        | Model.FlashcardsDestination -> "flashcards"
        | Model.GraphsDestination -> "graphs"
        | Model.JournalsDestination -> "journals")
+  ^ ",\"readNotifications\":" ^ Yojson.Basic.to_string (`Assoc (List.map (fun (scope, ids) ->
+    scope, `List (List.map (fun id -> `String id) ids)) session.read_notifications))
   ^ ",\"assets\":["
   ^ String.concat "," (List.map encode_session_asset session.assets)
   ^ "]" ^ ",\"composerTags\":"
@@ -346,6 +353,11 @@ let encode_effect ?(model : Model.logseq_model option) (eff : Model.logseq_effec
   | DeleteBlockEffect (id, uuid, cursor) ->
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "delete-block";
       "text", `String uuid; "value", `Int cursor])
+  | PushPreferenceEffect (id, enabled) ->
+    Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "push-preference";
+      "text", `String (string_of_bool enabled)])
+  | CollaborationEffect (id, payload) ->
+    Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "collaboration"; "text", `String payload])
   | PdfAnnotationEffect (id, payload) ->
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "pdf-annotation"; "text", `String payload])
   | ResultViewEffect (id, _, payload) ->

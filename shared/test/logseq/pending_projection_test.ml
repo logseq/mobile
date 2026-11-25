@@ -68,8 +68,8 @@ let with_tx db tx = Ds.db_with tx db
 let empty_schema_db () = Ds.empty_db ~schema ()
 let empty_db_with ?(schema = schema) () = Ds.empty_db ~schema ()
 
-let base_db () =
-  with_tx (empty_db_with ())
+let base_db ?(schema = schema) () =
+  with_tx (empty_db_with ~schema ())
     [
       add 1 "block/uuid" (Ds.Uuid "page");
       add 1 "block/title" (Ds.String "Page");
@@ -1357,8 +1357,42 @@ let asset_transcript_survives_persistence_and_projects_atomically () =
   check (Projection.satisfied after restored);
   check_eq (Ds.entid before "block/uuid" (Ds.Uuid "transcript")) None
 
+let discussion_writes_reuse_the_thread_and_preserve_reaction_ownership () =
+  let module C = Collaboration in
+  let schema = [(C.creator, ref_attr); (C.thread_targets, many_ref);
+    (C.reaction_target, ref_attr); (C.reaction_emoji, string_attr)] @ schema in
+  let db = with_tx (base_db ~schema ()) [
+    add 20 "db/ident" (Ds.Keyword C.thread_class);
+    add 21 "db/ident" (Ds.Keyword C.comment_class);
+    add 22 "block/uuid" (Ds.Uuid "owner");
+    add 23 "block/uuid" (Ds.Uuid "member");
+    add 23 "block/title" (Ds.String "Member");
+    add 10 C.creator (Ds.Ref 22)] in
+  let post uuid thread text = Ops.Add_comment {target = "block"; uuid; thread; text; created_at = 100} in
+  let first = post "reply1" "thread1" "First" in
+  let second = post "reply2" "thread2" "Second" in
+  let db = apply_intent db (Ops.intent_of_json (Ops.intent_json first)) in
+  let db = apply_intent db second in
+  let eid uuid = Option.get (C.entity db uuid) in
+  check_eq (C.threads db (eid "block")) [eid "thread1"];
+  check_eq (C.comments db (eid "thread1")) [eid "reply1"; eid "reply2"];
+  let db = with_tx db [add (eid "reply1") C.creator (Ds.Ref 23); add (eid "reply2") C.creator (Ds.Ref 22)] in
+  let reaction actor uuid active = Ops.Set_reaction {target = "block"; actor; uuid; emoji = "heart"; active; created_at = 200} in
+  let first_reaction = reaction "member" "reaction1" true in
+  let db = apply_intent db (Ops.intent_of_json (Ops.intent_json first_reaction)) in
+  check (Projection.satisfied db first_reaction);
+  let db = apply_intent db (reaction "owner" "reaction2" true) in
+  check_eq (List.length (C.reactions db (eid "block"))) 2;
+  let event_ids db = List.map (fun event -> Yojson.Basic.Util.(event |> member "id" |> to_string)) (C.inbox db ~actor:"owner") in
+  check_eq (event_ids db) ["reaction1"; "reply1"];
+  let db = apply_intent db (reaction "member" "unused" false) in
+  check_eq (event_ids db) ["reply1"];
+  check_eq (List.length (C.own_reactions db ~target:"block" ~actor:"owner" ~emoji:"heart")) 1
+
 let cases =
-  [ case "task properties follow master tag and clear semantics"
+  [ case "discussion writes reuse threads and preserve reaction ownership"
+      discussion_writes_reuse_the_thread_and_preserve_reaction_ownership;
+    case "task properties follow master tag and clear semantics"
       task_properties_follow_master_tag_and_clear_semantics;
     case "built-in tags initialize behavior and render through cache"
       built_in_tags_initialize_behavior_and_render_through_cache;

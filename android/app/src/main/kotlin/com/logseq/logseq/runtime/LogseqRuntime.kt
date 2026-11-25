@@ -70,12 +70,44 @@ internal class LogseqRuntime(
         val hasInitialWidgetBlock: Boolean,
     )
 
+    private val discussionPush = com.logseq.logseq.AndroidDiscussionPush(activity)
+    private val uiSession = activity.getSharedPreferences("logseq.uiSession", android.content.Context.MODE_PRIVATE)
+    private var pendingDiscussionPush: String? = null
+
+    fun openDiscussionPush(graph: String, event: String) {
+        if (runCatching { java.util.UUID.fromString(graph); java.util.UUID.fromString(event) }.isFailure) return
+        pendingDiscussionPush = JSONObject().put("graphId", graph).put("eventId", event).toString()
+        deliverDiscussionPush()
+    }
+
+    private fun deliverDiscussionPush() {
+        if (!hasAuthenticatedSession || !hasOpenGraph) return
+        val payload = pendingDiscussionPush ?: return
+        pendingDiscussionPush = null
+        applyPatch(bridge.applyHostUpdate("open-pushed-discussion", payload))
+        scope.launch { effectDrain?.drain(scope) }
+    }
+
     private val platformEffects = AndroidPlatformEffects(
         authentication = CognitoAndroidAuthentication(authentication),
         platform = platformServices,
         attachmentsImporter = assetImporter::import,
         syncNow = ::requestSyncNow,
         presentJournalCalendar = ::presentJournalCalendar,
+        setDiscussionPush = { enabled ->
+            val token = requireNotNull(authentication.apiToken())
+            discussionPush.setEnabled(enabled, storageBaseUrl, token)
+        },
+        revokeDiscussionPush = {
+            try {
+                authentication.apiToken()?.let { discussionPush.signOut(storageBaseUrl, it) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // A provider token can also expire while the app is offline.
+            }
+        },
+        persistUISession = { encoded -> uiSession.edit().putString("session", encoded).apply() },
     )
 
     val backend = LuiBackend(
@@ -291,7 +323,14 @@ internal class LogseqRuntime(
         appIsForeground = resumed
         updateCatalogPolling("lifecycle")
         ensureGraphEventsSync()
-        if (resumed && hasOpenGraph) appEntries.markReady()
+        if (resumed && hasOpenGraph) {
+            appEntries.markReady()
+            deliverDiscussionPush()
+            if (discussionPush.enabled) scope.launch {
+                runCatching { authentication.apiToken()?.let { discussionPush.refresh(storageBaseUrl, it) } }
+                applyPatch(bridge.applyHostUpdate("push-preference", discussionPush.enabled.toString()))
+            }
+        }
         journalDayJob?.cancel()
         journalDayJob = if (resumed) scope.launch {
             while (true) {
@@ -765,6 +804,11 @@ internal class LogseqRuntime(
             )
             hasOpenGraph = restored.graphResponse != null
             restored.graphResponse?.let { applyCoreResponse(it) }
+            uiSession.getString("session", null)?.let { session ->
+                applyPatch(bridge.applyHostUpdate("restore-ui-session", session))
+            }
+            applyPatch(bridge.applyHostUpdate("push-preference", discussionPush.enabled.toString()))
+            deliverDiscussionPush()
             if (isOpeningInitialWidgetBlock) {
                 try {
                     appEntries.deliverInitialWidgetBlocks(::reportWidgetLinkError)

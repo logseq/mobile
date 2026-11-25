@@ -12,6 +12,7 @@ type navigation_route =
 type primary_destination =
   | JournalsDestination
   | TasksDestination
+  | NotificationsDestination
   | FlashcardsDestination
   | GraphsDestination
 
@@ -65,6 +66,7 @@ type ui_session =
   ; selected_page_id : string option
   ; settings_open : bool
   ; recent_graph_ids : string list
+  ; read_notifications : (string * string list) list
   ; tasks_view : tasks_view option
   }
 
@@ -282,6 +284,8 @@ type core_projection =
   ; search_has_more : bool
   ; search_results : search_hit list
   ; reference_update : (string * outline_row list) option
+  ; collaboration_update : Yojson.Basic.t option
+  ; is_collaboration_patch : bool
   ; pdf_update : string option
   ; is_pdf_patch : bool
   ; widget_block_uuid : string option
@@ -315,6 +319,8 @@ type composer_submission =
   }
 
 type logseq_effect =
+  | PushPreferenceEffect of int * bool
+  | CollaborationEffect of int * string
   | PdfAnnotationEffect of int * string
   | ResultViewEffect of int * string * string
   | NodePropertyEffect of int * string * string
@@ -529,6 +535,15 @@ type logseq_model =
   ; app_navigation_previews : node_projection list
   ; app_navigation_path : navigation_route list
   ; search_navigation_path : navigation_route list
+  ; collaboration : Yojson.Basic.t
+  ; push_enabled : bool
+  ; push_error : string option
+  ; pending_push_route : (string * string) option
+  ; discussion_target : string option
+  ; discussion_draft : string
+  ; discussion_error : string option
+  ; reaction_picker : string option
+  ; read_notifications : (string * string list) list
   ; pdf_workspace : string option
   ; asset_preview : asset_preview option
   }
@@ -635,6 +650,18 @@ type logseq_action =
   | ShowTasks
   | SetTasksView of tasks_view
   | SelectTasks
+  | ShowNotifications
+  | SetPushPreference of bool
+  | ApplyPushPreference of bool
+  | OpenPushedDiscussion of string * string
+  | OpenDiscussion of string
+  | CloseDiscussion
+  | EditDiscussionDraft of string
+  | PostDiscussionComment
+  | ShowReactionPicker of string option
+  | ToggleDiscussionReaction of string * string
+  | ReadNotification of string
+  | ReadAllNotifications
   | ShowFlashcards
   | FlashcardDeckAction of string
   | ShowGraphs
@@ -837,3 +864,10 @@ val graph_creation_password_invalid_ : logseq_model -> bool
 val wide_content_breakpoint : int
 
 val composer_tag_selection : sidebar_page list -> Yojson.Basic.t
+
+val collaboration_field : string -> Yojson.Basic.t -> Yojson.Basic.t
+val collaboration_string : string -> Yojson.Basic.t -> string
+val notification_items : logseq_model -> Yojson.Basic.t list
+val notification_count : logseq_model -> int
+val notification_read : logseq_model -> string -> bool
+val posting_comment : logseq_model -> bool

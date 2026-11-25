@@ -136,15 +136,18 @@ let search_screen model_source send : t =
 let uses_ios_native_header context =
   Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost
 
-let bottom_tab_row ~show_flashcards model_source send : t =
+let bottom_tab_row ?(tabs_only = false) ~show_flashcards ~tab_width model_source send : t =
   let current = Signal.sample model_source in
-  let cell = 50 and tab_width = 58 and inset = 4 in
+  let cell = 50 and inset = 4 in
   let destinations = [
     Model.JournalsDestination, "Home", "home", "tab-home", "tab-home-selected", Model.ShowJournals;
     Model.TasksDestination, "Tasks", "tasks", "tab-tasks", "tab-tasks-selected", Model.ShowTasks;
   ] @ (if show_flashcards then
     [Model.FlashcardsDestination, "Flashcards", "flashcards", "flashcards", "flashcards", Model.ShowFlashcards]
-    else []) in
+    else []) @ [
+      Model.NotificationsDestination, "Notifications", "notifications", "tab-notifications",
+      "tab-notifications-selected", Model.ShowNotifications;
+    ] in
   let navigate destination action =
     let current : Model.logseq_model = Signal.sample model_source in
     if current.destination <> destination || current.app_navigation_path <> []
@@ -152,14 +155,19 @@ let bottom_tab_row ~show_flashcards model_source send : t =
     then ignore (send action) in
   let tab (destination, title, name, image, selected_image, action) =
     let selected = Signal.map (fun (current : Model.logseq_model) -> current.destination = destination) model_source in
-    icon_button ~icon:(`app image)
+    let label current =
+      let title = View_base.tr current title in
+      if destination = Model.NotificationsDestination && Model.notification_count current > 0
+      then title ^ ", " ^ View_base.tr current "Unread notifications" else title in
+    View_base.with_label_signal (Signal.map label model_source)
+    (icon_button ~icon:(`app image)
       ~icon_signal:(Signal.map (fun selected -> `app (if selected then selected_image else image)) selected)
       ~selected_signal:selected ~variant:`ghost ~size:`icon ~width:tab_width ~height:cell
       ~style_class:"system-toolbar-icon"
       ~foreground_signal:(Signal.map (fun selected -> if selected then "link" else "foreground") selected)
-      ~label:(View_base.tr current title) ~accessibility_identifier:("tab.bottom." ^ name)
+      ~label:(label current) ~accessibility_identifier:("tab.bottom." ^ name)
       ~on_press:(fun _ -> navigate destination action)
-      [] in
+      []) in
   let action image title identifier event =
     icon_button ~icon:(`app image) ~variant:`ghost ~size:`icon ~width:cell ~height:cell
       ~foreground:"foreground"
@@ -175,9 +183,11 @@ let bottom_tab_row ~show_flashcards model_source send : t =
       List.find_index (fun (destination, _, _, _, _, _) -> current.destination = destination)
         destinations |> Option.value ~default:(-1)) model_source in
     let items = Signal.map (fun current ->
-      `List (List.map (fun (_, title, name, image, selected_image, _) ->
+      `List (List.map (fun (destination, title, name, image, selected_image, _) ->
         `Assoc ["title", `String (View_base.tr current title); "name", `String name;
-                "image", `String image; "selectedImage", `String selected_image])
+                "image", `String image; "selectedImage", `String selected_image;
+                "unreadLabel", (if destination = Model.NotificationsDestination && Model.notification_count current > 0
+                  then `String (View_base.tr current "Unread notifications") else `Null)])
         destinations) |> Yojson.Safe.to_string) model_source in
     Lui_ui.extension_property context node "inset" (IntValue inset);
     Lui_ui.extension_property context node "cell-width" (IntValue tab_width);
@@ -196,6 +206,7 @@ let bottom_tab_row ~show_flashcards model_source send : t =
     ignore (mount context ~parent:node (group "tabs" tab_width (List.map tab destinations)));
     attach context parent node;
     node) in
+  if tabs_only then tabs else
   row ~grow:1.0 ~gap:8 ~main:`space_between ~cross:`center
     ~accessibility_identifier:"row.bottom.capture" [
       tabs;
@@ -210,9 +221,16 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send
   if uses_ios_native_header context then
     let show_flashcards = Signal.map (fun (current : Model.logseq_model) ->
       List.mem "flashcards" current.sidebar_tabs) model_source in
-    reactive (fun show_flashcards -> bottom_tab_row ~show_flashcards model_source send) show_flashcards
+    let layout = Signal.map2 (fun flashcards (current : Model.logseq_model) ->
+      let viewport = if current.viewport_width > 0 then current.viewport_width else 390 in
+      let count = if flashcards then 4 else 3 in
+      flashcards, max 40 (min 58 ((viewport - 32 - 8 - 108 - 8) / count))) show_flashcards model_source in
+    reactive (fun (show_flashcards, tab_width) -> bottom_tab_row ~show_flashcards ~tab_width model_source send) layout
   else if Lui_ui.host context = KotlinHost then
-    row ~grow:1.0 ~gap:10 ~cross:`center
+    let show_flashcards = Signal.map (fun (current : Model.logseq_model) ->
+      List.mem "flashcards" current.sidebar_tabs) model_source in
+    column ~gap:6 [
+      row ~grow:1.0 ~gap:10 ~cross:`center
       ~accessibility_identifier:"row.bottom.capture"
       [
         View_composer.composer_view context model_source send;
@@ -222,7 +240,9 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send
           ~accessibility_identifier:"button.search"
           ~on_press:(press send Model.OpenSearch)
           [];
-      ]
+      ];
+      reactive (fun show_flashcards -> bottom_tab_row ~tabs_only:true ~show_flashcards ~tab_width:50 model_source send) show_flashcards;
+    ]
   else
     row ~grow:1.0 ~gap:10 ~cross:`center
       ~accessibility_identifier:"row.bottom.capture"
@@ -238,7 +258,7 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send
 
 let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) model_source send : t
     =
-  let primary_tabs = uses_ios_native_header context in
+  let primary_tabs = uses_ios_native_header context || Lui_ui.host context = KotlinHost in
   let selection_chrome : t =
     column ~gap:0 ~padding_horizontal:16
       [
@@ -538,6 +558,10 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
            ~bottom_spacing:(if uses_ios_native_header context then 64 else 24)
            model_source send);
       if_
+        ~test:(Signal.map (fun (current : Model.logseq_model) ->
+          current.destination = Model.NotificationsDestination && current.app_navigation_path = []) model_source)
+        (View_collaboration.notification_screen ~bottom_spacing:(if uses_ios_native_header context then 72 else 80) model_source send);
+      if_
         ~test:(Signal.map View_base.graphs_destination_ model_source)
         (View_graphs.graphs_screen context model_source send);
 
@@ -694,8 +718,15 @@ let active_overflow_menu model_source send : t =
    (* iOS menu items carry no icons; the Kotlin popup did. *)
    let item_icon name = if kotlin_host then Some (`app name) else None in
    mount context ?parent (View_property.with_add_property_picker model_source raw_source send (fun _ add_property add_picker ->
+   let discussion_page = own (Signal.map (fun current ->
+     if View_collaboration.ready current then Model.active_page current else None) model_source) in
    let entries =
-     [ if_dropdown_menu_item ~test:page_actions_source
+     [ if_dropdown_menu_item ~test:(own (Signal.map Option.is_some discussion_page))
+         (dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Comments")
+           ?icon:(item_icon "discussion-comment") ~accessibility_identifier:"button.page.comments"
+           ~on_press:(fun _ -> Option.iter (fun (page : Model.sidebar_page) ->
+             ignore (send (Model.OpenDiscussion page.uuid))) (Signal.sample discussion_page)) []);
+       if_dropdown_menu_item ~test:page_actions_source
          (if kotlin_host then
             dropdown_menu_item
               ~text_signal:
@@ -807,7 +838,10 @@ let main_header_connection model_source send : t = custom @@ fun context parent 
     [
       if_
         ~test:
-          (Signal.map View_base.connection_control_visible_ model_source)
+          (Signal.map (fun (current : Model.logseq_model) ->
+            View_base.connection_control_visible_ current
+            && (current.destination <> Model.NotificationsDestination
+                || current.app_navigation_path <> [])) model_source)
         (custom @@ fun context parent ->
           mount context ?parent (stack [
                (if uses_ios_native_header context then
@@ -1015,6 +1049,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
        (fun current ->
          let current = main_header_model context current in
          if (uses_ios_native_header context && View_base.tasks_destination_ current)
+           || current.destination = Model.NotificationsDestination
            || (View_base.journals_destination_ current && View_base.selected_page_content_title_visible_ current) then ""
          else View_base.main_title current)
        model_source
@@ -1415,6 +1450,7 @@ let application_view (context : Lui_ui.ui_context) model_source send : t =
 
 let logseq_view context model_source send : t =
   stack ~grow:1.0 [application_view context model_source send;
+    View_collaboration.overlays model_source send;
     View_outliner.task_dates_dialog model_source send;
     View_outliner.composer_task_date_dialog model_source send;
     if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.authentication_form.opened) model_source)

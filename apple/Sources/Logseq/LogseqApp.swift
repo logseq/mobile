@@ -187,6 +187,7 @@ public struct LogseqRootView : View {
     private var isResumingLGApplication = false
     private var didResumeCurrentActivation = false
     private var refreshedJournalDay: String?
+    private var pendingDiscussionPush: Data?
     private let graphLifecycle: LGGraphLifecycle
     private let platformCommandRouter: LGPlatformCommandRouter
 
@@ -281,12 +282,19 @@ public struct LogseqRootView : View {
             signOut: {
                 await syncCoordinator.cancelBackground()
                 await syncCoordinator.stopForeground()
+                if LGDiscussionPush.shared.enabled, let token = try? await authentication.apiToken() {
+                    try? await LGDiscussionPush.shared.setEnabled(false, sessionToken: token)
+                }
                 await authentication.signOut()
                 await store.configureAndSelectGraph(
                     baseURL: LogseqSettingsPolicy.storedBaseURL(),
                     token: "",
                     selectedGraphID: store.snapshot.selectedGraphId
                 )
+            },
+            pushPreference: { enabled in
+                let token = try await authentication.apiToken()
+                try await LGDiscussionPush.shared.setEnabled(enabled, sessionToken: token)
             },
             openExternalURL: { url in
                 return await UIApplication.shared.open(url)
@@ -490,6 +498,7 @@ public struct LogseqRootView : View {
             await store.loadLaunchSidebar(graphID: graphID)
         }
         didFinishLaunchWork = true
+        deliverPendingDiscussionPush()
         refreshWidgetsOnActivation()
         await store.runPendingSyncLoop()
     }
@@ -525,6 +534,15 @@ public struct LogseqRootView : View {
         isResumingLGApplication = true
         defer { isResumingLGApplication = false }
         let connected = await graphLifecycle.connectStoredGraph()
+        if LGDiscussionPush.shared.enabled {
+            Task {
+                if let token = try? await authentication.apiToken() {
+                    try? await LGDiscussionPush.shared.refresh(sessionToken: token)
+                }
+                try? lgRuntime.applyHostUpdate(kind: "push-preference",
+                    payload: LGDiscussionPush.shared.enabled ? "true" : "false")
+            }
+        }
         do {
             try lgRuntime.applyHostUpdate(kind: "graph-loading", payload: "false")
         } catch {
@@ -538,6 +556,20 @@ public struct LogseqRootView : View {
         } else {
             didResumeCurrentActivation = true
         }
+    }
+
+    public func openDiscussionPush(graphID: String, eventID: String) {
+        guard UUID(uuidString: graphID) != nil, UUID(uuidString: eventID) != nil else { return }
+        pendingDiscussionPush = try? JSONEncoder().encode(["graphId": graphID, "eventId": eventID])
+        deliverPendingDiscussionPush()
+    }
+
+    private func deliverPendingDiscussionPush() {
+        guard didFinishLaunchWork, authentication.state == .signedIn,
+              let pendingDiscussionPush else { return }
+        self.pendingDiscussionPush = nil
+        try? lgRuntime.applyHostUpdate(kind: "open-pushed-discussion",
+            payload: String(decoding: pendingDiscussionPush, as: UTF8.self))
     }
 
     func refreshLocalJournalDay() async {
