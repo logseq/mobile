@@ -94,9 +94,9 @@ internal class LogseqRuntime(
         attachmentsImporter = assetImporter::import,
         syncNow = ::requestSyncNow,
         presentJournalCalendar = ::presentJournalCalendar,
-        setDiscussionPush = { enabled ->
-            val token = requireNotNull(authentication.apiToken())
-            discussionPush.setEnabled(enabled, storageBaseUrl, token)
+        setDiscussionPush = { value ->
+            val token = if (value.enabled || discussionPush.preferences.enabled) authentication.apiToken() else null
+            discussionPush.setPreferences(value, storageBaseUrl, token)
         },
         revokeDiscussionPush = {
             try {
@@ -326,9 +326,9 @@ internal class LogseqRuntime(
         if (resumed && hasOpenGraph) {
             appEntries.markReady()
             deliverDiscussionPush()
-            if (discussionPush.enabled) scope.launch {
+            if (discussionPush.preferences.enabled) scope.launch {
                 runCatching { authentication.apiToken()?.let { discussionPush.refresh(storageBaseUrl, it) } }
-                applyPatch(bridge.applyHostUpdate("push-preference", discussionPush.enabled.toString()))
+                applyPatch(bridge.applyHostUpdate("push-preference", discussionPush.preferences.json().toString()))
             }
         }
         journalDayJob?.cancel()
@@ -807,7 +807,7 @@ internal class LogseqRuntime(
             uiSession.getString("session", null)?.let { session ->
                 applyPatch(bridge.applyHostUpdate("restore-ui-session", session))
             }
-            applyPatch(bridge.applyHostUpdate("push-preference", discussionPush.enabled.toString()))
+            applyPatch(bridge.applyHostUpdate("push-preference", discussionPush.preferences.json().toString()))
             deliverDiscussionPush()
             if (isOpeningInitialWidgetBlock) {
                 try {

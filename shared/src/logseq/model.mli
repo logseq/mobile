@@ -37,6 +37,7 @@ type sidebar_page =
 type node_deletion = PageToDelete of sidebar_page | BlockToDelete of sidebar_page
 
 type tasks_tab = TasksToday | TasksUpcoming
+type push_preferences = { enabled : bool; comments : bool; reactions : bool }
 type task_sort = ScheduledDate | DeadlineDate | PageOrder
 type task_page_sort = PageName | PageUpdated | PageCreated
 
@@ -66,6 +67,7 @@ type ui_session =
   ; selected_page_id : string option
   ; settings_open : bool
   ; recent_graph_ids : string list
+  ; notifications_recent_only : bool
   ; read_notifications : (string * string list) list
   ; recent_reactions : (string * string list) list
   ; tasks_view : tasks_view option
@@ -320,7 +322,7 @@ type composer_submission =
   }
 
 type logseq_effect =
-  | PushPreferenceEffect of int * bool
+  | PushPreferenceEffect of int * push_preferences
   | CollaborationEffect of int * string
   | PdfAnnotationEffect of int * string
   | ResultViewEffect of int * string * string
@@ -537,7 +539,7 @@ type logseq_model =
   ; app_navigation_path : navigation_route list
   ; search_navigation_path : navigation_route list
   ; collaboration : Yojson.Basic.t
-  ; push_enabled : bool
+  ; push_preferences : push_preferences
   ; push_error : string option
   ; pending_push_route : (string * string) option
   ; reaction_picker : (string * string list) option
@@ -547,6 +549,7 @@ type logseq_model =
   ; discussion_draft : string
   ; saved_discussion_drafts : ((string list * string option) * string) list
   ; discussion_error : string option
+  ; notifications_recent_only : bool
   ; read_notifications : (string * string list) list
   ; recent_reactions : (string * string list) list
   ; pdf_workspace : string option
@@ -656,8 +659,9 @@ type logseq_action =
   | SetTasksView of tasks_view
   | SelectTasks
   | ShowNotifications
-  | SetPushPreference of bool
-  | ApplyPushPreference of bool
+  | ToggleRecentNotifications
+  | SetPushPreference of push_preferences
+  | ApplyPushPreference of push_preferences
   | OpenPushedDiscussion of string * string
   | OpenDiscussion of string
   | ComposeDiscussion of string list * string option
@@ -879,5 +883,6 @@ val collaboration_string : string -> Yojson.Basic.t -> string
 val recent_reaction_ids : logseq_model -> string list
 val notification_items : logseq_model -> Yojson.Basic.t list
 val notification_count : logseq_model -> int
+val saving_push_preferences : logseq_model -> bool
 val notification_read : logseq_model -> string -> bool
 val posting_comment : logseq_model -> bool

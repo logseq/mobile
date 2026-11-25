@@ -645,6 +645,32 @@ let settings_editor_card model_source (context : Lui_ui.ui_context) spell_check_
           ~text:(View_base.tr (Signal.sample model_source) "Auto-correction") [];
       ]
 
+let settings_push_controls context model_source send =
+  let current = Signal.sample model_source in
+  let disabled_signal = Signal.map Model.saving_push_preferences model_source in
+  let setting id label value update =
+    let checked_signal = Signal.map (fun model -> value model.Model.push_preferences) model_source in
+    let on_toggle enabled =
+      let current = (Signal.sample model_source).Model.push_preferences in
+      ignore (send (Model.SetPushPreference (update current enabled))) in
+    let accessibility_identifier = "switch.settings.push." ^ id in
+    let text = View_base.tr current label in
+    if Lui_ui.host context = KotlinHost then
+      switch_ ~min_height:56 ~checked_signal ~disabled_signal ~accessibility_identifier
+        ~on_toggle ~text []
+    else
+      with_native_control_tint "switch" (toggle ~checked_signal ~disabled_signal ~accessibility_identifier
+        ~on_toggle ~text []) in
+  [
+    setting "enabled" "Enable system notifications" (fun p -> p.Model.enabled) (fun p enabled -> {p with Model.enabled});
+    setting "comments" "Comments" (fun p -> p.Model.comments) (fun p comments -> {p with Model.comments});
+    setting "reactions" "Reactions" (fun p -> p.Model.reactions) (fun p reactions -> {p with Model.reactions});
+    if_ ~test:(Signal.map (fun model -> model.Model.push_error <> None) model_source)
+      (text ~value:(reactive (Signal.map (fun model ->
+        Option.fold ~none:"" ~some:(View_base.tr current) model.Model.push_error) model_source))
+        ~foreground:"error-foreground" ~style_class:"caption" []);
+  ]
+
 let settings_export_row model_source (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then
     list_item ~icon:(`app "download") ~padding:0
@@ -778,6 +804,14 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
       column ~gap:8 ~cross:`stretch
         [
           text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
+            ~accessibility_identifier:"label.settings.push"
+            ~value:(View_base.tr (Signal.sample model_source) "System notifications") [];
+          column ~cross:`stretch ~padding_horizontal:16
+            (settings_push_controls context model_source send);
+        ];
+      column ~gap:8 ~cross:`stretch
+        [
+          text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
             ~accessibility_identifier:"label.settings.sync-server"
             ~value:(View_base.tr (Signal.sample model_source) "Sync server") [];
           column ~gap:8 ~padding:16 ~cross:`stretch ~style_class:"form" ~background:card_bg
@@ -884,7 +918,7 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
   in
   column ~style_class:"form"
     ~accessibility_identifier:"screen.settings"
-    [
+    ([
       heading ~value:(View_base.tr (Signal.sample model_source) "General") ~foreground:"muted-foreground"
         ~accessibility_identifier:"label.settings.general" [];
       settings_appearance_control context model_source send;
@@ -920,6 +954,9 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
         ~accessibility_identifier:"switch.settings.auto-correction"
         ~on_toggle:(settings_toggle_auto_correction send)
         ~text:(View_base.tr (Signal.sample model_source) "Auto-correction") []);
+      heading ~value:(View_base.tr (Signal.sample model_source) "System notifications") ~foreground:"muted-foreground"
+        ~accessibility_identifier:"label.settings.push" [];
+    ] @ settings_push_controls context model_source send @ [
       heading ~value:(View_base.tr (Signal.sample model_source) "Sync server") ~foreground:"muted-foreground"
         ~accessibility_identifier:"label.settings.sync-server" [];
       text_field
@@ -979,7 +1016,7 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
       heading ~value:(View_base.tr (Signal.sample model_source) "Account")
         ~accessibility_identifier:"label.settings.account" [];
       settings_account_row context model_source send;
-    ]
+    ])
 
 let settings_screen (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then

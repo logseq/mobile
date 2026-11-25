@@ -73,6 +73,7 @@ let session_restoration_preserves_every_field () =
     check session.composer_expanded;
     check (not session.search_open);
     check session.settings_open;
+    check session.notifications_recent_only;
     check_eq "q" session.query;
     check_eq (Some "p2") session.selected_page_id;
     check_eq [ "p1"; "p2" ] session.app_path;
@@ -90,6 +91,10 @@ let asset_preserves_original_payload () =
   match decode "composer-asset" payload with
   | Ok (Composer_asset asset) -> check_eq payload asset.payload
   | _ -> check ~msg:"composer asset rejected" false
+
+let push_preferences_are_independent () =
+  check_eq (Ok (Push_preference (true, false, true)))
+    (decode "push-preference" {|{"enabled":true,"comments":false,"reactions":true}|})
 
 let invalid_updates_are_classified () =
   List.iter
@@ -110,6 +115,7 @@ let invalid_updates_are_classified () =
 let cases =
   [
     case "settings fields" settings_fields;
+    case "system notification preferences decode independently" push_preferences_are_independent;
     case "runtime log preserves unicode and newlines"
       runtime_log_preserves_unicode_and_newlines;
     case "simple host updates" simple_host_updates;

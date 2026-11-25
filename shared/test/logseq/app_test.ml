@@ -8246,6 +8246,41 @@ let journal_date_headings_open_their_page_on_both_hosts () =
       (App.model application).pending_effects [Model.OpenAppNodeEffect (1, "journal-page")])
     [ios_backend (); kotlin_backend ()]
 
+let notification_time_uses_local_date_and_time () =
+  let model = { (Model.initial ()) with Model.language = "en" } in
+  let now = 1795600000. in
+  let expect seconds include_year =
+    let local = Unix.localtime (float_of_int seconds) in
+    let clock = Printf.sprintf "%02d:%02d" local.Unix.tm_hour local.tm_min in
+    let year = if include_year then Printf.sprintf ", %d" (local.tm_year + 1900) else "" in
+    check_eq (View_collaboration.notification_datetime ~now model (seconds * 1000))
+      (Printf.sprintf "Nov %d%s %s" local.tm_mday year clock) in
+  expect 1795600000 false;
+  expect 1795392000 false;
+  expect 1764009600 true
+
+let notifications_filter_month_and_preserve_read_history () =
+  let item id age =
+    let time = Session_types.now_ms () - age * 86_400_000 in
+    `Assoc ["id", `String id; "target", `String "test-block"; "createdAt", `Int time] in
+  let recent = item "recent" 20 and older = item "older" 45 and archived = item "archived" 120 in
+  let model = { (Model.initial ()) with
+    Model.selected_graph_id = Some "test-graph";
+    collaboration = `Assoc ["account", `String "member"; "inbox", `List [recent; older; archived]] } in
+  check_eq (Model.notification_items model) [recent];
+  let show_all = Model.update model Model.ToggleRecentNotifications in
+  check_eq (Model.notification_items show_all) [recent; older];
+  (match show_all.pending_effects with
+   | [Model.PersistUISessionEffect (_, session)] ->
+     let restored = Model.update model (Model.RestoreUISession session) in
+     check_eq (Model.notification_items restored) [recent; older]
+   | _ -> Alcotest.fail "Changing the notification filter must save it immediately");
+  let older_read = Model.update show_all (Model.ReadNotification "older") in
+  let recent_only = Model.update older_read Model.ToggleRecentNotifications in
+  let all_read = Model.update recent_only Model.ReadAllNotifications in
+  let widened = Model.update all_read Model.ToggleRecentNotifications in
+  check_eq (Model.notification_count widened) 0
+
 let journal_dates_follow_the_app_language () =
   let format language day = Localization.journal_date ~language ~system_language:"en" ~current_year:2026 day in
   check_eq (format "zh-CN" 20260101) ("1月1日", "星期四");
@@ -12111,6 +12146,8 @@ let cases =
     case "older-journals-only-appear-at-the-journal-root" older_journals_only_appear_at_the_journal_root;
     case "journal-date-headings-open-their-page-on-both-hosts" journal_date_headings_open_their_page_on_both_hosts;
     case "journal dates follow the app language on both hosts" journal_dates_follow_the_app_language;
+    case "notifications use local date and time with a year only when needed" notification_time_uses_local_date_and_time;
+    case "notification month filter persists and keeps older read state" notifications_filter_month_and_preserve_read_history;
     case "journal-section-markers-preserve-boundaries-and-stable-pages" journal_section_markers_preserve_boundaries_and_stable_pages;
     case "journal-section-markers-recompute-after-row-splices" journal_section_markers_recompute_after_row_splices;
     case "journal-home-keeps-first-day-viewport-and-later-block-items-flat" journal_home_keeps_first_day_viewport_and_later_block_items_flat;

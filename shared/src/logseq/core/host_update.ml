@@ -20,6 +20,7 @@ type host_ui_session =
   ; selected_page_id : string option
   ; settings_open : bool
   ; recent_graph_ids : string list
+  ; notifications_recent_only : bool
   ; read_notifications : (string * string list) list
   ; recent_reactions : (string * string list) list
   ; tasks_view : Yojson.Safe.t option
@@ -65,7 +66,7 @@ type host_update =
   | Confirm_outliner_delete
   | Open_capture
   | Open_pushed_discussion of string * string
-  | Push_preference of bool
+  | Push_preference of bool * bool * bool
   | Open_node of string
   | Open_pdf of string * string * string
   | Asset_preview_resolved of string * string
@@ -135,6 +136,7 @@ let ui_session value =
       Util.to_string_option (Util.member "selectedPageId" value);
     settings_open = bool_field "settingsOpen" value;
     recent_graph_ids = (match Util.member "recentGraphIds" value with `Null -> [] | ids -> string_vector ids);
+    notifications_recent_only = Util.member "notificationsRecentOnly" value <> `Bool false;
     read_notifications = scoped_ids "readNotifications" value;
     recent_reactions = scoped_ids "recentReactions" value;
     tasks_view = (match Util.member "tasksView" value with `Assoc _ as options -> Some options | _ -> None);
@@ -171,7 +173,8 @@ let decode kind payload =
     | "confirm-outliner-delete" -> Ok Confirm_outliner_delete
     | "open-capture" -> Ok Open_capture
     | "open-pushed-discussion" -> Ok (Open_pushed_discussion (string_field "graphId" value, string_field "eventId" value))
-    | "push-preference" -> Ok (Push_preference (Util.to_bool value))
+    | "push-preference" -> Ok (Push_preference
+        (bool_field "enabled" value, bool_field "comments" value, bool_field "reactions" value))
     | "open-node" -> Ok (Open_node (Util.to_string value))
     | "open-pdf" -> Ok (Open_pdf (string_field "uuid" value, string_field "title" value, string_field "path" value))
     | "asset-preview-resolved" ->

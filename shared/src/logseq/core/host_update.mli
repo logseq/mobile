@@ -20,6 +20,7 @@ type host_ui_session =
   ; selected_page_id : string option
   ; settings_open : bool
   ; recent_graph_ids : string list
+  ; notifications_recent_only : bool
   ; read_notifications : (string * string list) list
   ; recent_reactions : (string * string list) list
   ; tasks_view : Yojson.Safe.t option
@@ -65,7 +66,7 @@ type host_update =
   | Confirm_outliner_delete
   | Open_capture
   | Open_pushed_discussion of string * string
-  | Push_preference of bool
+  | Push_preference of bool * bool * bool
   | Open_node of string
   | Open_pdf of string * string * string
   | Asset_preview_resolved of string * string

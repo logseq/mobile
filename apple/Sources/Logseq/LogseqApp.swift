@@ -282,8 +282,10 @@ public struct LogseqRootView : View {
             signOut: {
                 await syncCoordinator.cancelBackground()
                 await syncCoordinator.stopForeground()
-                if LGDiscussionPush.shared.enabled, let token = try? await authentication.apiToken() {
-                    try? await LGDiscussionPush.shared.setEnabled(false, sessionToken: token)
+                var preference = LGDiscussionPush.shared.preferences
+                if preference.enabled, let token = try? await authentication.apiToken() {
+                    preference.enabled = false
+                    try? await LGDiscussionPush.shared.setPreferences(preference, sessionToken: token)
                 }
                 await authentication.signOut()
                 await store.configureAndSelectGraph(
@@ -292,9 +294,10 @@ public struct LogseqRootView : View {
                     selectedGraphID: store.snapshot.selectedGraphId
                 )
             },
-            pushPreference: { enabled in
-                let token = try await authentication.apiToken()
-                try await LGDiscussionPush.shared.setEnabled(enabled, sessionToken: token)
+            pushPreference: { value in
+                let token = value.enabled || LGDiscussionPush.shared.preferences.enabled
+                    ? try await authentication.apiToken() : nil
+                try await LGDiscussionPush.shared.setPreferences(value, sessionToken: token)
             },
             openExternalURL: { url in
                 return await UIApplication.shared.open(url)
@@ -534,13 +537,13 @@ public struct LogseqRootView : View {
         isResumingLGApplication = true
         defer { isResumingLGApplication = false }
         let connected = await graphLifecycle.connectStoredGraph()
-        if LGDiscussionPush.shared.enabled {
+        try? lgRuntime.applyHostUpdate(kind: "push-preference", payload: LGDiscussionPush.shared.preferencePayload)
+        if LGDiscussionPush.shared.preferences.enabled {
             Task {
                 if let token = try? await authentication.apiToken() {
                     try? await LGDiscussionPush.shared.refresh(sessionToken: token)
                 }
-                try? lgRuntime.applyHostUpdate(kind: "push-preference",
-                    payload: LGDiscussionPush.shared.enabled ? "true" : "false")
+                try? lgRuntime.applyHostUpdate(kind: "push-preference", payload: LGDiscussionPush.shared.preferencePayload)
             }
         }
         do {

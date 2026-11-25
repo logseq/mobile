@@ -126,19 +126,31 @@ let comment_threads ?(preview = fun _ -> `Null) db ~actor target =
     | Some uuid, _ :: _ -> Some (`Assoc ["id", `String uuid; "comments", `List rows])
     | _ -> None)
 
-let inbox_cutoff now = now - (14 * 24 * 60 * 60 * 1000)
+let inbox_max_months = 3
+
+let inbox_cutoff months =
+  let open Dev_query.Date_time_util in
+  Int64.to_int (minus Months months (time_ms ()))
 
 let inbox ?(since = 0) ?(preview = fun _ -> `Null) db ~actor =
   match entity db actor with
   | None -> []
   | Some actor ->
     let authored = referring db creator actor |> List.filter (live db) in
-    let thread_targets = Hashtbl.create 32 in
+    let subscriptions = Hashtbl.create 32 in
+    let subscribe thread target since =
+      match Hashtbl.find_opt subscriptions thread with
+      | Some (_, previous) when previous <= since -> ()
+      | _ -> Hashtbl.replace subscriptions thread (target, since) in
     List.iter (fun eid ->
-      let discussions = match thread_of_comment db eid with Some thread -> [thread] | None -> threads db eid in
-      List.iter (fun thread ->
-        List.find_opt (live db) (targets db thread)
-        |> Option.iter (fun target -> Hashtbl.replace thread_targets thread target)) discussions) authored;
+      if not (is_thread db eid) then
+        match thread_of_comment db eid with
+        | Some thread ->
+          List.nth_opt (targets db thread) 0
+          |> Option.iter (fun target -> subscribe thread target (created_at db eid))
+        | None when not (is_comment db eid) ->
+          List.iter (fun thread -> subscribe thread eid min_int) (threads db eid)
+        | None -> ()) authored;
     let events = Hashtbl.create 32 in
     let add target event kind =
       let time = created_at db event in
@@ -164,9 +176,10 @@ let inbox ?(since = 0) ?(preview = fun _ -> `Null) db ~actor =
               "createdAt", `Int time]))
             (Read.uuid_for_eid db route)
         | _ -> () in
-    Hashtbl.iter (fun thread target ->
-      if live db thread then List.iter (fun event -> add target event "comment") (comments db thread))
-      thread_targets;
+    Hashtbl.iter (fun thread (target, joined_at) ->
+      if live db thread then List.iter (fun event ->
+        if created_at db event >= joined_at then add target event "comment") (comments db thread))
+      subscriptions;
     List.iter (fun target -> List.iter (fun event -> add target event "reaction") (reactions db target)) authored;
     Hashtbl.to_seq_values events |> List.of_seq
     |> List.sort (fun (a, x, _) (b, y, _) -> compare (b, y) (a, x))

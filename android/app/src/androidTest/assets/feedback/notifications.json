@@ -55,7 +55,15 @@
     "target": "f0000000-0000-4000-8000-000000000017",
     "kind": "comment",
     "actor": "Robin",
-    "ageDays": 15,
+    "ageDays": 45,
     "title": "Older activity"
+  },
+  {
+    "id": "feed-archive",
+    "target": "f0000000-0000-4000-8000-000000000017",
+    "kind": "comment",
+    "actor": "Robin",
+    "ageDays": 120,
+    "title": "Archived activity"
   }
 ]

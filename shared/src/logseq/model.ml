@@ -50,6 +50,7 @@ type sidebar_page =
 type node_deletion = PageToDelete of sidebar_page | BlockToDelete of sidebar_page
 
 type tasks_tab = TasksToday | TasksUpcoming
+type push_preferences = { enabled : bool; comments : bool; reactions : bool }
 type task_sort = ScheduledDate | DeadlineDate | PageOrder
 type task_page_sort = PageName | PageUpdated | PageCreated
 
@@ -80,6 +81,7 @@ type ui_session =
   ; selected_page_id : string option
   ; settings_open : bool
   ; recent_graph_ids : string list
+  ; notifications_recent_only : bool
   ; read_notifications : (string * string list) list
   ; recent_reactions : (string * string list) list
   ; tasks_view : tasks_view option
@@ -334,7 +336,7 @@ type composer_submission =
   }
 
 type logseq_effect =
-  | PushPreferenceEffect of int * bool
+  | PushPreferenceEffect of int * push_preferences
   | CollaborationEffect of int * string
   | PdfAnnotationEffect of int * string
   | ResultViewEffect of int * string * string
@@ -551,7 +553,7 @@ type logseq_model =
   ; app_navigation_path : navigation_route list
   ; search_navigation_path : navigation_route list
   ; collaboration : Yojson.Basic.t
-  ; push_enabled : bool
+  ; push_preferences : push_preferences
   ; push_error : string option
   ; pending_push_route : (string * string) option
   ; reaction_picker : (string * string list) option
@@ -561,6 +563,7 @@ type logseq_model =
   ; discussion_draft : string
   ; saved_discussion_drafts : ((string list * string option) * string) list
   ; discussion_error : string option
+  ; notifications_recent_only : bool
   ; read_notifications : (string * string list) list
   ; recent_reactions : (string * string list) list
   ; pdf_workspace : string option
@@ -670,8 +673,9 @@ type logseq_action =
   | SetTasksView of tasks_view
   | SelectTasks
   | ShowNotifications
-  | SetPushPreference of bool
-  | ApplyPushPreference of bool
+  | ToggleRecentNotifications
+  | SetPushPreference of push_preferences
+  | ApplyPushPreference of push_preferences
   | OpenPushedDiscussion of string * string
   | OpenDiscussion of string
   | ComposeDiscussion of string list * string option
@@ -982,7 +986,8 @@ let initial () =
     task_status_picker_open = false;
     asset_preview = None;
     collaboration = `Null;
-    push_enabled = false; push_error = None; pending_push_route = None;
+    push_preferences = {enabled = false; comments = true; reactions = true};
+    push_error = None; pending_push_route = None;
     reaction_picker = None;
     discussion_target = None;
     discussion_composition = None;
@@ -990,6 +995,7 @@ let initial () =
     discussion_draft = "";
     saved_discussion_drafts = [];
     discussion_error = None;
+    notifications_recent_only = true;
     read_notifications = [];
     recent_reactions = [];
     pdf_workspace = None;
@@ -2229,12 +2235,14 @@ let ui_session (current : logseq_model) =
        | None -> None);
     settings_open = current.settings_open;
     tasks_view = Some current.tasks_view;
+    notifications_recent_only = current.notifications_recent_only;
     read_notifications = current.read_notifications;
     recent_reactions = current.recent_reactions;
   }
 
 let restore_ui_session (current : logseq_model) (session : ui_session) =
-  let current = {current with read_notifications = session.read_notifications;
+  let current = {current with notifications_recent_only = session.notifications_recent_only;
+    read_notifications = session.read_notifications;
     recent_reactions = session.recent_reactions; reaction_picker = None} in
   let current = match session.tasks_view with
     | None -> current
@@ -2322,12 +2330,16 @@ let recent_reaction_ids (current : logseq_model) =
   let account = collaboration_string "account" current.collaboration in
   Option.value ~default:[] (List.assoc_opt account current.recent_reactions)
 
-let notification_items (current : logseq_model) = match collaboration_field "inbox" current.collaboration with
-  | `List values ->
-    let since = Collaboration.inbox_cutoff (Session_types.now_ms ()) in
-    List.filter (fun item -> match collaboration_field "createdAt" item with
-      | `Int time -> time >= since | _ -> false) values
+let all_notification_items (current : logseq_model) =
+  match collaboration_field "inbox" current.collaboration with
+  | `List values -> values
   | _ -> []
+
+let notification_items current =
+  let months = if current.notifications_recent_only then 1 else Collaboration.inbox_max_months in
+  let since = Collaboration.inbox_cutoff months in
+  List.filter (fun item -> match collaboration_field "createdAt" item with
+    | `Int time -> time >= since | _ -> false) (all_notification_items current)
 
 let notification_scope (current : logseq_model) =
   match collaboration_field "account" current.collaboration, current.selected_graph_id with
@@ -2354,7 +2366,7 @@ let mark_notifications current ids =
   match notification_scope current with
   | Some scope ->
     let existing = Option.value ~default:[] (List.assoc_opt scope current.read_notifications) in
-    let live = Notification_ids.of_list (List.map (collaboration_string "id") (notification_items current)) in
+    let live = Notification_ids.of_list (List.map (collaboration_string "id") (all_notification_items current)) in
     let values = Notification_ids.inter live (Notification_ids.of_list (ids @ existing))
       |> Notification_ids.elements in
     {current with read_notifications = (scope, values) :: List.take 29 (List.remove_assoc scope current.read_notifications)}
@@ -2372,6 +2384,10 @@ let posting_comment current =
   List.exists (function
     | CollaborationEffect (_, payload) -> pdf_string (pdf_fields payload) "action" = "comment"
     | _ -> false) (current.pending_effects @ current.in_flight_effects)
+
+let saving_push_preferences current =
+  List.exists (function PushPreferenceEffect _ -> true | _ -> false)
+    (current.pending_effects @ current.in_flight_effects)
 
 let rec update (current : logseq_model) action =
   match action with
@@ -2561,7 +2577,7 @@ let rec update (current : logseq_model) action =
     let applied = match applied.pending_push_route with
       | Some (graph, id) when applied.selected_graph_id = Some graph
                              && List.exists (fun item -> collaboration_string "id" item = id)
-                               (notification_items applied) ->
+                               (all_notification_items applied) ->
         update {applied with pending_push_route = None} (ReadNotification id)
       | Some (graph, _) when applied.selected_graph_id <> Some graph && current.graph_loading
                              && not applied.graph_loading ->
@@ -2952,8 +2968,8 @@ let rec update (current : logseq_model) action =
          else resolve_failed_effect current eff message
        in
        let resolved_current = match eff with
-         | PushPreferenceEffect (_, enabled) ->
-           if succeeded then {resolved_current with push_enabled = enabled; push_error = None}
+         | PushPreferenceEffect (_, preferences) ->
+           if succeeded then {resolved_current with push_preferences = preferences; push_error = None}
            else {resolved_current with push_error = Some message}
          | CollaborationEffect (_, payload) ->
            let fields = pdf_fields payload in
@@ -3281,14 +3297,18 @@ let rec update (current : logseq_model) action =
       else current
     in
     { current with home_scroll_request = current.home_scroll_request + 1 }
-  | ApplyPushPreference enabled -> {current with push_enabled = enabled; push_error = None}
-  | SetPushPreference enabled ->
-    enqueue_effect {current with push_error = None} (PushPreferenceEffect (current.next_effect_id, enabled))
+  | ApplyPushPreference preferences -> {current with push_preferences = preferences; push_error = None}
+  | SetPushPreference preferences ->
+    if preferences = current.push_preferences || saving_push_preferences current then current
+    else enqueue_effect {current with push_error = None}
+      (PushPreferenceEffect (current.next_effect_id, preferences))
+  | ToggleRecentNotifications ->
+    update {current with notifications_recent_only = not current.notifications_recent_only} SaveUISession
   | OpenPushedDiscussion (graph, id) ->
     if not (Ref_text.is_uuid graph && Ref_text.is_uuid id) then current else
     let viewing = update current ShowNotifications in
     if viewing.selected_graph_id = Some graph && List.exists (fun item -> collaboration_string "id" item = id)
-        (notification_items viewing) then update viewing (ReadNotification id)
+        (all_notification_items viewing) then update viewing (ReadNotification id)
     else if viewing.selected_graph_id = Some graph then
       enqueue_effect {viewing with pending_push_route = Some (graph, id)} (SyncNowEffect viewing.next_effect_id)
     else if List.exists (fun (candidate : graph) -> candidate.id = graph) viewing.graphs then
@@ -3355,7 +3375,7 @@ let rec update (current : logseq_model) action =
   | ReadAllNotifications ->
     update (mark_notifications current (List.map (collaboration_string "id") (notification_items current))) SaveUISession
   | ReadNotification id ->
-    (match List.find_opt (fun item -> collaboration_string "id" item = id) (notification_items current) with
+    (match List.find_opt (fun item -> collaboration_string "id" item = id) (all_notification_items current) with
      | None -> current
      | Some item ->
        let next = update (mark_notifications current [id]) SaveUISession in

@@ -45,10 +45,10 @@ import Vision
         var switches: [UISwitch] = []
         for _ in 0..<30 {
             switches = views(window).compactMap { $0 as? UISwitch }
-            if switches.count == 2 { break }
+            if switches.count >= 2 { break }
             try await Task.sleep(for: .milliseconds(100))
         }
-        if switches.count != 2 {
+        if switches.count < 2 {
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
             try image.pngData()!.write(to: URL.documentsDirectory.appendingPathComponent("settings-missing-switches.png"))
             throw failure("Expected both native editor switches, found \(switches.count)")

@@ -113,7 +113,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
     private let copyText: @MainActor (String) -> Void
     private let signIn: (@MainActor (String) async throws -> String)?
     private let signOut: @MainActor () async -> Void
-    private let pushPreference: (@MainActor (Bool) async throws -> Void)?
+    private let pushPreference: (@MainActor (LGDiscussionPushPreferences) async throws -> Void)?
     private let openExternalURL: (@MainActor (URL) async -> Bool)?
     private let exportGraphDatabase: (@MainActor () async -> Bool)?
     private let graphEffect: (@MainActor (LGEffect) async -> LGEffectResolution)?
@@ -131,7 +131,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
         copyText: @escaping @MainActor (String) -> Void,
         signIn: (@MainActor (String) async throws -> String)? = nil,
         signOut: @escaping @MainActor () async -> Void,
-        pushPreference: (@MainActor (Bool) async throws -> Void)? = nil,
+        pushPreference: (@MainActor (LGDiscussionPushPreferences) async throws -> Void)? = nil,
         openExternalURL: (@MainActor (URL) async -> Bool)? = nil,
         exportGraphDatabase: (@MainActor () async -> Bool)? = nil,
         graphEffect: (@MainActor (LGEffect) async -> LGEffectResolution)? = nil,
@@ -244,7 +244,8 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
                 guard let pushPreference else {
                     return LGEffectResolution(succeeded: false, message: "System notifications are unavailable", output: .discard)
                 }
-                try await pushPreference(effect.text == "true")
+                let value = try JSONDecoder().decode(LGDiscussionPushPreferences.self, from: Data(effect.text.utf8))
+                try await pushPreference(value)
                 return LGEffectResolution(succeeded: true, message: "", output: .discard)
             case "sign-out":
                 await signOut()

@@ -174,6 +174,7 @@ let host_action (update : Host_update.host_update) =
         settings_open = session.settings_open;
         recent_graph_ids = session.recent_graph_ids;
         tasks_view = Option.map decode_tasks_view session.tasks_view;
+        notifications_recent_only = session.notifications_recent_only;
         read_notifications = session.read_notifications;
         recent_reactions = session.recent_reactions }
   | Composer_draft draft -> Model.ApplyComposerDraft draft
@@ -185,7 +186,8 @@ let host_action (update : Host_update.host_update) =
   | Confirm_outliner_delete -> Model.ConfirmOutlinerDelete
   | Open_capture -> Model.ExpandComposer
   | Open_pushed_discussion (graph, id) -> Model.OpenPushedDiscussion (graph, id)
-  | Push_preference enabled -> Model.ApplyPushPreference enabled
+  | Push_preference (enabled, comments, reactions) ->
+    Model.ApplyPushPreference {enabled; comments; reactions}
   | Open_node uuid -> Model.RequestAppNode uuid
   | Open_pdf (uuid, title, path) -> Model.OpenPdf (uuid, title, path)
   | Asset_preview_resolved (title, path) ->
@@ -238,6 +240,7 @@ let encode_ui_session (session : Model.ui_session) =
        | Model.FlashcardsDestination -> "flashcards"
        | Model.GraphsDestination -> "graphs"
        | Model.JournalsDestination -> "journals")
+  ^ ",\"notificationsRecentOnly\":" ^ string_of_bool session.notifications_recent_only
   ^ ",\"readNotifications\":" ^ Yojson.Basic.to_string (`Assoc (List.map (fun (scope, ids) ->
     scope, `List (List.map (fun id -> `String id) ids)) session.read_notifications))
   ^ ",\"recentReactions\":" ^ Yojson.Basic.to_string (`Assoc (List.map (fun (account, ids) ->
@@ -356,9 +359,11 @@ let encode_effect ?(model : Model.logseq_model option) (eff : Model.logseq_effec
   | DeleteBlockEffect (id, uuid, cursor) ->
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "delete-block";
       "text", `String uuid; "value", `Int cursor])
-  | PushPreferenceEffect (id, enabled) ->
+  | PushPreferenceEffect (id, preferences) ->
+    let payload = Yojson.Basic.to_string (`Assoc ["enabled", `Bool preferences.enabled;
+      "comments", `Bool preferences.comments; "reactions", `Bool preferences.reactions]) in
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "push-preference";
-      "text", `String (string_of_bool enabled)])
+      "text", `String payload])
   | CollaborationEffect (id, payload) ->
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "collaboration"; "text", `String payload])
   | PdfAnnotationEffect (id, payload) ->
