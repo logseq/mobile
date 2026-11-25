@@ -5,6 +5,7 @@ import com.logseq.logseq.CognitoAuthProvider
 import com.logseq.logseq.CognitoSessionUnavailableException
 import com.logseq.logseq.DEFAULT_BASE_URL
 import com.logseq.logseq.DEFAULT_DARK_THEME
+import com.logseq.logseq.DiscussionPushPreferences
 import com.logseq.logseq.E2EE_AUTHENTICATION_FAILURE
 import com.logseq.logseq.NETWORK_UNAVAILABLE
 import com.logseq.logseq.normalizedDarkTheme
@@ -162,7 +163,7 @@ internal class AndroidPlatformEffects(
     private val platform: AndroidPlatformServices,
     private val attachmentsImporter: suspend (String) -> List<Map<String, Any>>,
     private val syncNow: () -> Boolean = { false },
-    private val setDiscussionPush: suspend (Boolean) -> Unit = {},
+    private val setDiscussionPush: suspend (DiscussionPushPreferences) -> Unit = {},
     private val revokeDiscussionPush: suspend () -> Unit = {},
     private val persistUISession: (String) -> Unit = {},
     private val presentJournalCalendar: suspend () -> NativeEffectResolution = {
@@ -251,7 +252,7 @@ internal class AndroidPlatformEffects(
                 NativeEffectResolution.Discard(message = authentication.signIn(effect.text))
             }
             "push-preference" -> {
-                setDiscussionPush(effect.text == "true")
+                setDiscussionPush(DiscussionPushPreferences.decode(effect.text))
                 NativeEffectResolution.Discard()
             }
             "persist-ui-session" -> {

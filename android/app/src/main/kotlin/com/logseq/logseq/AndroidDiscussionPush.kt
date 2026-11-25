@@ -12,6 +12,8 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okhttp3.MediaType.Companion.toMediaType
@@ -24,14 +26,31 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-internal class AndroidDiscussionPush(private val context: Context) {
-    private val preferences = context.getSharedPreferences("logseq.discussionPush", Context.MODE_PRIVATE)
-    val enabled: Boolean get() = preferences.getBoolean("enabled", false)
+internal data class DiscussionPushPreferences(val enabled: Boolean, val comments: Boolean, val reactions: Boolean) {
+    fun json(): JSONObject = JSONObject().put("enabled", enabled).put("comments", comments).put("reactions", reactions)
 
-    suspend fun setEnabled(enabled: Boolean, baseUrl: String, sessionToken: String) {
-        val firebase = FirebaseApp.getApps(context).firstOrNull()
-        val token = if (enabled) {
-            check(firebase != null) { "System notifications are unavailable" }
+    companion object {
+        fun decode(payload: String): DiscussionPushPreferences = JSONObject(payload).let {
+            DiscussionPushPreferences(it.getBoolean("enabled"), it.getBoolean("comments"), it.getBoolean("reactions"))
+        }
+    }
+}
+
+internal class AndroidDiscussionPush(private val context: Context) {
+    private val storage = context.getSharedPreferences("logseq.discussionPush", Context.MODE_PRIVATE)
+    private val registration = Mutex()
+    val preferences: DiscussionPushPreferences
+        get() = DiscussionPushPreferences(storage.getBoolean("enabled", false),
+            storage.getBoolean("comments", true), storage.getBoolean("reactions", true))
+
+    private fun save(value: DiscussionPushPreferences) {
+        storage.edit().putBoolean("enabled", value.enabled)
+            .putBoolean("comments", value.comments).putBoolean("reactions", value.reactions).apply()
+    }
+
+    suspend fun setPreferences(value: DiscussionPushPreferences, baseUrl: String, sessionToken: String?) = registration.withLock {
+        if (value.enabled) {
+            check(FirebaseApp.getApps(context).isNotEmpty() && sessionToken != null) { "System notifications are unavailable" }
             createChannel()
             val activity = context as? MainActivity
             if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
@@ -45,27 +64,32 @@ internal class AndroidDiscussionPush(private val context: Context) {
             check(NotificationManagerCompat.from(context).areNotificationsEnabled()) {
                 "Allow notifications in system settings"
             }
-            registrationToken()
-        } else null
-        sendRegistration(token, baseUrl, sessionToken)
-        preferences.edit().putBoolean("enabled", enabled).apply()
+            sendRegistration(registrationToken(), value, baseUrl, sessionToken)
+        } else if (preferences.enabled) {
+            check(sessionToken != null) { "System notifications are unavailable" }
+            sendRegistration(null, value, baseUrl, sessionToken)
+        }
+        save(value)
     }
 
-    suspend fun refresh(baseUrl: String, sessionToken: String) {
-        if (!enabled) return
+    suspend fun refresh(baseUrl: String, sessionToken: String) = registration.withLock {
+        val value = preferences
+        if (!value.enabled) return@withLock
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
-            setEnabled(false, baseUrl, sessionToken)
+            sendRegistration(null, value, baseUrl, sessionToken)
+            save(value.copy(enabled = false))
         } else {
-            sendRegistration(registrationToken(), baseUrl, sessionToken)
+            sendRegistration(registrationToken(), value, baseUrl, sessionToken)
         }
     }
 
-    suspend fun signOut(baseUrl: String, sessionToken: String) {
-        if (!enabled) return
+    suspend fun signOut(baseUrl: String, sessionToken: String) = registration.withLock {
+        val value = preferences
+        if (!value.enabled) return@withLock
         try {
-            setEnabled(false, baseUrl, sessionToken)
+            sendRegistration(null, value, baseUrl, sessionToken)
         } finally {
-            preferences.edit().putBoolean("enabled", false).apply()
+            save(value.copy(enabled = false))
             if (FirebaseApp.getApps(context).isNotEmpty()) FirebaseMessaging.getInstance().deleteToken()
         }
     }
@@ -86,12 +110,15 @@ internal class AndroidDiscussionPush(private val context: Context) {
         }
     }
 
-    private suspend fun sendRegistration(deviceToken: String?, baseUrl: String, sessionToken: String) {
-        val installationId = preferences.getString("installation", null) ?: UUID.randomUUID().toString().also {
-            preferences.edit().putString("installation", it).apply()
+    private suspend fun sendRegistration(
+        deviceToken: String?, value: DiscussionPushPreferences, baseUrl: String, sessionToken: String,
+    ) {
+        val installationId = storage.getString("installation", null) ?: UUID.randomUUID().toString().also {
+            storage.edit().putString("installation", it).apply()
         }
         val payload = JSONObject().put("installationId", installationId)
         if (deviceToken != null) payload.put("platform", "fcm").put("token", deviceToken)
+            .put("comments", value.comments).put("reactions", value.reactions)
         val request = Request.Builder()
             .url(baseUrl.trimEnd('/') + "/mobile/push-device")
             .header("Authorization", "Bearer $sessionToken")
@@ -99,6 +126,7 @@ internal class AndroidDiscussionPush(private val context: Context) {
             .build()
         withContext(Dispatchers.IO) {
             http.newCall(request).execute().use { response ->
+                check(response.code != 404) { "This sync server does not support system notifications" }
                 check(response.code == 204) { "System notifications are unavailable" }
             }
         }

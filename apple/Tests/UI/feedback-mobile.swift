@@ -23,6 +23,7 @@ import LogseqModel
     var observations: [String: Bool] = [:]
     var measurements: [String: Double] = [:]
     let selectedSnapshot: String
+    let notificationFixture: [[String: Any]]?
     private var step = 0
     private static let prefix = "f0000000-0000-4000-8000-"
     static func uuid(_ number: Int) -> String { prefix + String(format: "%012d", number) }
@@ -107,12 +108,21 @@ import LogseqModel
         }
         let response = Self.call("selectPage", Self.uuid(selected))
         let inbox = scenario == "notifications" ? try! Self.recentNotifications(in: directory) : nil
+        notificationFixture = inbox
         selectedSnapshot = response
         router = LGPlatformCommandRouter(setClipboardText: { _ in }, performHaptic: { _ in }, present: { _ in })
+        let pushEffects = LGPlatformEffectHandler(saveSettings: { _ in },
+            runtimeLog: LogseqRuntimeLog(capacity: 1), copyText: { _ in }, signOut: {},
+            pushPreference: { value in
+                try await LGDiscussionPush.shared.setPreferences(value, sessionToken: nil)
+            })
         runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: LGCoreEffectExecutor(callCore: { request in
             Self.withInbox(inbox, in: await LogseqCore.callAsync(request))
         },
-            platformEffect: { _ in .init(succeeded: true, message: "", output: .discard) }),
+            platformEffect: { effect in
+                if effect.kind == "push-preference" { return await pushEffects.execute(effect) }
+                return .init(succeeded: true, message: "", output: .discard)
+            }),
             platformCommandHandler: router)
         try! runtime.applyCoreResponse(Self.withInbox(inbox, in: opened))
         try! runtime.applyCoreResponse(Self.withInbox(inbox, in: response))
@@ -290,13 +300,15 @@ import LogseqModel
                 await pause()
                 let list = find("screen.notifications")
                 observations["activity-list"] = find("notification.feed-asset") != nil
-                observations["two-week-window"] = find("notification.feed-old") == nil
+                observations["one-month-window"] = find("notification.feed-old") == nil
                 observations["virtual-window"] = find("notification.feed-follow-up-39") == nil
                 observations["rich-comment"] = find("notification.comment.feed-comment") != nil
                 let metadata = find("notification.meta.feed-comment").flatMap { backend.model(id: $0) }
                 let caption = metadata?.property(.text)?.stringValue ?? ""
                 observations["compact-metadata"] = caption.hasPrefix("Robin · ") && !caption.contains("Commented")
                     && metadata?.property(.textAlignment)?.stringValue == "start"
+                observations["local-date-time"] = caption.range(of: #" · [A-Za-z]+ [0-9]+ [0-9]{2}:[0-9]{2}$"#,
+                    options: .regularExpression) != nil
                 let preview = find("notification.preview.feed-asset")
                 observations["asset-renderer"] = preview.map { descendants($0).contains {
                     backend.extensionModel(id: $0)?.identifier == "outliner-block-content"
@@ -336,6 +348,51 @@ import LogseqModel
                 await pause()
                 observations["retained-list"] = list != nil && find("screen.notifications") == list
                 observations["retained-offset"] = abs((inboxScrollView()?.contentOffset.y ?? 0) - offset) < 6
+                let history = notificationFixture?.filter { ($0["ageDays"] as? Int ?? 0) > 30 } ?? []
+                let oldActivity = Self.encoded(["ok":true, "result":["isCollaborationPatch":true,
+                    "collaboration":["graphId":"feedback", "account":Self.uuid(31), "inbox":history]]])
+                try runtime.applyCoreResponse(oldActivity)
+                await pause()
+                let recentOnly = "button.notifications.recent-only"
+                func checked() -> Bool {
+                    find(recentOnly).flatMap { backend.model(id: $0)?.property(.selected)?.boolValue } == true
+                }
+                observations["filter-checked"] = checked()
+                observations["filtered-empty"] = find("notifications.empty") != nil
+                try press(recentOnly)
+                await pause()
+                observations["three-month-window"] = !checked() && find("notification.feed-old") != nil
+                    && find("notification.feed-archive") == nil && find("notifications.empty") == nil
+                try press(recentOnly)
+                await pause()
+                observations["filter-restored"] = checked() && find("notifications.empty") != nil
+            case "notification-settings":
+                let push = LGDiscussionPush.shared
+                try await push.setPreferences(.init(enabled: false, comments: true, reactions: true), sessionToken: nil)
+                try runtime.applyHostUpdate(kind: "push-preference", payload: push.preferencePayload)
+                try press("button.sidebar")
+                await pause()
+                try press("button.sidebar.settings")
+                await pause()
+                let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                    .flatMap(\.windows).first(where: \.isKeyWindow)
+                window?.rootViewController?.presentedViewController?.sheetPresentationController?.selectedDetentIdentifier = .large
+                await pause()
+                guard let comments = find("switch.settings.push.comments"),
+                      let reactions = find("switch.settings.push.reactions") else {
+                    throw NSError(domain: "Feedback", code: 3,
+                        userInfo: [NSLocalizedDescriptionKey: "Missing notification switches"])
+                }
+                try backend.performToggle(node: comments, checked: false)
+                await pause()
+                observations["comments-saved-separately"] = !push.preferences.comments && push.preferences.reactions
+                try backend.performToggle(node: reactions, checked: false)
+                await pause()
+                try backend.performToggle(node: comments, checked: true)
+                await pause()
+                try runtime.applyHostUpdate(kind: "push-preference", payload: push.preferencePayload)
+                observations["restored-preferences"] = push.preferences.comments && !push.preferences.reactions
+                    && backend.model(id: comments)?.isChecked == true && backend.model(id: reactions)?.isChecked == false
             default: break
             }
             await pause()

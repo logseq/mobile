@@ -305,7 +305,7 @@ let collaboration_json session =
     let inbox = match !(session.Types.collaboration_inbox) with
       | Some (previous, previous_actor, inbox) when previous == db && previous_actor = actor -> inbox
       | _ ->
-        let since = Collaboration.inbox_cutoff (Session_types.now_ms ()) in
+        let since = Collaboration.inbox_cutoff Collaboration.inbox_max_months in
         let inbox = Collaboration.inbox db ~actor ~since ~preview:(Node_presentation.preview db) in
         session.collaboration_inbox := Some (db, actor, inbox);
         inbox in

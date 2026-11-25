@@ -1,5 +1,11 @@
 import Foundation
 
+public struct LGDiscussionPushPreferences: Codable, Sendable {
+    var enabled: Bool
+    var comments: Bool
+    var reactions: Bool
+}
+
 #if os(iOS)
 import UIKit
 import UserNotifications
@@ -9,11 +15,29 @@ import UserNotifications
 
     private let defaults = UserDefaults.standard
     private let preferenceKey = "logseq.discussionPush.enabled"
+    private let commentsKey = "logseq.discussionPush.comments"
+    private let reactionsKey = "logseq.discussionPush.reactions"
     private let installationKey = "logseq.discussionPush.installation"
     private var tokenContinuation: CheckedContinuation<Data, Error>?
     private var tokenTimeout: Task<Void, Never>?
+    private var updating = false
 
-    var enabled: Bool { defaults.bool(forKey: preferenceKey) }
+    var preferences: LGDiscussionPushPreferences {
+        LGDiscussionPushPreferences(enabled: defaults.bool(forKey: preferenceKey),
+            comments: defaults.object(forKey: commentsKey) as? Bool ?? true,
+            reactions: defaults.object(forKey: reactionsKey) as? Bool ?? true)
+    }
+
+    var preferencePayload: String {
+        guard let data = try? JSONEncoder().encode(preferences) else { return "{}" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private func save(_ value: LGDiscussionPushPreferences) {
+        defaults.set(value.enabled, forKey: preferenceKey)
+        defaults.set(value.comments, forKey: commentsKey)
+        defaults.set(value.reactions, forKey: reactionsKey)
+    }
 
     private var installationID: String {
         if let value = defaults.string(forKey: installationKey) { return value }
@@ -49,29 +73,41 @@ import UserNotifications
         }
     }
 
-    func setEnabled(_ enabled: Bool, sessionToken: String) async throws {
-        if enabled {
-            let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
-            guard granted else { throw PushError.denied }
+    func setPreferences(_ value: LGDiscussionPushPreferences, sessionToken: String?) async throws {
+        guard !updating else { throw PushError.unavailable }
+        updating = true
+        defer { updating = false }
+        if value.enabled {
+            guard let sessionToken else { throw PushError.unavailable }
+            if !preferences.enabled {
+                let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
+                guard granted else { throw PushError.denied }
+            }
             let token = try await deviceToken()
-            try await sendRegistration(token: token, sessionToken: sessionToken)
-        } else {
-            try await sendRegistration(token: nil, sessionToken: sessionToken)
+            try await sendRegistration(token: token, preferences: value, sessionToken: sessionToken)
+        } else if preferences.enabled {
+            guard let sessionToken else { throw PushError.unavailable }
+            try await sendRegistration(token: nil, preferences: value, sessionToken: sessionToken)
         }
-        defaults.set(enabled, forKey: preferenceKey)
+        save(value)
     }
 
     func refresh(sessionToken: String) async throws {
-        guard enabled else { return }
+        var value = preferences
+        guard value.enabled, !updating else { return }
+        updating = true
+        defer { updating = false }
         let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
         if status == .denied {
-            try await setEnabled(false, sessionToken: sessionToken)
+            value.enabled = false
+            try await sendRegistration(token: nil, preferences: value, sessionToken: sessionToken)
+            save(value)
         } else {
-            try await sendRegistration(token: deviceToken(), sessionToken: sessionToken)
+            try await sendRegistration(token: deviceToken(), preferences: value, sessionToken: sessionToken)
         }
     }
 
-    private func sendRegistration(token: Data?, sessionToken: String) async throws {
+    private func sendRegistration(token: Data?, preferences: LGDiscussionPushPreferences, sessionToken: String) async throws {
         guard let url = URL(string: LogseqSettingsPolicy.storedBaseURL())?.appending(path: "mobile/push-device") else {
             throw PushError.unavailable
         }
@@ -79,22 +115,29 @@ import UserNotifications
         request.httpMethod = token == nil ? "DELETE" : "PUT"
         request.setValue("Bearer " + sessionToken, forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        var body = ["installationId": installationID]
+        var body: [String: Any] = ["installationId": installationID]
         if let token {
             body["token"] = token.map { String(format: "%02x", $0) }.joined()
             body["platform"] = Bundle.main.object(forInfoDictionaryKey: "LogseqAPNsEnvironment") as? String == "development"
               ? "apns-sandbox" : "apns"
+            body["comments"] = preferences.comments
+            body["reactions"] = preferences.reactions
         }
-        request.httpBody = try JSONEncoder().encode(body)
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (_, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 204 else { throw PushError.unavailable }
+        switch (response as? HTTPURLResponse)?.statusCode {
+        case 204: return
+        case 404: throw PushError.unsupportedServer
+        default: throw PushError.unavailable
+        }
     }
 
     private enum PushError: LocalizedError {
-        case denied, unavailable
+        case denied, unsupportedServer, unavailable
         var errorDescription: String? {
             switch self {
             case .denied: "Allow notifications in system settings"
+            case .unsupportedServer: "This sync server does not support system notifications"
             case .unavailable: "System notifications are unavailable"
             }
         }

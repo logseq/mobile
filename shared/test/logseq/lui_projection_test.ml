@@ -139,7 +139,8 @@ let native_session_roundtrip_preserves_assets_and_returns_home () =
     group_by_page = false; sort_tasks = Model.DeadlineDate; sort_pages = Model.PageCreated;
     compact = true; show_completed = false; show_past = false;
   } in
-  let original = Model.update selected_tab (Model.SetTasksView preferences) in
+  let original = Model.update {selected_tab with notifications_recent_only = false}
+    (Model.SetTasksView preferences) in
   let saved = match original.pending_effects with
     | [Model.PersistUISessionEffect (_, session)] -> Native_bridge.encode_ui_session session
     | _ -> Alcotest.fail "Changing Tasks display preferences must save them immediately" in
@@ -153,6 +154,7 @@ let native_session_roundtrip_preserves_assets_and_returns_home () =
        let current = App.model (Native_bridge.app ()) in
        Test_util.check_eq ~msg:"Tasks preferences survive relaunch while the tab is transient"
          current.tasks_view { preferences with tab = Model.TasksToday };
+       Test_util.check ~msg:"The notification filter survives relaunch" (not current.notifications_recent_only);
        ignore (Native_bridge.apply_host_update "save-ui-session" "null");
        let expected = { (Model.ui_session original) with
          composer_expanded = false; search_open = false; query = "";

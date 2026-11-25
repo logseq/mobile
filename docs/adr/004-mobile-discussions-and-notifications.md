@@ -36,20 +36,24 @@ can read and update the same discussions, including in encrypted graphs.
 ### Notifications
 
 - Put **Notifications** in the bottom navigation on both iOS and Android. Show a small unread dot in the accent color
-  when another graph member comments on an owned page or block, replies in a thread the viewer
-  participates in, or reacts to their block or comment. Exclude the viewer's own activity.
+  when another graph member comments on an owned page or block, posts to a thread the viewer
+  has already commented in, or reacts to their block or comment. Exclude the viewer's own activity.
 - Derive the inbox from the synced graph, keyed by the stable event entity UUID, and list recent
   activity newest first. A block comment notification opens the block and expands its inline
-  discussion. Page comments open the page thread. The header menu contains mark-all-as-read and
-  the system notification preference.
+  discussion. Page comments open the page. The header menu contains mark-all-as-read, a persisted
+  one-month filter, and the system notification preference. The filter is enabled by default.
+  Disabling it shows the last three months.
   A missing target leaves the inbox usable and shows that the activity is unavailable.
 - Scope unread state to the signed-in account and graph. Persist read markers locally and support
   marking individual items or all visible items as read. Display the active graph’s notifications
   once its local mirror is available. Refresh from sync updates and retain the latest available results
   offline. Keep message text inside the encrypted graph boundary.
 - Deliver opted-in system alerts through APNs on iOS and FCM on Android. Request permission from
-  the Notifications screen and let users change their preference there. Register device tokens
-  with the signed-in account. Revoke registrations on sign-out and remove expired tokens.
+  the Notifications screen or app settings. The System notifications settings contain a master
+  switch and independent switches for comments and reactions. Persist each device's choices
+  locally and include them in its push registration. The worker applies the device preferences
+  when enqueuing notifications and again before sending. Revoke registrations on sign-out and
+  remove expired tokens.
 - Derive recipients in the sync worker from the structural references already visible during
   sync. The service checks the authenticated author and recipient’s graph membership, limits
   fan-out and frequency, deduplicates by graph and event UUID, and queues delivery after the

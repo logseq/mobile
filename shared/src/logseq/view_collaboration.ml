@@ -295,14 +295,17 @@ let overlays source send =
     reaction_overlay true source send;
   ]
 
+let notification_datetime ~now (current : Model.logseq_model) milliseconds =
+  let time = Unix.localtime (float_of_int milliseconds /. 1000.) in
+  let current_year = (Unix.localtime now).Unix.tm_year + 1900 in
+  let day = (time.tm_year + 1900) * 10000 + (time.tm_mon + 1) * 100 + time.tm_mday in
+  let date, _ = Localization.journal_date ~language:current.language
+    ~system_language:current.system_language ~current_year day in
+  Printf.sprintf "%s %02d:%02d" date time.tm_hour time.tm_min
+
 let date current item =
   match field "createdAt" item with
-  | `Int time when time > 0 ->
-    let tm = Unix.localtime (float_of_int time /. 1000.) in
-    let today = Unix.localtime (Unix.time ()) in
-    if tm.Unix.tm_year = today.tm_year && tm.tm_yday = today.tm_yday then
-      Printf.sprintf "%02d:%02d" tm.tm_hour tm.tm_min
-    else Printf.sprintf "%04d-%02d-%02d" (tm.tm_year + 1900) (tm.tm_mon + 1) tm.tm_mday
+  | `Int time when time > 0 -> notification_datetime ~now:(Unix.time ()) current time
   | _ -> copy current "Recent"
 
 let notification_root (current : Model.logseq_model) =
@@ -316,7 +319,7 @@ let notification_label current =
 
 let notification_menu ~android source send =
   let current = Signal.sample source in
-  let push_label model = copy model (if model.Model.push_enabled
+  let push_label model = copy model (if model.Model.push_preferences.enabled
     then "Turn off system notifications" else "Enable system notifications") in
   box ~width:44 ~height:44 [
     menu ~icon:(`app (if android then "more-vert" else "more-horiz"))
@@ -327,13 +330,16 @@ let notification_menu ~android source send =
         ~disabled_signal:(Signal.map (fun current -> Model.notification_count current = 0) source)
         ~accessibility_identifier:"button.notifications.read-all"
         ~on_press:(send_event send Model.ReadAllNotifications) [];
+      dropdown_menu_item ~text:(copy current "Only show the past month")
+        ~selected_signal:(Signal.map (fun current -> current.Model.notifications_recent_only) source)
+        ~accessibility_identifier:"button.notifications.recent-only"
+        ~on_press:(send_event send Model.ToggleRecentNotifications) [];
       dropdown_menu_item ~text_signal:(Signal.map push_label source) ~icon:(`app "tab-notifications")
-        ~disabled_signal:(Signal.map (fun current -> List.exists (function
-          | Model.PushPreferenceEffect _ -> true | _ -> false)
-          (current.Model.pending_effects @ current.in_flight_effects)) source)
+        ~disabled_signal:(Signal.map Model.saving_push_preferences source)
         ~accessibility_identifier:"button.notifications.system"
         ~on_press:(fun _ ->
-          ignore (send (Model.SetPushPreference (not (Signal.sample source).Model.push_enabled)))) [];
+          let preferences = (Signal.sample source).Model.push_preferences in
+          ignore (send (Model.SetPushPreference {preferences with enabled = not preferences.enabled}))) [];
     ];
   ]
 
@@ -342,13 +348,21 @@ let notification_screen ~bottom_spacing source send =
   let current = Signal.sample source in
   let show_error = Signal.map (fun (current : Model.logseq_model) -> current.push_error) source in
   let visible = Signal.map notification_root source in
-  let account_graph = Signal.map (fun (current : Model.logseq_model) ->
-    [Option.value ~default:"local" current.selected_graph_id]) source in
+  let show_empty = Signal.map2 (fun visible items -> visible && items = []) visible items in
+  let empty_state = column ~gap:10 ~cross:`center ~padding_horizontal:16
+    ~accessibility_identifier:"notifications.empty" [
+      icon ~name:(`app "tab-notifications") ~width:25 ~height:25 ~foreground:"muted-foreground" [];
+      text ~value:(copy current "No notifications") ~text_alignment:`center
+        ~foreground:"muted-foreground" [];
+    ] in
+  let list_scope = Signal.map2 (fun (current : Model.logseq_model) items ->
+    let graph = Option.value ~default:"local" current.selected_graph_id in
+    [Printf.sprintf "notifications:%s:%b:%b" graph current.notifications_recent_only (items = [])]) source items in
   View_base.with_reading_insets
-    (box ~grow:1.0 [keyed ~source:account_graph ~key:Fun.id ~cmp:String.compare ~mount:(fun graph ->
-      View_base.with_selected_signal visible
+    (box ~grow:1.0 [keyed ~source:list_scope ~key:Fun.id ~cmp:String.compare ~mount:(fun scope ->
+      let list = View_base.with_selected_signal visible
       (virtual_list ~grow:1.0 ~gap:0 ~style_class:"retained-pane"
-        ~data_attrs:["data-scroll-identity", "notifications:" ^ Signal.sample graph]
+        ~data_attrs:["data-scroll-identity", Signal.sample scope]
         ~accessibility_identifier:"screen.notifications" [
         box ~padding_horizontal:16 ~padding_vertical:12 [
           heading ~value:(copy current "Notifications") ~level:`h1 ~style_class:"semibold" ~foreground:"foreground"
@@ -357,15 +371,7 @@ let notification_screen ~bottom_spacing source send =
         reactive (function
           | None -> box []
           | Some message -> text ~value:(copy current message) ~padding_horizontal:16 ~padding_vertical:6
-              ~style_class:"caption" ~foreground:"error" []) show_error;
-        if_ ~test:(Signal.map ((=) []) items)
-          (row ~container_relative_frame:`horizontal ~main:`center ~padding_horizontal:16 [
-            column ~height:180 ~gap:10 ~main:`center ~cross:`center [
-              icon ~name:(`app "tab-notifications") ~width:25 ~height:25 ~foreground:"muted-foreground" [];
-              text ~value:(copy current "No notifications") ~text_alignment:`center
-                ~foreground:"muted-foreground" [];
-            ];
-          ]);
+              ~style_class:"caption" ~foreground:"error-foreground" []) show_error;
         View_rows.windowed_keyed ~window_size:24 ~item_extent:82 ~identifier:"notifications.window"
           ~source:items ~key:(string "id") ~cmp:String.compare ~mount:(fun item ->
           let id = string "id" (Signal.sample item) in
@@ -418,4 +424,5 @@ let notification_screen ~bottom_spacing source send =
                 ];
               ]])) ();
         box ~height:bottom_spacing [];
-      ]))])
+      ]) in
+      overlay ~grow:1.0 ~alignment:`center [list; if_ ~test:show_empty empty_state])])

@@ -1,10 +1,12 @@
 package com.logseq.logseq
 
+import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.runtime.CompositionLocalProvider
@@ -31,6 +33,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import android.view.WindowManager
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
@@ -52,6 +57,11 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
     private lateinit var loader: AndroidGraphAssetLoader
     private var selectedSnapshot = ""
     private var notificationFixture: JSONArray? = null
+    private val pushTestContext by lazy {
+        object : ContextWrapper(context) {
+            override fun getSharedPreferences(name: String, mode: Int) = super.getSharedPreferences("$name.feedback", mode)
+        }
+    }
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val args get() = InstrumentationRegistry.getArguments()
     private val verify get() = args.getString("feedbackPhase") != "before"
@@ -86,7 +96,10 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
             envelope.optString("patch").takeIf { it.isNotEmpty() }?.let { patch -> ui.runOnIdle { filter.applyJson(patch) } }
             val kind = effect.optString("kind")
             var message = ""
-            if (kind !in setOf("refresh-graphs", "persist-ui-session", "persist-composer-draft", "save-settings", "present-attachment")) {
+            if (kind == "push-preference" && scenario == "notification-settings") {
+                val value = DiscussionPushPreferences.decode(effect.getString("text"))
+                runBlocking { AndroidDiscussionPush(pushTestContext).setPreferences(value, "", null) }
+            } else if (kind !in setOf("refresh-graphs", "persist-ui-session", "persist-composer-draft", "save-settings", "present-attachment")) {
                 val response = request("executeEffect", effect.toString())
                 if (kind == "maintain-search-index") message = response else apply(response)
             }
@@ -144,6 +157,7 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
         if (dark) host("settings", """{"appearance":"dark","language":"system","systemLanguage":"en-US","spellCheck":true,"autoCorrection":true,"sidebarTabs":[],"baseURL":"http://127.0.0.1:1","version":"QA","revision":"feedback"}""")
         ui.setContent { MaterialExpressiveTheme(colorScheme = if (dark) LogseqTheme.darkScheme else LogseqTheme.lightScheme, typography = LogseqTheme.typography) {
             CompositionLocalProvider(dev.lui.LocalLuiThemeDark provides dark,
+                LocalContentColor provides androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
                 dev.lui.LocalLuiSemanticColors provides LogseqTheme.semanticColors(androidx.compose.material3.MaterialTheme.colorScheme)) {
                 Box(Modifier.fillMaxSize().background(androidx.compose.material3.MaterialTheme.colorScheme.background)
                     .logseqContentHostInsets()) { backend.Content(root) }
@@ -587,6 +601,9 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 ui.onNodeWithText("The checklist is ready.", useUnmergedTree = true).assertIsDisplayed()
                 ui.onNodeWithText("Reacted", substring = true, useUnmergedTree = true).assertDoesNotExist()
                 ui.onNodeWithText("Commented", substring = true, useUnmergedTree = true).assertDoesNotExist()
+                val commentTime = checkNotNull(notificationFixture).getJSONObject(1).getLong("createdAt")
+                val date = SimpleDateFormat("MMM d HH:mm", Locale.US).format(Date(commentTime))
+                ui.onNodeWithTag("notification.meta.feed-comment", useUnmergedTree = true).assertTextEquals("Robin · $date")
                 val author = ui.onNodeWithTag("notification.meta.feed-comment", useUnmergedTree = true).getUnclippedBoundsInRoot()
                 val content = ui.onNodeWithTag("notification.preview.feed-comment", useUnmergedTree = true).getUnclippedBoundsInRoot()
                 assertTrue("Author metadata sits above the preview", author.bottom <= content.top)
@@ -628,6 +645,69 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 pause()
                 assertEquals("Switching tabs keeps the same scroll position", before.value,
                     retainedRow.assertIsDisplayed().getUnclippedBoundsInRoot().top.value, 2f)
+
+                val inbox = checkNotNull(notificationFixture)
+                notificationFixture = JSONArray().apply {
+                    for (index in 0 until inbox.length()) {
+                        val item = inbox.getJSONObject(index)
+                        if (item.optInt("ageDays") > 30) put(item)
+                    }
+                }
+                val patch = JSONObject(selectedSnapshot).apply {
+                    getJSONObject("result").put("isCollaborationPatch", true)
+                }
+                apply(patch.toString())
+                pause()
+                val empty = ui.onNodeWithTag("notifications.empty", useUnmergedTree = true)
+                val emptyBounds = empty.assertIsDisplayed().getUnclippedBoundsInRoot()
+                val viewport = ui.onRoot().getUnclippedBoundsInRoot()
+                assertEquals("Empty state is vertically centered",
+                    (viewport.top.value + viewport.bottom.value) / 2,
+                    (emptyBounds.top.value + emptyBounds.bottom.value) / 2,
+                    (viewport.bottom.value - viewport.top.value) * 0.08f)
+                val more = ui.onNodeWithTag("button.notifications.more")
+                val recentOnly = ui.onNodeWithTag("button.notifications.recent-only")
+                more.performClick()
+                recentOnly.assertIsSelected()
+                pause()
+                recentOnly.performClick()
+                pause()
+                empty.assertDoesNotExist()
+                ui.onNodeWithTag("notification.feed-old").assertIsDisplayed()
+                ui.onNodeWithTag("notification.feed-archive").assertDoesNotExist()
+                more.performClick()
+                recentOnly.assertIsNotSelected()
+                pause()
+                recentOnly.performClick()
+                pause()
+                empty.assertIsDisplayed()
+            }
+            "notification-settings" -> {
+                val push = AndroidDiscussionPush(pushTestContext)
+                runBlocking { push.setPreferences(DiscussionPushPreferences(false, true, true), "", null) }
+                mount(1, dark = true)
+                host("push-preference", push.preferences.json().toString())
+                ui.onNodeWithTag("button.sidebar").performClick()
+                pause()
+                ui.onNodeWithTag("button.sidebar.settings").performClick()
+                pause()
+                val comments = ui.onNodeWithTag("switch.settings.push.comments")
+                val reactions = ui.onNodeWithTag("switch.settings.push.reactions")
+                reactions.performScrollTo().assertIsOn()
+                comments.assertIsOn()
+                pause()
+                comments.performClick()
+                pause()
+                assertEquals(DiscussionPushPreferences(false, false, true), push.preferences)
+                reactions.performClick()
+                pause()
+                comments.performClick()
+                pause()
+                val restored = AndroidDiscussionPush(pushTestContext).preferences
+                assertEquals(DiscussionPushPreferences(false, true, false), restored)
+                host("push-preference", restored.json().toString())
+                comments.assertIsOn()
+                reactions.assertIsOff()
             }
             "journal-layout" -> {
                 val imagePath = File(context.cacheDir, "journal-layout.png")

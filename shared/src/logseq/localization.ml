@@ -5322,12 +5322,16 @@ let dictionaries = [
     ("Commented", "评论了");
     ("Reacted", "回应了");
     ("Mark all as read", "全部标为已读");
+    ("Only show the past month", "仅显示最近一个月");
     ("No notifications", "暂无通知");
     ("Enable system notifications", "启用系统通知");
+    ("System notifications", "系统通知");
+    ("Reactions", "表情回应");
     ("Turn off system notifications", "关闭系统通知");
     ("This activity is unavailable", "此条动态已无法打开");
     ("This discussion is unavailable", "此讨论已无法打开");
     ("System notifications are unavailable", "系统通知暂不可用");
+    ("This sync server does not support system notifications", "当前同步服务器不支持系统通知");
     ("Allow notifications in system settings", "请在系统设置中允许通知");
     ("Recent", "最近");
     ("Upcoming", "即将到来");
