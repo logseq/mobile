@@ -17,6 +17,11 @@ device=${ANDROID_SERIAL:-$(adb devices | awk 'NR > 1 && $2 == "device" { print $
 [[ -n $device ]] || die "no online Android device was found"
 adb=(adb -s "$device")
 
+if [[ -z ${LOGSEQ_ANDROID_ABI:-} ]]; then
+  device_abi=$("${adb[@]}" shell getprop ro.product.cpu.abi | tr -d '\r')
+  [[ -n $device_abi ]] && export LOGSEQ_ANDROID_ABI=$device_abi
+fi
+
 cd "$repo_root/android"
 ./gradlew :app:assembleBenchmark :baselineprofile:assembleBenchmark
 
