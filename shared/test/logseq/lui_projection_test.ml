@@ -131,9 +131,18 @@ let native_session_roundtrip_preserves_assets_and_returns_home () =
       app_navigation_path = [ Model.NodeRoute "page-a" ];
       search_navigation_path = [ Model.NodeRoute "block-b" ] }
   in
-  let saved =
-    Native_bridge.encode_ui_session (Model.ui_session original)
-  in
+  let defaults = Model.default_tasks_view in
+  let selected_tab = Model.update original (Model.SetTasksView { defaults with tab = Model.TasksUpcoming }) in
+  Test_util.check_eq ~msg:"switching Tasks tabs is transient" selected_tab.pending_effects [];
+  let preferences = {
+    Model.tab = Model.TasksUpcoming;
+    group_by_page = false; sort_tasks = Model.DeadlineDate; sort_pages = Model.PageCreated;
+    compact = true; show_completed = false; show_past = false;
+  } in
+  let original = Model.update selected_tab (Model.SetTasksView preferences) in
+  let saved = match original.pending_effects with
+    | [Model.PersistUISessionEffect (_, session)] -> Native_bridge.encode_ui_session session
+    | _ -> Alcotest.fail "Changing Tasks display preferences must save them immediately" in
   ignore (Native_bridge.initialize 2 2 3);
   Fun.protect
     ~finally:(fun () -> ignore (Native_bridge.dispose ()))
@@ -141,6 +150,9 @@ let native_session_roundtrip_preserves_assets_and_returns_home () =
        ignore (Native_bridge.apply_response graph_response);
        ignore
          (Native_bridge.apply_host_update "restore-ui-session" saved);
+       let current = App.model (Native_bridge.app ()) in
+       Test_util.check_eq ~msg:"Tasks preferences survive relaunch while the tab is transient"
+         current.tasks_view { preferences with tab = Model.TasksToday };
        ignore (Native_bridge.apply_host_update "save-ui-session" "null");
        let expected = { (Model.ui_session original) with
          composer_expanded = false; search_open = false; query = "";

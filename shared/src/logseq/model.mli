@@ -49,6 +49,8 @@ type tasks_view =
   ; show_past : bool
   }
 
+val default_tasks_view : tasks_view
+
 type ui_session =
   { graph_id : string option
   ; destination : primary_destination
@@ -62,6 +64,7 @@ type ui_session =
   ; selected_page_id : string option
   ; settings_open : bool
   ; recent_graph_ids : string list
+  ; tasks_view : tasks_view option
   }
 
 type graph =

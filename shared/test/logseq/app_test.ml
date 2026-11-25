@@ -3512,8 +3512,12 @@ let flashcard_presentation_and_review_state_are_owned_by_lg () =
   check ~msg:"opening flashcards closes the sidebar"
     (not shown.sidebar_open);
   check_eq
-    ~msg:"entering flashcards clears page context before loading due cards"
+    ~msg:"reopening a loaded review just clears page context"
     shown.pending_effects
+    [ Model.ClearSelectedPageEffect 1 ];
+  check_eq
+    ~msg:"opening flashcards with no review still loads due cards"
+    (Model.update (Model.initial ()) Model.ShowFlashcards).pending_effects
     [ Model.ClearSelectedPageEffect 1; Model.LoadFlashcardsEffect 2 ];
   check ~msg:"cloze reveal is retained in LG state"
     cloze.flashcard_cloze_revealed;
@@ -3523,9 +3527,13 @@ let flashcard_presentation_and_review_state_are_owned_by_lg () =
     reviewed.pending_effects
     [
       Model.ClearSelectedPageEffect 1;
-      Model.LoadFlashcardsEffect 2;
-      Model.ReviewFlashcardEffect (3, "card-a", "good");
-    ]
+      Model.ReviewFlashcardEffect (2, "card-a", "good");
+    ];
+  let resumed =
+    List.fold_left Model.update answer [Model.ShowJournals; Model.ShowTasks; Model.ShowFlashcards] in
+  check_eq ~msg:"switching tabs keeps the current card queue" resumed.flashcards [card];
+  check ~msg:"switching tabs keeps both reveal states"
+    (resumed.flashcard_cloze_revealed && resumed.flashcard_answer_revealed)
 
 let load_older_journals_coalesces_while_pending () =
   let requested = Model.update (Model.initial ()) Model.LoadOlderJournals in
@@ -4029,8 +4037,7 @@ let flashcards_render_the_main_branch_reveal_and_rating_contract () =
     (App.model application).pending_effects
     [
       Model.ClearSelectedPageEffect 1;
-      Model.LoadFlashcardsEffect 2;
-      Model.ReviewFlashcardEffect (3, "card-a", "good");
+      Model.ReviewFlashcardEffect (2, "card-a", "good");
     ]
 
 let flashcards_render_empty_and_non_cloze_control_states () =
@@ -10609,7 +10616,9 @@ let typed_toolbars_keep_reactive_width_and_labels () =
         (View_base.outliner_editor_task_label (App.model application)))
       [None; done_status; None];
     snapshot None [] [];
-    check_eq ~msg:"empty selection removes the toolbar" (find "toolbar.outliner.selection") (-1);
+    let switch = extension_node application "bottom-chrome-switch" in
+    check_eq ~msg:"empty selection returns to the bottom tabs"
+      (extension_property application switch "selection-active") (Some (Lui_protocol.BoolValue false));
     check_eq ~msg:"ending editing removes the editor toolbar" (find "toolbar.outliner.editor") (-1))
 
 let parent_selection_highlights_visible_descendants () =
@@ -10664,8 +10673,13 @@ let pushed_node_selection_has_a_destination_toolbar () =
   flush application;
   let renderer = Lui_app.runtime application in
   let chrome = native_bottom_chrome renderer application in
+  let switch = descendant_with_extension renderer application chrome "bottom-chrome-switch" in
+  let capture_pane, selection_pane =
+    match children renderer switch with [capture; selection] -> capture, selection | _ -> failwith "missing chrome panes" in
   let toolbar = descendant_with_identifier renderer chrome "toolbar.outliner.selection" in
   check ~msg:"the navigation chrome shows the active pushed node’s selection toolbar" (toolbar <> -1);
+  check ~msg:"tabs are inert during selection" (property_bool renderer capture_pane Lui_protocol.Inert);
+  check ~msg:"selection actions accept input" (not (property_bool renderer selection_pane Lui_protocol.Inert));
   let copy = descendant_with_identifier renderer toolbar "button.outliner.selection.copy" in
   dispatch application (Lui_protocol.Press copy);
   flush application;
@@ -10679,15 +10693,19 @@ let pushed_node_selection_has_a_destination_toolbar () =
     flush application
   in
   apply [unselected_route];
-  check_eq ~msg:"clearing route selection removes its toolbar"
-    (descendant_with_identifier renderer chrome "toolbar.outliner.selection") (-1);
+  check ~msg:"clearing route selection makes the outgoing toolbar inert"
+    (property_bool renderer selection_pane Lui_protocol.Inert);
+  check ~msg:"tabs can accept input after selection"
+    (not (property_bool renderer capture_pane Lui_protocol.Inert));
   send application (Model.RequestAppNode "grandchild");
   let nested = { (node_projection "grandchild" "page" "Grandchild" [] []) with
     Model.node_outliner_rows = [outline_row "grandchild" "Grandchild"] } in
   apply [route; nested];
-  check_eq ~msg:"a covered destination cannot keep its selection toolbar active"
-    (descendant_with_identifier renderer chrome "toolbar.outliner.selection") (-1);
+  check ~msg:"a covered destination cannot keep its selection toolbar active"
+    (property_bool renderer selection_pane Lui_protocol.Inert);
   apply [route; {nested with Model.node_outliner_selected_block_ids = ["grandchild"]}];
+  check ~msg:"the visible destination restores the same toolbar"
+    (not (property_bool renderer selection_pane Lui_protocol.Inert));
   let toolbar_count = descendant_count_with_identifier renderer
     (Lui_app.root_node application) "toolbar.outliner.selection" in
   check_eq ~msg:"only the visible destination owns a select bar" toolbar_count 1

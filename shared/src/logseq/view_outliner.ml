@@ -1188,8 +1188,18 @@ type selection_tag_snapshot = {
     * Model.navigation_route list * string list;
 }
 
-let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send : t =
-  let task_selection = Signal.map Model.outliner_task_selection_ model_source in
+let outliner_selection_toolbar ?(retain_task_actions = false) model_source send : t =
+  custom @@ fun context parent ->
+  let task_selection =
+    if retain_task_actions then begin
+      (* Keep the outgoing capsule's actions at their current positions while it fades. *)
+      let selected = Signal.state context.ui_scheduler
+        (Model.outliner_task_selection_ (Signal.sample model_source)) in
+      ignore (Signal.own context.ui_scope (Signal.observe model_source (fun current ->
+        if View_base.bottom_chrome_selection_ current then
+          Signal.set selected (Model.outliner_task_selection_ current))));
+      Signal.value selected
+    end else Signal.map Model.outliner_task_selection_ model_source in
   let date_buttons button =
     List.map (fun (field, label, icon) ->
       let id = "button.outliner.selection." ^ field in
@@ -1368,10 +1378,10 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) model_source send :
           node))
       model_source
   in
-  stack [
+  mount context ?parent (stack [
     selection_toolbar;
     reactive render_tag_picker (Signal.value picker);
-  ]
+  ])
 
 let outliner_autocomplete_row (context : Lui_ui.ui_context)
     ?(choose_action = fun value -> Model.ChooseOutlinerAutocomplete value)
@@ -2056,12 +2066,16 @@ let tasks_screen context model_source send : t = custom @@ fun mount_context par
                 ];
               ];
               if_ ~test:(Signal.map ((=) []) entries)
-                (column ~height:180 ~gap:10 ~main:`center ~cross:`center [
-                  icon ~name:(`app (if active_tab = Model.TasksToday then "tasks-today" else "calendar"))
-                    ~width:25 ~height:25 ~foreground:"muted-foreground" [];
-                  text ~value:(View_base.tr (Signal.sample model_source)
-                    (if active_tab = Model.TasksToday then "No tasks to show" else "No upcoming tasks"))
-                    ~foreground:"muted-foreground" ~accessibility_identifier:"tasks.empty" [];
+                (row ~container_relative_frame:`horizontal ~main:`center ~padding_horizontal:16 [
+                  column ~height:180 ~gap:10 ~main:`center ~cross:`center [
+                    icon ~name:(`app (if active_tab = Model.TasksToday then "tasks-today" else "calendar"))
+                      ~width:25 ~height:25 ~foreground:"muted-foreground"
+                      ~accessibility_identifier:"tasks.empty.icon" [];
+                    text ~value:(View_base.tr (Signal.sample model_source)
+                      (if active_tab = Model.TasksToday then "No tasks to show" else "No upcoming tasks"))
+                      ~text_alignment:`center ~foreground:"muted-foreground"
+                      ~accessibility_identifier:"tasks.empty" [];
+                  ];
                 ]);
               box ~height:16 [];
               View_rows.windowed_keyed ~identifier:"tasks.window" ~source:entries ~key:View_rows.page_entry_identifier ~cmp:compare

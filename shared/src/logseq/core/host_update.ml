@@ -20,6 +20,7 @@ type host_ui_session =
   ; selected_page_id : string option
   ; settings_open : bool
   ; recent_graph_ids : string list
+  ; tasks_view : Yojson.Safe.t option
   }
 
 type host_settings =
@@ -123,6 +124,7 @@ let ui_session value =
       Util.to_string_option (Util.member "selectedPageId" value);
     settings_open = bool_field "settingsOpen" value;
     recent_graph_ids = (match Util.member "recentGraphIds" value with `Null -> [] | ids -> string_vector ids);
+    tasks_view = (match Util.member "tasksView" value with `Assoc _ as options -> Some options | _ -> None);
   }
 
 let decode kind payload =

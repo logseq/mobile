@@ -35,6 +35,18 @@ import SwiftUI
             return result
         }
         var errors: [String] = []
+        for identifier in ["tab.bottom.tasks", "tasks.tab.upcoming"] {
+            try backend.performPress(node: id(identifier))
+            try await Task.sleep(for: .milliseconds(350))
+            for item in ["tasks.empty.icon", "tasks.empty"] {
+                let empty = try frame(item)
+                if abs(empty.midX - window.bounds.midX) > 1 {
+                    errors.append("\(item) must be centered after pressing \(identifier): \(empty)")
+                }
+            }
+        }
+        try backend.performPress(node: id("tab.bottom.home"))
+        try await Task.sleep(for: .milliseconds(350))
         try backend.performPress(node: id("button.composer.expand"))
         try await Task.sleep(for: .milliseconds(800))
         let controls = try frame("row.composer.controls")

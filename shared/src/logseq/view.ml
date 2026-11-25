@@ -422,6 +422,10 @@ let extension_registry () =
     (native_navigation_stack_schema ());
   Lui_extension.register_component registry (let open Lui_protocol in
     let open Lui_extension in
+    component "bottom-chrome-switch" [profile IOS SwiftUIHost] true []
+      [property "selection-active" BoolScalar true None] []);
+  Lui_extension.register_component registry (let open Lui_protocol in
+    let open Lui_extension in
     component "bottom-tab-strip" [profile IOS SwiftUIHost] true []
       [property "inset" IntScalar true None; property "selected-index" IntScalar true None;
        property "items" StringScalar true None; property "cell-width" IntScalar true None]

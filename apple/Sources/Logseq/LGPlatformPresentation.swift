@@ -289,7 +289,9 @@ struct LGPlatformPresentationHost: ViewModifier {
                 set: { if $0 == nil { coordinator.taskDateSheetDismissedByUser() } }
             )) { request in
                 LGTaskDateSheet(context: request.context, state: request.state)
-                    .lgCalendarSheet()
+                    .modifier(LGSheetSurface())
+                    .presentationDetents([.custom(LGTaskDateSheetDetent.self)])
+                    .presentationContentInteraction(.scrolls)
             }
             .sheet(isPresented: mediaPanelBinding) {
                 let request = coordinator.attachmentRequest

@@ -62,6 +62,10 @@ type tasks_view =
   ; show_past : bool
   }
 
+let default_tasks_view =
+  {tab = TasksToday; group_by_page = true; sort_tasks = ScheduledDate;
+   sort_pages = PageUpdated; compact = false; show_completed = true; show_past = true}
+
 type ui_session =
   { graph_id : string option
   ; destination : primary_destination
@@ -75,6 +79,7 @@ type ui_session =
   ; selected_page_id : string option
   ; settings_open : bool
   ; recent_graph_ids : string list
+  ; tasks_view : tasks_view option
   }
 
 type graph =
@@ -833,8 +838,7 @@ let initial () =
     sync_details_open = false;
     destination = JournalsDestination;
     home_scroll_request = 0;
-    tasks_view = {tab = TasksToday; group_by_page = true; sort_tasks = ScheduledDate;
-      sort_pages = PageUpdated; compact = false; show_completed = true; show_past = true};
+    tasks_view = default_tasks_view;
     tasks_selection_mode = false;
     sidebar_open = false;
     viewport_width = 0;
@@ -2143,9 +2147,13 @@ let ui_session (current : logseq_model) =
        | Some page -> Some page.uuid
        | None -> None);
     settings_open = current.settings_open;
+    tasks_view = Some current.tasks_view;
   }
 
 let restore_ui_session (current : logseq_model) (session : ui_session) =
+  let current = match session.tasks_view with
+    | None -> current
+    | Some preferences -> { current with tasks_view = { preferences with tab = current.tasks_view.tab } } in
   if session.graph_id = None || session.graph_id <> current.selected_graph_id then current
   else
     { current with
@@ -3079,7 +3087,10 @@ let rec update (current : logseq_model) action =
     in
     let id = updated.next_effect_id in
     enqueue_effect updated (ClearSelectedPageEffect id)
-  | SetTasksView tasks_view -> { current with tasks_view }
+  | SetTasksView tasks_view ->
+    let updated = { current with tasks_view } in
+    if { current.tasks_view with tab = tasks_view.tab } = tasks_view then updated
+    else update updated SaveUISession
   | SelectTasks ->
     { (cancel_outliner_editing current) with tasks_selection_mode = true }
   | ShowFlashcards ->
@@ -3095,8 +3106,11 @@ let rec update (current : logseq_model) action =
     let cleared =
       enqueue_effect updated (ClearSelectedPageEffect clear_id)
     in
-    let load_id = cleared.next_effect_id in
-    enqueue_effect cleared (LoadFlashcardsEffect load_id)
+    (* Reloading starts a new due-card queue, so keep an active review across tabs. *)
+    let loading = List.exists (function LoadFlashcardsEffect _ -> true | _ -> false)
+      (current.pending_effects @ current.in_flight_effects) in
+    if current.flashcards <> [] || loading then cleared
+    else enqueue_effect cleared (LoadFlashcardsEffect cleared.next_effect_id)
   | ShowGraphs ->
     {
       (cancel_outliner_editing (return_to_app_root current)) with
@@ -3739,7 +3753,8 @@ and apply_core_snapshot (current : logseq_model)
       let selected_group raw =
         try Yojson.Basic.Util.member "selectedUuid" (Yojson.Basic.from_string raw)
         with _ -> `Null in
-      first_flashcard_id current.flashcards
+      selected_graph_changed
+      || first_flashcard_id current.flashcards
       <> first_flashcard_id projection.flashcards
       || selected_group current.flashcard_decks_json
          <> selected_group projection.flashcard_decks_json

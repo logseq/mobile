@@ -238,7 +238,7 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
   let selection_chrome : t =
     column ~gap:0 ~padding_horizontal:16
       [
-        View_outliner.outliner_selection_toolbar context model_source send;
+        View_outliner.outliner_selection_toolbar model_source send;
         box ~height:21 [];
       ]
   in
@@ -292,16 +292,45 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
       match View_base.active_node_projection current with
       | Some route -> View_base.node_route_model ~active:true current route
       | None -> current) model_source in
+    let selects = Signal.map (fun current ->
+      current.Model.search_open = search_page && View_base.bottom_chrome_selection_ current)
+      selection_source in
+    let captures =
+      Signal.map (View_base.bottom_chrome_capture_and_search_ ~primary_tabs) model_source in
+    let selection_chrome ?(retain_task_actions = false) () =
+      column ~gap:0 [
+        box ~height:8 [];
+        View_outliner.outliner_selection_toolbar ~retain_task_actions selection_source send;
+        box ~height:21 [];
+      ] in
+    let capture_chrome =
+      column ~container_relative_frame:`horizontal ~cross:`stretch
+        ~gap:0 ~padding_horizontal:16 [
+          box ~height:8 [];
+          capture_and_search_row context model_source send;
+          box ~height:21 [];
+        ] in
+    let navigation_chrome =
+      if primary_tabs && not search_page then
+        if_ ~test:(Signal.map2 ( || ) selects captures)
+          (custom (fun context parent ->
+            let node = Lui_ui.extension context "bottom-chrome-switch" in
+            attach context parent node;
+            Lui_ui.extension_property_signal context node "selection-active"
+              (Signal.map (fun selected -> BoolValue selected) selects);
+            ignore (mount context ~parent:node
+              (box ~inert_signal:selects [capture_chrome]));
+            ignore (mount context ~parent:node
+              (box ~inert_signal:(Signal.map not selects) [selection_chrome ~retain_task_actions:true ()]));
+            node))
+      else
+        stack [
+          if_ ~test:selects (selection_chrome ());
+          if_ ~test:captures capture_chrome;
+        ] in
     stack
       [
-        if_
-          ~test:(Signal.map (fun current ->
-            current.Model.search_open = search_page && View_base.bottom_chrome_selection_ current) selection_source)
-          (column ~gap:0 [
-             box ~height:8 [];
-             View_outliner.outliner_selection_toolbar context selection_source send;
-             box ~height:21 [];
-          ]);
+        navigation_chrome;
         if_
           ~test:(reactive View_base.bottom_chrome_editor_ model_source)
           (View_base.with_liquid_glass "container"
@@ -329,15 +358,6 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
                row ~cross:`center
                  ~accessibility_identifier:"row.composer.placement"
                  [ View_composer.composer_view context model_source send ];
-               box ~height:21 [];
-             ]);
-        if_
-          ~test:(reactive (View_base.bottom_chrome_capture_and_search_ ~primary_tabs) model_source)
-          (column ~container_relative_frame:`horizontal ~cross:`stretch
-             ~gap:0 ~padding_horizontal:16
-             [
-               box ~height:8 [];
-               capture_and_search_row context model_source send;
                box ~height:21 [];
              ]);
       ]

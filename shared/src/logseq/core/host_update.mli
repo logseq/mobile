@@ -20,6 +20,7 @@ type host_ui_session =
   ; selected_page_id : string option
   ; settings_open : bool
   ; recent_graph_ids : string list
+  ; tasks_view : Yojson.Safe.t option
   }
 
 type host_settings =

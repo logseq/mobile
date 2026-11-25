@@ -1442,7 +1442,6 @@ private struct LGNavigationContent: View {
     private var floatingBottomChrome: some View {
         sizedBottomChrome
             .environment(\.lgUsesSideCaptureActions, usesSideCaptureActions)
-            .modifier(LGBottomBarGlassLayer(animation: selectionAnimation))
             .fixedSize(horizontal: false, vertical: true)
     }
 
