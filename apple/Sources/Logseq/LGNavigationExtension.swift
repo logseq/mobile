@@ -43,7 +43,7 @@ private extension ToolbarContent {
 }
 
 private extension EnvironmentValues {
-    @Entry var lgVerticalToolbar = false
+    @Entry var lgVerticalToolbarEdge: HorizontalEdge? = nil
 }
 
 private struct LGToolbarAxisEnvironment: ViewModifier {
@@ -67,7 +67,7 @@ private struct LGVerticalToolbarContent<Content: View>: View {
     @Environment(\.toolbarVerticalEdge) private var verticalEdge
 
     var body: some View {
-        content.environment(\.lgVerticalToolbar, verticalEdge != nil)
+        content.environment(\.lgVerticalToolbarEdge, verticalEdge)
     }
 }
 #endif
@@ -721,7 +721,7 @@ private struct LGNavigationContent: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.logseqDarkTheme) private var darkTheme
     @Environment(\.logseqNativeSearch) private var inheritedSearch
-    @Environment(\.lgVerticalToolbar) private var verticalToolbar
+    @Environment(\.lgVerticalToolbarEdge) private var verticalToolbarEdge
     @Environment(\.lgPDFWorkspaceOpen) private var pdfWorkspaceOpen
     @Environment(\.lgPDFMainHidden) private var pdfMainHidden
     @Environment(\.luiSemanticColors) private var semanticColors
@@ -737,6 +737,7 @@ private struct LGNavigationContent: View {
         #endif
     }
     private var searchVisible: Bool { search?.isVisible == true }
+    private var verticalToolbar: Bool { verticalToolbarEdge != nil }
     private var searchRoutes: [Int] {
         guard searchVisible, let search else { return [] }
         return pageRoutes(in: search.context, depth: search.depth)
@@ -1114,6 +1115,7 @@ private struct LGNavigationContent: View {
                             .environment(\.luiSemanticColors, semanticColors)
                             .environment(\.locale, locale)
                             .environment(\.colorScheme, colorScheme)),
+                        edge: verticalToolbarEdge ?? .trailing,
                         visible: usesSideCaptureActions && !searchVisible && !pdfMainHidden,
                         dark: colorScheme == .dark
                     ).allowsHitTesting(false)

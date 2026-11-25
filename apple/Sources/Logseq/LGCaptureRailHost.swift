@@ -5,6 +5,7 @@ import SwiftUI
 /// than the split-view detail's already-inset SwiftUI content area.
 struct LGCaptureRailHost: UIViewControllerRepresentable {
     let content: AnyView
+    let edge: HorizontalEdge
     let visible: Bool
     let dark: Bool
 
@@ -12,6 +13,7 @@ struct LGCaptureRailHost: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: Observer, context: Context) {
         controller.enabled = visible
+        controller.edge = edge
         controller.rail.rootView = visible ? content : AnyView(EmptyView())
         controller.rail.view.isHidden = !visible
         controller.rail.view.overrideUserInterfaceStyle = dark ? .dark : .light
@@ -24,7 +26,9 @@ struct LGCaptureRailHost: UIViewControllerRepresentable {
     final class Observer: UIViewController {
         let rail: UIHostingController<AnyView>
         var enabled = false
-        private var constraints: [NSLayoutConstraint] = []
+        var edge: HorizontalEdge = .trailing
+        private var edgeConstraints: [HorizontalEdge: NSLayoutConstraint] = [:]
+        private var bottomConstraint: NSLayoutConstraint?
         private weak var attachedNavigation: UINavigationController?
 
         init(content: AnyView) {
@@ -45,8 +49,11 @@ struct LGCaptureRailHost: UIViewControllerRepresentable {
 
         func attach() {
             guard enabled, let navigationController, let owner = view.window?.rootViewController,
-                  navigationController.view.isDescendant(of: owner.view),
-                  attachedNavigation !== navigationController || rail.parent !== owner else { return }
+                  navigationController.view.isDescendant(of: owner.view) else { return }
+            if attachedNavigation === navigationController, rail.parent === owner {
+                alignToToolbar()
+                return
+            }
             detach()
             owner.addChild(rail)
             owner.view.addSubview(rail.view)
@@ -54,22 +61,32 @@ struct LGCaptureRailHost: UIViewControllerRepresentable {
             // Own the rail outside UIKit's page stack, which replaces its child
             // controllers on push/pop. Align it to that stack's full viewport.
             rail.view.layer.zPosition = 1
-            constraints = [
-                rail.view.trailingAnchor.constraint(equalTo: navigationController.view.trailingAnchor, constant: -24),
-                rail.view.bottomAnchor.constraint(equalTo: navigationController.view.bottomAnchor, constant: -24),
+            edgeConstraints = [
+                .leading: rail.view.leadingAnchor.constraint(equalTo: navigationController.view.leadingAnchor, constant: 24),
+                .trailing: rail.view.trailingAnchor.constraint(equalTo: navigationController.view.trailingAnchor, constant: -24),
             ]
-            NSLayoutConstraint.activate(constraints)
+            bottomConstraint = rail.view.bottomAnchor.constraint(equalTo: navigationController.view.bottomAnchor, constant: -24)
+            bottomConstraint?.isActive = true
+            alignToToolbar()
             rail.didMove(toParent: owner)
             attachedNavigation = navigationController
             LogseqCrashReporting.uiState(captureRailVisible: !rail.view.isHidden)
+        }
+
+        private func alignToToolbar() {
+            guard let constraint = edgeConstraints[edge], !constraint.isActive else { return }
+            NSLayoutConstraint.deactivate(Array(edgeConstraints.values))
+            constraint.isActive = true
         }
 
         func detach() {
             guard rail.parent != nil else { return }
             LogseqCrashReporting.uiState(captureRailVisible: false)
             rail.willMove(toParent: nil)
-            NSLayoutConstraint.deactivate(constraints)
-            constraints = []
+            NSLayoutConstraint.deactivate(Array(edgeConstraints.values))
+            edgeConstraints = [:]
+            bottomConstraint?.isActive = false
+            bottomConstraint = nil
             rail.view.removeFromSuperview()
             rail.removeFromParent()
             attachedNavigation = nil

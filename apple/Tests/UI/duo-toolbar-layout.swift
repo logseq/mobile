@@ -8,6 +8,7 @@ import LogseqModel
 // LOGSEQ_DUO_CHECK_SECONDS controls the observation interval (default: 40).
 // LOGSEQ_DUO_REQUIRE_POSE_CHANGE=1 requires both toolbar axes to be exercised.
 // LOGSEQ_DUO_CHECK_INTERACTIONS=1 also exercises the side capture and search actions.
+// LOGSEQ_DUO_CHECK_ROTATIONS=1 rotates the scene and requires both vertical toolbar edges.
 @main struct DuoToolbarLayoutCheck {
     @MainActor static func main() async throws {
         let resources = Bundle(url: Bundle.main.bundleURL.appendingPathComponent("logseq_Logseq.bundle"))!
@@ -157,11 +158,22 @@ import LogseqModel
         var changedAt = Date()
         var captured: Set<String> = []
         var axes: Set<String> = []
+        var verticalEdges: Set<String> = []
         var lastAvailability = ""
         var lastMissingBounds = CGRect.null
         let checkInteractions = ProcessInfo.processInfo.environment["LOGSEQ_DUO_CHECK_INTERACTIONS"] == "1"
+        let checkRotations = ProcessInfo.processInfo.environment["LOGSEQ_DUO_CHECK_ROTATIONS"] == "1"
         var interactionsChecked = false
         print("DUO_CHECK_READY: change poses in Device Hub for \(seconds) seconds")
+        let rotations = checkRotations ? Task { @MainActor in
+            for orientation: UIInterfaceOrientationMask in [.landscapeRight, .portrait, .landscapeLeft, .portrait] {
+                try await Task.sleep(for: .seconds(5))
+                scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientation)) { error in
+                    print("DUO_ROTATION_REQUEST_ERROR: \(error)")
+                }
+            }
+        } : nil
+        defer { rotations?.cancel() }
         while Date() < deadline {
             try await Task.sleep(for: .milliseconds(200))
             let vertical: Bool
@@ -217,6 +229,7 @@ import LogseqModel
                 }
             }
             if vertical {
+                verticalEdges.insert(more.midX < window.bounds.midX ? "left" : "right")
                 guard actionFrames.allSatisfy({ abs($0.midX - more.midX) < 2 }) else {
                     try saveScreenshot("duo-rail-misaligned.png")
                     throw failure("Capture rail must align with the native overflow: more=\(more), actions=\(actionFrames), safeArea=\(host.view.safeAreaInsets)")
@@ -254,10 +267,13 @@ import LogseqModel
         if ProcessInfo.processInfo.environment["LOGSEQ_DUO_REQUIRE_POSE_CHANGE"] == "1", axes.count != 2 {
             throw failure("Exercise both horizontal and vertical bars in Device Hub; observed \(axes)")
         }
+        if checkRotations, verticalEdges.count != 2 {
+            throw failure("Rotation must exercise both vertical toolbar edges; observed \(verticalEdges)")
+        }
         if checkInteractions && !interactionsChecked {
             throw failure("Side action interactions require a stable vertical toolbar layout")
         }
-        print("PASS: native toolbar controls stay separate, visible, and aligned across \(captured.count) stable layouts; axes=\(axes.sorted())")
+        print("PASS: native toolbar controls stay separate, visible, and aligned across \(captured.count) stable layouts; axes=\(axes.sorted()), vertical edges=\(verticalEdges.sorted())")
     }
 
     private static func failure(_ message: String) -> NSError {
