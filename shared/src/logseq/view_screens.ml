@@ -587,7 +587,7 @@ let main_header_leading_content (context : Lui_ui.ui_context)
                && View_base.node_screen_visible_ current)
              model_source)
         (icon_button ~icon:(`app "navigation-back") ~variant:`ghost ~size:`icon
-           ~label:(View_base.tr (Signal.sample model_source) "Back")
+           ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "Back")
            ~accessibility_identifier:"button.navigation.back"
            ~on_press:(fun _ ->
              ignore (send (Model.BackAppNavigation 1)))
@@ -597,6 +597,7 @@ let main_header_leading_content (context : Lui_ui.ui_context)
           (Signal.map View_base.primary_sidebar_button_visible_
              model_source)
         (icon_button ~icon:(`app "sidebar-toggle") ~variant:`ghost ~size:`icon
+           ?foreground:(if Lui_ui.host context = KotlinHost then Some "foreground" else None)
            ~width:44 ~height:44
            ~label:(View_base.tr (Signal.sample model_source) "Toggle sidebar")
            ~style_class:"drawer-toggle"
@@ -621,6 +622,7 @@ let main_header_title (context : Lui_ui.ui_context) model_source : t =
   let android = Lui_ui.host context = KotlinHost in
   text
     ?grow:(if android then Some 1.0 else None)
+    ?foreground:(if android then Some "foreground" else None)
     ?white_space:(if android then Some `nowrap else None)
     ?text_overflow:(if android then Some `ellipsis else None)
     ~value:

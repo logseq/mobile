@@ -67,7 +67,7 @@ let comment current send item =
        ([column ~grow:1.0 ~gap:3 [
           text ~value:(let actor = string "actor" item in if actor = "" then copy current "Graph member" else actor)
             ~foreground:"muted-foreground" ~style_class:"caption" [];
-          text ~value:(string "text" item) [];
+          text ~value:(string "text" item) ~foreground:"foreground" [];
         ]] @ if ready current then [add_reaction current send target] else [])
      :: chips @ active_picker current send target)
 
@@ -109,7 +109,7 @@ let composer source send ~autofocus =
         Option.value ~default:"" current.discussion_error) source)) ~foreground:"error" []);
     row ~gap:8 ~cross:`end_ [
       textarea ~grow:1.0 ~min_height:(if autofocus then 90 else 44) ~max_height:160 ~autofocus
-        ~corner_radius:12 ~background:"input"
+        ~corner_radius:12 ~background:"input" ~foreground:"foreground"
         ~placeholder:(copy current "Write a comment") ~label:(copy current "Write a comment")
         ~text_signal:(Signal.map (fun (current : Model.logseq_model) -> current.discussion_draft) source)
         ~accessibility_identifier:"field.comment"
@@ -154,7 +154,7 @@ let thread_sheet source send =
     | subject ->
       column ~gap:12 [
         column ~gap:4 ~margin_bottom:12 [
-          text ~value:(string "text" subject) ~style_class:"headline" [];
+          text ~value:(string "text" subject) ~style_class:"headline" ~foreground:"foreground" [];
           reaction_buttons current send subject;
         ];
         (match list "comments" discussion with
@@ -210,6 +210,7 @@ let notification_menu ~android source send =
     then "Turn off system notifications" else "Enable system notifications") in
   box ~width:44 ~height:44 [
     menu ~icon:(`app (if android then "more-vert" else "more-horiz"))
+      ?foreground:(if android then Some "foreground" else None)
       ?style_class:(if android then None else Some "capsule") ~label:(copy current "More")
       ~accessibility_identifier:"button.notifications.more" [
       dropdown_menu_item ~text:(copy current "Mark all as read") ~icon:(`app "selection-done")
@@ -234,7 +235,7 @@ let notification_screen ~bottom_spacing source send =
     (scroll ~grow:1.0 ~accessibility_identifier:"screen.notifications" [
       column ~gap:0 ~margin_bottom:bottom_spacing [
         box ~padding_horizontal:16 ~padding_vertical:12 [
-          heading ~value:(copy current "Notifications") ~level:`h1 ~style_class:"semibold"
+          heading ~value:(copy current "Notifications") ~level:`h1 ~style_class:"semibold" ~foreground:"foreground"
             ~accessibility_identifier:"title.notifications" [];
         ];
         reactive (function
@@ -274,7 +275,7 @@ let notification_screen ~bottom_spacing source send =
                     ~point_size:21 ~foreground:"muted-foreground" [];
                 ];
                 column ~grow:1.0 ~gap:4 [
-                  text ~value:(reactive (Signal.map title item)) ~line_clamp:2 [];
+                  text ~value:(reactive (Signal.map title item)) ~line_clamp:2 ~foreground:"foreground" [];
                   text ~value:(reactive (Signal.map (fun item -> caption item ^ " · " ^ date current item) item))
                     ~line_clamp:2 ~style_class:"caption" ~foreground:"muted-foreground" [];
                 ];
