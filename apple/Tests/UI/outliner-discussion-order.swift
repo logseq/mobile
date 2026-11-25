@@ -17,11 +17,12 @@ import UIKit
     }
 
     @MainActor private static func check(openedBlock: Bool) async throws {
-        let dates: [String: Any] = ["ownerUuid": "body", "properties": [[
+        let scheduled: [String: Any] = [
             "attr": "logseq.property/scheduled", "title": "Scheduled", "kind": "datetime",
             "text": "Oct 23", "editable": true, "raw": ["type": "number", "value": 1792719000000]
-        ]]]
-        let customProperties: [String: Any] = ["ownerUuid": "body", "properties": [[
+        ]
+        let dates: [String: Any] = ["ownerUuid": "body", "properties": [scheduled]]
+        let customProperties: [String: Any] = ["ownerUuid": "body", "properties": [scheduled, [
             "attr": "user.property/Assignee", "title": "Assignee", "kind": "string",
             "text": "Avery", "editable": true, "raw": ["type": "string", "value": "Avery"]
         ]]]
@@ -63,17 +64,20 @@ import UIKit
                 return frames[id]
             }.last
         }
-        let property = "property.value.body." + (openedBlock ? "user.property/Assignee" : "logseq.property/scheduled")
+        let requiredProperties = ["property.value.body.logseq.property/scheduled"]
+            + (openedBlock ? ["property.value.body.user.property/Assignee"] : [])
         for _ in 0..<100 {
-            if let propertyFrame = frame(property),
+            let properties = requiredProperties.compactMap(frame)
+            if properties.count == requiredProperties.count,
                let discussion = frame("discussion.inline.body"),
                let child = frame("outliner.entry.child"),
-               discussion.minY >= propertyFrame.maxY - 1, discussion.maxY <= child.minY + 1 {
+               properties.allSatisfy({ discussion.minY >= $0.maxY - 1 }),
+               discussion.maxY <= child.minY + 1 {
                 return
             }
             try await Task.sleep(for: .milliseconds(30))
         }
         throw NSError(domain: "OutlinerDiscussionOrder", code: 1,
-            userInfo: [NSLocalizedDescriptionKey: "Expected \(property), discussion, then child block"])
+            userInfo: [NSLocalizedDescriptionKey: "Expected \(requiredProperties), discussion, then child block"])
     }
 }
