@@ -224,6 +224,7 @@ let asset_datoms_operation cursor state (block : Model.block) load_context
                     asset_type;
                     asset_size;
                     asset_checksum;
+                    image_dimensions = None;
                     transcript = None;
                   };
             }
@@ -605,11 +606,15 @@ let add_asset ?(prepare_file = (fun _ path -> Ok path)) ?(can_replace_target = f
             Wire.graph_workflow_result "asset_projection_failed"
               (prepare_operation block)
           in
-          let operation = match operation.Ops.intent, transcript with
-            | Ops.Create_asset asset, Some (child_id, title) ->
-              { operation with Ops.intent = Ops.Create_asset { asset with transcript = Some {
-                Ops.uuid = child_id; title; page_uuid = asset.page_uuid;
-                parent_uuid = asset.uuid; order = "a0"; created_at = now } } }
+          let operation = match operation.Ops.intent with
+            | Ops.Create_asset asset ->
+              let image_dimensions = if Api.is_image_asset_type asset_type then
+                  Option.bind (List.assoc_opt "imageDimensions" fields) Ops.image_dimensions_of_json
+                else None in
+              let transcript = Option.map (fun (child_id, title) ->
+                { Ops.uuid = child_id; title; page_uuid = asset.page_uuid;
+                  parent_uuid = asset.uuid; order = "a0"; created_at = now }) transcript in
+              { operation with Ops.intent = Ops.Create_asset { asset with image_dimensions; transcript } }
             | _ -> operation in
           let* () =
             Wire.graph_workflow_result "stage_operation_failed"

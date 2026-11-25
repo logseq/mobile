@@ -240,6 +240,11 @@ let outliner_block db uuid =
   Some
     { Outliner.uuid; title; page_uuid; parent_uuid; order }
 
+let image_dimension_values dimensions =
+  Option.fold ~none:[] ~some:(fun (width, height) ->
+    ["logseq.property.asset/width", Ds.Int64 (Int64.of_int width);
+     "logseq.property.asset/height", Ds.Int64 (Int64.of_int height)]) dimensions
+
 let entity_tx reference attrs =
   Ds.Entity { Ds.db_id = Some reference; attrs }
 
@@ -722,7 +727,7 @@ let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
         ([
           entity_tx
             (match existing with Some _ -> lookup value.uuid | None -> Ds.Temp_id ("pending/" ^ value.uuid))
-            [ ("block/uuid", Ds.One_value (Ds.Uuid value.uuid))
+            ([ ("block/uuid", Ds.One_value (Ds.Uuid value.uuid))
             ; ("block/title", Ds.One_value (Ds.String value.title))
             ; ( "block/page"
               , Ds.One_value (Ds.Ref_to (lookup value.page_uuid)) )
@@ -754,7 +759,8 @@ let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
                        , Ds.String value.asset_checksum )
                      ; (Ds.Keyword "type", Ds.String value.asset_type)
                      ]) )
-            ];
+            ] @ List.map (fun (attr, dimension) -> attr, Ds.One_value dimension)
+              (image_dimension_values value.image_dimensions));
         ] @ (match value.transcript with
           | None -> []
           | Some child -> insert_tx db
@@ -1172,6 +1178,8 @@ let rec satisfied db (intent : Ops.pending_intent) =
     && string_value
          (one_value db reference "logseq.property.asset/checksum")
        = Some value.asset_checksum
+    && List.for_all (fun (attr, dimension) -> one_value db reference attr = Some dimension)
+         (image_dimension_values value.image_dimensions)
     && semantic_value_equal db
          (one_value db reference "logseq.property.asset/remote-metadata")
          (Some

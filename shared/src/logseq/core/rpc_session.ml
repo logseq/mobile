@@ -264,6 +264,11 @@ let local_asset_path session uuid checksum =
     Option.map (host session).resolve_asset_path block.local_path
   | _ -> None
 
+let asset_cache_path session uuid asset_type =
+  (host session).resolve_asset_path
+    (Filename.concat "Assets"
+      (Api.url_encode uuid ^ "." ^ Api.url_encode (Api.normalize_asset_type asset_type)))
+
 let with_local_assets session result =
   let rec decorate = function
     | `List values -> `List (List.map decorate values)
@@ -274,7 +279,14 @@ let with_local_assets session result =
       (match List.assoc_opt "isAsset" fields, List.assoc_opt "uuid" fields,
          List.assoc_opt "localPath" fields with
        | Some (`Bool true), Some (`String uuid), None ->
-         (match local_asset_path session uuid checksum with
+         let imported = local_asset_path session uuid checksum in
+         let path = match imported, List.assoc_opt "assetType" fields with
+           | Some path, _ when Sys.file_exists path -> imported
+           | _, Some (`String kind) ->
+             let cached = asset_cache_path session uuid kind in
+             if Sys.file_exists cached then Some cached else imported
+           | _ -> imported in
+         (match path with
           | Some path -> `Assoc (("localPath", `String path) :: fields)
           | None -> `Assoc fields)
        | _ -> `Assoc fields)
@@ -1331,11 +1343,6 @@ let hydrate_outliner_rows session payload =
         "hydratedBlocks", Rpc.json_list (List.filter_map (fun id ->
           Option.map hydrate (Hashtbl.find_opt found id)) ids)])
   with Yojson.Json_error message -> Rpc.failure "invalid_params" message
-
-let asset_cache_path session uuid asset_type =
-  (host session).resolve_asset_path
-    (Filename.concat "Assets"
-      (Api.url_encode uuid ^ "." ^ Api.url_encode (Api.normalize_asset_type asset_type)))
 
 let cached_image_gallery session uuid =
   let blocks = (outliner_context session).Outliner.blocks in

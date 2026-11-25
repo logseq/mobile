@@ -75,8 +75,11 @@ type pending_asset =
   ; asset_type : string
   ; asset_size : int
   ; asset_checksum : string
+  ; image_dimensions : (int * int) option
   ; transcript : pending_insert option
   }
+
+val image_dimensions_of_json : Yojson.Basic.t -> (int * int) option
 
 type pending_moves =
   { moves : pending_move list

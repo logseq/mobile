@@ -341,7 +341,7 @@ let confirmed_assets_clear_only_their_old_upload_errors () =
     let asset n = Ops.Create_asset { uuid = uuid n; title = "Photo.png";
       page_uuid = Query_block_test.page; parent_uuid = Query_block_test.page;
       order = "a" ^ string_of_int n; created_at = 100; asset_type = "png";
-      asset_size = 20; asset_checksum = "checksum"; transcript = None } in
+      asset_size = 20; asset_checksum = "checksum"; image_dimensions = None; transcript = None } in
     stage session "confirmed-photo" (asset 1);
     ignore (ack session (required_pending_request session));
     require (Runtime.stage runtime {Ops.operation_id = "asset:" ^ uuid 2;

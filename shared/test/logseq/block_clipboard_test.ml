@@ -350,7 +350,7 @@ let copy_image_uses_native_clipboard_assets () = R.with_runtime (fun session run
     intent = Pending_ops.Create_asset {
       uuid; title = "Photo." ^ kind; page_uuid = Q.page; parent_uuid = Q.page;
       order; created_at = 1234; asset_type = kind; asset_size = 12;
-      asset_checksum = "image-checksum"; transcript = None;
+      asset_checksum = "image-checksum"; image_dimensions = None; transcript = None;
     };
   }) in
   stage_image child "png" "az";

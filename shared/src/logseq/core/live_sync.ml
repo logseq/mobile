@@ -208,6 +208,7 @@ let stage_asset current page_uuid title asset_type asset_size asset_checksum =
         asset_type;
         asset_size;
         asset_checksum;
+        image_dimensions = None;
         transcript = None;
       }
   in

@@ -41,7 +41,7 @@ let empty_image_target_is_projected_without_losing_its_identity () =
   let intent = Pending_ops.Create_asset {
     uuid = "empty"; title = "Photo.png"; page_uuid = "page"; parent_uuid = "page";
     order = "a1"; created_at = 20; asset_type = "png"; asset_size = 42;
-    asset_checksum = "checksum"; transcript = None } in
+    asset_checksum = "checksum"; image_dimensions = None; transcript = None } in
   let projected = P.apply_intent db intent in
   check_eq (Ds.entid projected "block/uuid" (Ds.Uuid "empty")) (Some 20);
   check_eq (P.value projected "empty" "block/parent") (Some (Ds.Ref 1));

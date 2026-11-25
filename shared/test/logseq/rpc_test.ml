@@ -746,7 +746,11 @@ let graph_assets_download_and_cache_binary_files () =
       graph_sidebar_pages = Some (fun () -> Some { Graph.favorites = [page]; recent_pages = [] });
       graph_page_blocks = Some (fun _ -> Some [asset "image-uuid" "album"; asset "sibling" "album"; asset "unrelated" "other"]);
       resolve_asset_path = (fun path -> Filename.concat root path) } |> configure_plain_session in
-    ignore (response_result (dispatch_json session "selectPage" page.uuid));
+    let selected () = response_result (dispatch_json session "selectPage" page.uuid) in
+    let projected_image result =
+      List.map (member "block") (json_items "outlinerRows" result)
+      |> List.find (fun block -> member "uuid" block = `String "image-uuid") in
+    check_eq (member "localPath" (projected_image (selected ()))) `Null;
     let fields = ["uuid", `String "image-uuid"; "assetType", `String "image/png";
       "graphId", `String "plain-1"] in
     let dispatch action extra = dispatch_json session action (Json.to_string (`Assoc (fields @ extra))) in
@@ -760,6 +764,7 @@ let graph_assets_download_and_cache_binary_files () =
     let cached = response_result (dispatch "cacheDownloadedAsset" ["path", `String source]) in
     let path = json_string (member "localPath" cached) in
     check_eq (Asset_files.read_file path) (Ok bytes);
+    check_eq (member "localPath" (projected_image (selected ()))) (`String path);
     let reopened = response_result (dispatch "prepareAssetDownload" []) in
     check_eq (member "localPath" reopened) (`String path);
     check_eq (member "request" reopened) `Null;
@@ -4418,7 +4423,8 @@ let asset_workflow_captures_view_before_caching_and_loads_stage_afterward () =
                   asset_type = "png";
                   asset_size = 12;
                   asset_checksum = "hash";
-        transcript = None;
+                  image_dimensions = None;
+                  transcript = None;
                 };
           })
       (fun () ->
@@ -6196,6 +6202,7 @@ let optimistic_assets_replace_in_place_and_preserve_local_path () =
         asset_type = "image/png";
         asset_size = 12;
         asset_checksum = "hash";
+        image_dimensions = None;
         transcript = None;
       }
   in

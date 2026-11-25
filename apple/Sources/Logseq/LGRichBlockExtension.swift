@@ -357,6 +357,7 @@ struct LGAssetPreview: View {
     let title: String
     let assetType: String
     let localPath: String
+    var imageDimensions: LGImageDimensions? = nil
     var allowsInteraction: () -> Bool = { true }
     var selectBlock: (() -> Void)?
     var selectionLabel: String?
@@ -378,22 +379,24 @@ struct LGAssetPreview: View {
                         if let selectBlock { selectBlock(); return }
                         Task { await imagePreviews?.present(uuid: uuid, fallback: url) }
                     } label: {
-                        LGInlineImage(url: url)
+                        LGInlineImage(url: url, dimensions: imageDimensions)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(selectionLabel.map(Text.init(verbatim:)) ?? Text("Preview image"))
                     .accessibilityIdentifier("image.open." + uuid)
                 } else if let downloadError {
-                    Button {
-                        guard allowsInteraction() else { return }
-                        if let selectBlock { selectBlock() } else { retry += 1 }
-                    } label: {
-                        SwiftUI.Label("Retry image", systemImage: "arrow.clockwise")
+                    LGInlineImage.placeholder(size: imageDimensions?.previewSize) {
+                        Button {
+                            guard allowsInteraction() else { return }
+                            if let selectBlock { selectBlock() } else { retry += 1 }
+                        } label: {
+                            SwiftUI.Label("Retry image", systemImage: "arrow.clockwise")
+                        }
+                        .accessibilityLabel(selectionLabel.map(Text.init(verbatim:)) ?? Text("Retry image"))
+                        .accessibilityHint(downloadError)
                     }
-                    .accessibilityLabel(selectionLabel.map(Text.init(verbatim:)) ?? Text("Retry image"))
-                    .accessibilityHint(downloadError)
                 } else {
-                    ProgressView().frame(height: 120)
+                    LGInlineImage.placeholder(size: imageDimensions?.previewSize) { ProgressView() }
                 }
             }
             .task(id: "\(uuid):\(retry)") {

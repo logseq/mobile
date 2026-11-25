@@ -57,6 +57,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let collapsed: Bool
     let isAsset: Bool
     let assetType: String
+    let imageDimensions: LGImageDimensions?
     let localPath: String
     let youtubeURL: String
     let completed: Bool
@@ -587,6 +588,7 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
                         #endif
                 } else if row.isAsset {
                     LGAssetPreview(uuid: row.uuid, title: row.title, assetType: row.assetType, localPath: row.localPath,
+                        imageDimensions: row.imageDimensions,
                         allowsInteraction: { context.isUserInteractionEnabled },
                         selectBlock: row.selectionMode == true ? { emit("toggle-selection") } : nil,
                         selectionLabel: row.selectionMode == true ? row.editAccessibilityLabel : nil)
