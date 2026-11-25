@@ -222,6 +222,9 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
         let controller = UIHostingController(rootView: hostedContent)
         controller.view.backgroundColor = .clear
         controller.sizingOptions = .intrinsicContentSize
+        // The scroll view handles safe areas. Including them in a row's
+        // measured height changes its size as it moves under the chrome.
+        controller.safeAreaRegions = []
         context.coordinator.install(on: controller.view)
         return controller
     }
