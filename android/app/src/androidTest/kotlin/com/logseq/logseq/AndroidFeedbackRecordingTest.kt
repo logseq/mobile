@@ -462,7 +462,36 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                     pause()
                     comment.assertExists()
                     ui.onNodeWithTag("comments.toggle." + uuid(17)).performClick()
-                } else ui.onNodeWithText("👍 1").assertIsDisplayed()
+                } else {
+                    ui.onNodeWithText("👍 1").assertIsDisplayed()
+                    val block = ui.onNodeWithText("A note with a discussion")
+                    block.performTouchInput { longClick() }
+                    pause()
+                    val thumbs = ui.onNodeWithTag("reaction.quick.+1")
+                    val heart = ui.onNodeWithTag("reaction.quick.heart")
+                    val shortcuts = listOf("+1", "heart", "tada", "joy", "eyes").map {
+                        ui.onNodeWithTag("reaction.quick.$it").assertIsDisplayed().getUnclippedBoundsInRoot()
+                    }
+                    assertTrue(shortcuts.zipWithNext().all { (a, b) -> a.left < b.left && a.top == b.top })
+                    ui.onNodeWithTag("reaction.more").assertIsDisplayed()
+                    heart.performClick()
+                    pause()
+                    ui.onNodeWithTag("reaction.block.${uuid(17)}.heart").assertIsDisplayed()
+                    block.performTouchInput { longClick() }
+                    pause()
+                    assertTrue(heart.getUnclippedBoundsInRoot().left < thumbs.getUnclippedBoundsInRoot().left)
+                    heart.assertIsSelected()
+                    ui.onNodeWithTag("reaction.more").performClick()
+                    pause()
+                    assertTrue(ui.onNodeWithTag("reaction.heart").getUnclippedBoundsInRoot().top <
+                        ui.onNodeWithTag("reaction.+1").getUnclippedBoundsInRoot().top)
+                    val search = ui.onNodeWithTag("reaction.search")
+                    search.performTextInput("rocket")
+                    pause()
+                    ui.onNodeWithTag("reaction.rocket").performClick()
+                    pause()
+                    ui.onNodeWithTag("reaction.block.${uuid(17)}.rocket").assertIsDisplayed()
+                }
                 ui.onNodeWithText("A note with a discussion").performTouchInput { longClick() }
                 ui.onNodeWithText("Select").performClick()
                 pause()
@@ -483,18 +512,27 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                     pause()
                     ui.onNodeWithText("I'll add the checklist.").assertIsDisplayed()
                 } else {
-                    ui.onNodeWithTag("reaction.heart").performClick()
-                    pause()
-                    val heart = ui.onNodeWithTag("reaction.block." + uuid(17) + ".heart")
-                    heart.assertIsDisplayed()
+                    val rocket = ui.onNodeWithTag("reaction.rocket")
+                    val heart = ui.onNodeWithTag("reaction.heart")
+                    assertTrue(rocket.getUnclippedBoundsInRoot().top < heart.getUnclippedBoundsInRoot().top)
+                    rocket.assertContentDescriptionEquals("Remove reaction Rocket")
                     heart.performClick()
                     pause()
-                    heart.assertDoesNotExist()
+                    ui.onNodeWithTag("reaction.block.${uuid(17)}.heart").assertDoesNotExist()
+                    ui.onNodeWithTag("comments.toggle." + uuid(17)).performClick()
+                    pause()
+                    ui.onNodeWithTag("reaction.add." + uuid(19)).performClick()
+                    pause()
+                    ui.onNodeWithTag("reaction.heart").performClick()
+                    pause()
+                    ui.onNodeWithTag("reaction.block.${uuid(19)}.heart").assertIsDisplayed()
                 }
             }
             "notifications" -> {
                 mount(7, dark = true)
-                ui.onNodeWithTag("tab.bottom.notifications").performClick()
+                ui.onNodeWithTag("tab.bottom.notifications").assertDoesNotExist()
+                ui.onNodeWithTag("notifications.unread-dot", useUnmergedTree = true).assertExists()
+                ui.onNodeWithTag("button.notifications").performClick()
                 pause()
                 ui.onNodeWithTag("notification." + uuid(20)).assertIsDisplayed()
                 ui.onNodeWithTag("button.notifications.more").performClick()
@@ -511,6 +549,10 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 }
                 pause()
                 ui.onNodeWithTag("title.notifications").assertIsDisplayed()
+                ui.onNodeWithTag("tab.bottom.home").performClick()
+                pause()
+                ui.onNodeWithTag("button.notifications").assertIsDisplayed()
+                ui.onNodeWithTag("notifications.unread-dot", useUnmergedTree = true).assertDoesNotExist()
             }
             "bottom-navigation" -> {
                 mount(7, dark = true)

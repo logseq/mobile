@@ -23,14 +23,9 @@ let discussion_kind db eid =
   else ""
 
 let reaction_emoji id =
-  match String.lowercase_ascii id with
-  | "+1" | "thumbsup" | "thumbs_up" -> "👍"
-  | "-1" | "thumbsdown" | "thumbs_down" -> "👎"
-  | "heart" -> "❤️" | "tada" -> "🎉" | "smile" -> "😄"
-  | "laughing" | "satisfied" -> "😆" | "joy" -> "😂" | "eyes" -> "👀"
-  | "rocket" -> "🚀" | "fire" -> "🔥" | "thinking_face" -> "🤔"
-  | "white_check_mark" -> "✅" | "clap" -> "👏"
-  | _ -> id
+  match Reaction_emoji.find id with
+  | Some emoji -> emoji.glyph
+  | None -> id
 
 let decorate ?actor db =
   let discussions = Hashtbl.create 16 in

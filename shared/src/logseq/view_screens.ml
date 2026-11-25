@@ -144,10 +144,7 @@ let bottom_tab_row ~android ~show_flashcards ~tab_width ~action_width model_sour
     Model.TasksDestination, "Tasks", "tasks", "tab-tasks", "tab-tasks-selected", Model.ShowTasks;
   ] @ (if show_flashcards then
     [Model.FlashcardsDestination, "Flashcards", "flashcards", "flashcards", "flashcards", Model.ShowFlashcards]
-    else []) @ [
-      Model.NotificationsDestination, "Notifications", "notifications", "tab-notifications",
-      "tab-notifications-selected", Model.ShowNotifications;
-    ] in
+    else []) in
   let navigate destination action =
     let current : Model.logseq_model = Signal.sample model_source in
     if current.destination <> destination || current.app_navigation_path <> []
@@ -155,10 +152,7 @@ let bottom_tab_row ~android ~show_flashcards ~tab_width ~action_width model_sour
     then ignore (send action) in
   let tab (destination, title, name, image, selected_image, action) =
     let selected = Signal.map (fun (current : Model.logseq_model) -> current.destination = destination) model_source in
-    let label current =
-      let title = View_base.tr current title in
-      if destination = Model.NotificationsDestination && Model.notification_count current > 0
-      then title ^ ", " ^ View_base.tr current "Unread notifications" else title in
+    let label current = View_base.tr current title in
     View_base.with_label_signal (Signal.map label model_source)
     (icon_button ~icon:(`app image)
       ~icon_signal:(Signal.map (fun selected -> `app (if selected then selected_image else image)) selected)
@@ -183,11 +177,9 @@ let bottom_tab_row ~android ~show_flashcards ~tab_width ~action_width model_sour
       List.find_index (fun (destination, _, _, _, _, _) -> current.destination = destination)
         destinations |> Option.value ~default:(-1)) model_source in
     let items = Signal.map (fun current ->
-      `List (List.map (fun (destination, title, name, image, selected_image, _) ->
+      `List (List.map (fun (_, title, name, image, selected_image, _) ->
         `Assoc ["title", `String (View_base.tr current title); "name", `String name;
-                "image", `String image; "selectedImage", `String selected_image;
-                "unreadLabel", (if destination = Model.NotificationsDestination && Model.notification_count current > 0
-                  then `String (View_base.tr current "Unread notifications") else `Null)])
+                "image", `String image; "selectedImage", `String selected_image])
         destinations) |> Yojson.Safe.to_string) model_source in
     Lui_ui.extension_property context node "inset" (IntValue inset);
     Lui_ui.extension_property context node "cell-width" (IntValue tab_width);
@@ -222,7 +214,7 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send : t =
     let layout = Signal.map (fun (current : Model.logseq_model) ->
       let flashcards = List.mem "flashcards" current.sidebar_tabs in
       let viewport = if current.viewport_width > 0 then current.viewport_width else 390 in
-      let count = if flashcards then 4 else 3 in
+      let count = if flashcards then 3 else 2 in
       let action_width = max 44 (min 50 ((viewport - 32 - 8 - 16 - count * 44) / 2)) in
       let tab_width = max 40 (min 58 ((viewport - 32 - 8 - 16 - 2 * action_width) / count)) in
       flashcards, tab_width, action_width) model_source in
@@ -632,7 +624,7 @@ let main_header_title (context : Lui_ui.ui_context) model_source : t =
 
 let journal_calendar_control model_source send =
   icon_button ~icon:(`app "calendar") ~label:(View_base.tr (Signal.sample model_source) "Go to journal")
-    ~variant:`ghost ~size:`icon ~width:44 ~height:44
+    ~variant:`ghost ~size:`icon ~width:44 ~height:44 ~foreground:"foreground"
     ~accessibility_identifier:"button.journal-calendar"
     ~on_press:(press send Model.OpenJournalCalendar) []
 
@@ -656,9 +648,14 @@ let journal_overflow_menu model_source send =
 let ios_journal_header context current =
   uses_ios_native_header context && View_base.journal_home_visible_ current
 
+let header_notification model_source send =
+  if_ ~test:(Signal.map (fun current -> View_base.connection_control_visible_ current
+    && not (View_collaboration.notification_root current)) model_source)
+    (View_collaboration.notification_button model_source send)
+
 let main_header_primary_action (context : Lui_ui.ui_context) model_source send : t =
-  stack [
-    if uses_ios_native_header context then
+  row ~gap:4 ~cross:`center [
+    (if uses_ios_native_header context then
       if_ ~test:(Signal.map (ios_journal_header context) model_source)
         (journal_calendar_control model_source send)
     else
@@ -678,7 +675,8 @@ let main_header_primary_action (context : Lui_ui.ui_context) model_source send :
                 (Signal.map View_base.sync_accessibility_identifier
                    model_source)
               ~on_press:(fun _ -> open_sync_status model_source send ())
-              []))
+              [])));
+    header_notification model_source send;
   ]
 
 let active_overflow_menu model_source send : t =
@@ -799,7 +797,7 @@ let active_overflow_menu model_source send : t =
      ]
    in
    let menu = if kotlin_host then
-     menu ~icon:(`app "more-vert") ~label:(View_base.tr (Signal.sample model_source) "More")
+     menu ~icon:(`app "more-vert") ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "More")
        ~accessibility_identifier:"button.overflow-menu" entries
    else
      box ~width:44 ~height:44
@@ -1024,7 +1022,10 @@ let android_main_header context model_source send =
   let flashcard_header =
     View_flashcards.android_flashcard_header model_source send
       ~render:(fun menu add ->
-        header [column ~grow:1.0 ~cross:`center [menu]; round_action add]) in
+        header [column ~grow:1.0 ~cross:`center [menu];
+          box ~corner_radius:22 ~background:"glass" ~padding_horizontal:6 [
+            row ~cross:`center ~gap:4 [header_notification model_source send; add]
+          ]]) in
   if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> not current.search_open) model_source)
     (dyn (fun flashcards -> if flashcards then flashcard_header else default_header)
        (Signal.map View_base.flashcards_destination_ model_source))
@@ -1112,8 +1113,8 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
        if uses_ios_native_header context then
          let viewport = Signal.map (fun (current : Model.logseq_model) -> current.viewport_width) model_source in
          let width = Signal.map (fun viewport ->
-           (* Leave space for the sidebar toggle, two trailing actions, and bar margins. *)
-           max 44 (min 320 (viewport - 3 * 44 - 2 * 16 - 2 * 12))) viewport in
+           (* Reserve room for the sidebar toggle, calendar, notifications, and menu. *)
+           max 44 (min 320 (viewport - 4 * 44 - 2 * 16 - 2 * 12))) viewport in
          (* Give the native toolbar its settled title width before showing the menu. *)
          let display = Signal.map (fun width -> if width > 0 then "block" else "none") viewport in
          let title = box ~accessibility_identifier:"title.main"

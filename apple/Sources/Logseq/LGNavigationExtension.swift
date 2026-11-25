@@ -72,43 +72,6 @@ private struct LGVerticalToolbarContent<Content: View>: View {
 }
 #endif
 
-private struct LGToolbarControlPair: View {
-    let first: AnyView
-    let second: AnyView
-
-    @ViewBuilder var body: some View {
-        #if os(iOS) && !targetEnvironment(macCatalyst) && canImport(SwiftUI, _version: 8.1)
-        if #available(iOS 27.1, *) {
-            LGAdaptiveToolbarControlPair(first: first, second: second)
-        } else {
-            horizontalContent
-        }
-        #else
-        horizontalContent
-        #endif
-    }
-
-    private var horizontalContent: some View {
-        HStack(spacing: 0) { first; second }
-    }
-}
-
-#if os(iOS) && !targetEnvironment(macCatalyst) && canImport(SwiftUI, _version: 8.1)
-@available(iOS 27.1, *)
-private struct LGAdaptiveToolbarControlPair: View {
-    let first: AnyView
-    let second: AnyView
-    @Environment(\.toolbarVerticalEdge) private var verticalEdge
-
-    var body: some View {
-        let layout = verticalEdge == nil
-            ? AnyLayout(HStackLayout(spacing: 0))
-            : AnyLayout(VStackLayout(spacing: 0))
-        layout { first; second }
-    }
-}
-#endif
-
 #if os(iOS)
 private struct LGDockedKeyboardInsetReader: UIViewRepresentable {
     let update: (CGFloat) -> Void
@@ -1034,23 +997,7 @@ private struct LGNavigationContent: View {
                                 }
                             }
                         }
-                        if let flashcardsToolbar, !searchVisible {
-                            let addButton = context.nodeView(of: flashcardsToolbar.add)
-                                .frame(width: 44, height: 44)
-                                .buttonStyle(.plain)
-                            if #available(iOS 26.0, *) {
-                                ToolbarItem(placement: trailingToolbarPlacement) {
-                                    addButton.modifier(LGLiquidGlassSurface(shape: .circle))
-                                }
-                                .sharedBackgroundVisibility(.hidden)
-                                .lgPrefersVerticalAxis()
-                            } else {
-                                ToolbarItem(placement: trailingToolbarPlacement) { addButton }
-                                    .lgPrefersVerticalAxis()
-                            }
-                        } else {
-                            trailingToolbar(searchPage: false)
-                        }
+                        trailingToolbar(searchPage: false, flashcardsAdd: searchVisible ? nil : flashcardsToolbar?.add)
                     }
                 }
                 .modifier(nativeSearchHost(search))
@@ -1295,17 +1242,17 @@ private struct LGNavigationContent: View {
     }
 
     @ToolbarContentBuilder
-    private func trailingToolbar(searchPage: Bool) -> some ToolbarContent {
+    private func trailingToolbar(searchPage: Bool, flashcardsAdd: Int? = nil) -> some ToolbarContent {
         if let toolbarStartIndex {
             if #available(iOS 26.0, *) {
                 ToolbarItem(id: "logseq.trailing-controls", placement: trailingToolbarPlacement) {
-                    trailingControls(searchPage: searchPage, index: toolbarStartIndex, glass: true)
+                    trailingControls(searchPage: searchPage, index: toolbarStartIndex, glass: true, flashcardsAdd: flashcardsAdd)
                 }
                 .sharedBackgroundVisibility(.hidden)
                 .lgPrefersVerticalAxis()
             } else {
                 ToolbarItem(id: "logseq.trailing-controls", placement: trailingToolbarPlacement) {
-                    trailingControls(searchPage: searchPage, index: toolbarStartIndex, glass: false)
+                    trailingControls(searchPage: searchPage, index: toolbarStartIndex, glass: false, flashcardsAdd: flashcardsAdd)
                 }
             }
         } else if let item = trailingToolbarItem(searchPage: searchPage) {
@@ -1324,15 +1271,19 @@ private struct LGNavigationContent: View {
     }
 
     @ViewBuilder
-    private func trailingControls(searchPage: Bool, index: Int, glass: Bool) -> some View {
-        if !searchPage && hasPrimaryToolbarAction(at: index) {
-            pairedTrailingControls(index: index, glass: glass)
+    private func trailingControls(searchPage: Bool, index: Int, glass: Bool, flashcardsAdd: Int?) -> some View {
+        let primary = searchPage ? [] : primaryToolbarActions(at: index)
+        let final = flashcardsAdd.map { context.nodeView(of: $0) } ?? trailingToolbarItem(searchPage: searchPage)?.content
+        if !primary.isEmpty, let final {
+            groupedTrailingControls(index: index, glass: glass, primary: primary, final: final)
         } else {
             let action = Group {
                 if selectionActive {
                     headerConnectionSlot(context, at: childID(at: index + 3), selecting: true)
-                } else if let item = trailingToolbarItem(searchPage: searchPage) {
-                    item.content
+                } else if let id = primary.first {
+                    context.content(for: id)
+                } else if let final {
+                    final
                 }
             }
             .frame(width: 44, height: 44)
@@ -1349,26 +1300,33 @@ private struct LGNavigationContent: View {
         }
     }
 
-    private func pairedTrailingControls(index: Int, glass: Bool) -> some View {
+    private func groupedTrailingControls(index: Int, glass: Bool, primary: [Int], final: AnyView) -> some View {
         let size: CGFloat = 44
-        let fullWidth = verticalToolbar ? size : size * 2
-        let fullHeight = verticalToolbar ? size * 2 : size
+        let span = size * CGFloat(primary.count + 1)
+        let fullWidth = verticalToolbar ? size : span
+        let fullHeight = verticalToolbar ? span : size
         let alignment: Alignment = verticalToolbar ? .top : .trailing
+        let layout = verticalToolbar ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
         let contents = ZStack(alignment: alignment) {
             if selectionActive {
                 headerConnectionSlot(context, at: childID(at: index + 3), selecting: true)
                     .frame(width: size, height: size)
                     .transition(.opacity)
-            } else if let item = trailingToolbarItem(searchPage: false) {
-                item.content
-                    .transition(.opacity)
+            } else {
+                layout {
+                    ForEach(primary, id: \.self) { id in
+                        context.content(for: id).frame(width: size, height: size)
+                    }
+                    final.frame(width: size, height: size)
+                }
+                .transition(.opacity)
             }
         }
         .frame(width: selectionActive ? size : fullWidth,
                height: selectionActive ? size : fullHeight, alignment: alignment)
         .clipShape(Capsule())
         return trailingChrome(contents, glass: glass)
-            // The system toolbar keeps one footprint while its glass resizes in place.
+            // Keep one toolbar footprint while the selection control is visible.
             .frame(width: fullWidth, height: fullHeight, alignment: alignment)
             .animation(reduceMotion ? nil : .smooth(duration: 0.32), value: selectionActive)
             .overlay {
@@ -1399,10 +1357,10 @@ private struct LGNavigationContent: View {
         return owner.nodeView(of: slots[index])
     }
 
-    private func hasPrimaryToolbarAction(at index: Int) -> Bool {
-        guard let container = childID(at: index + 2) else { return false }
+    private func primaryToolbarActions(at index: Int) -> [Int] {
+        guard let container = childID(at: index + 2) else { return [] }
         let _ = context.measureStamp(of: container)
-        return !context.childIDs(of: container).isEmpty
+        return context.childIDs(of: container)
     }
 
     private func trailingToolbarItem(searchPage: Bool) -> (id: String, content: AnyView)? {
@@ -1411,15 +1369,6 @@ private struct LGNavigationContent: View {
             pageActions = headerConnectionSlot(search.context, at: search.context.childIDs[3], selecting: false)
         } else if let toolbarStartIndex {
             pageActions = headerConnectionSlot(context, at: childID(at: toolbarStartIndex + 3), selecting: false)
-            if hasPrimaryToolbarAction(at: toolbarStartIndex) {
-                // Keep the two actions together so the system gives them a single toolbar slot.
-                let controls = LGToolbarControlPair(
-                    first: AnyView(childContent(at: toolbarStartIndex + 2).frame(width: 44, height: 44)),
-                    second: AnyView(pageActions.frame(width: 44, height: 44))
-                )
-                .fixedSize()
-                return ("logseq.trailing-controls", AnyView(controls))
-            }
         } else if let trailingMenuIndex {
             pageActions = childContent(at: trailingMenuIndex)
         } else {

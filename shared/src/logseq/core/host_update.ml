@@ -21,6 +21,7 @@ type host_ui_session =
   ; settings_open : bool
   ; recent_graph_ids : string list
   ; read_notifications : (string * string list) list
+  ; recent_reactions : (string * string list) list
   ; tasks_view : Yojson.Safe.t option
   }
 
@@ -105,6 +106,13 @@ let composer_asset value payload =
     payload;
   }
 
+let scoped_ids key value = match Util.member key value with
+  | `Assoc scopes -> List.filter_map (function
+      | scope, `List ids ->
+        Some (scope, List.filter_map (function `String id -> Some id | _ -> None) ids)
+      | _ -> None) scopes
+  | _ -> []
+
 let ui_session value =
   {
     graph_id = Util.to_string_option (Util.member "graphId" value);
@@ -127,10 +135,8 @@ let ui_session value =
       Util.to_string_option (Util.member "selectedPageId" value);
     settings_open = bool_field "settingsOpen" value;
     recent_graph_ids = (match Util.member "recentGraphIds" value with `Null -> [] | ids -> string_vector ids);
-    read_notifications = (match Util.member "readNotifications" value with
-      | `Assoc scopes -> List.filter_map (function
-        | scope, `List ids -> Some (scope, List.filter_map (function `String id -> Some id | _ -> None) ids)
-        | _ -> None) scopes | _ -> []);
+    read_notifications = scoped_ids "readNotifications" value;
+    recent_reactions = scoped_ids "recentReactions" value;
     tasks_view = (match Util.member "tasksView" value with `Assoc _ as options -> Some options | _ -> None);
   }
 

@@ -5202,7 +5202,7 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
     dispatch application (Lui_protocol.ExtensionEvent (current_strip (), "bottom-tab-strip", "select",
       Lui_protocol.String_map.singleton "index" (Lui_protocol.IntValue index)));
     flush application in
-  check_eq (children renderer tabs) (List.map tab ["home"; "tasks"; "flashcards"; "notifications"]);
+  check_eq (children renderer tabs) (List.map tab ["home"; "tasks"; "flashcards"]);
   check_eq (children renderer actions) [search; capture];
   List.iter (fun (id, width) ->
     check_eq (property_int renderer id Lui_protocol.WidthValue) width;
@@ -5219,10 +5219,15 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   check_eq (selected (tab "home")) false;
   check (descendant_with_identifier renderer (Lui_app.root_node application) "tasks.empty" <> -1);
   swipe_to 3;
+  check_eq (App.model application).destination Model.TasksDestination;
+  let root = Lui_app.root_node application in
+  let inbox = descendant_with_identifier renderer root "button.notifications" in
+  check (inbox <> -1);
+  dispatch application (Lui_protocol.Press inbox);
+  flush application;
   check_eq (App.model application).destination Model.NotificationsDestination;
-  check (descendant_with_identifier renderer (Lui_app.root_node application) "screen.notifications" <> -1);
-  swipe_to 4;
-  check_eq (App.model application).destination Model.NotificationsDestination;
+  check (descendant_with_identifier renderer root "screen.notifications" <> -1);
+  check_eq (descendant_with_identifier renderer root "tab.bottom.notifications") (-1);
   dispatch application (Lui_protocol.Press (tab "flashcards"));
   flush application;
   check_eq (App.model application).destination Model.FlashcardsDestination;
@@ -6852,10 +6857,10 @@ let kotlin_navigation_and_search_own_composed_standard_children () =
   let tabs = descendant_with_identifier renderer capture_row "group.bottom.tabs" in
   let actions = descendant_with_identifier renderer capture_row "group.bottom.actions" in
   let controls = children renderer actions in
-  check_eq (List.length (children renderer tabs)) 4;
+  check_eq (List.length (children renderer tabs)) 3;
   check_eq (List.length controls) 2;
-  check_eq (property_int renderer tabs Lui_protocol.WidthValue) 184;
-  check_eq (property_int renderer actions Lui_protocol.WidthValue) 96;
+  check_eq (property_int renderer tabs Lui_protocol.WidthValue) 170;
+  check_eq (property_int renderer actions Lui_protocol.WidthValue) 108;
   check_eq (property_string renderer (List.nth controls 1) Lui_protocol.InlineIconName) "app:capture-circle";
   send application Model.ShowTasks;
   flush application;
@@ -7191,8 +7196,10 @@ let native_navigation_retains_the_journal_and_every_node_route () =
     (property_string renderer (List.nth nav_children 2)
        Lui_protocol.AccessibilityIdentifier)
     "title.main";
-  check_eq ~msg:"a pushed page has an empty primary toolbar slot"
-    (children renderer (List.nth nav_children 3)) [];
+  let primary = List.nth nav_children 3 in
+  check_eq ~msg:"a pushed page exposes Notifications in its primary toolbar slot"
+    (children renderer primary)
+    [descendant_with_identifier renderer primary "button.notifications"];
   check ~msg:"LG supplies the native trailing menu"
     (descendant_with_node_kind renderer
        (List.nth (children renderer (List.nth nav_children 4)) 0)

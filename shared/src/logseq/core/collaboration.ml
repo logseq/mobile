@@ -65,9 +65,6 @@ let existing_thread db = function
 let reactions db target =
   referring db reaction_target target |> List.filter (live db)
 
-let emoji_choices =
-  ["+1", "👍"; "heart", "❤️"; "tada", "🎉"; "joy", "😂"; "eyes", "👀"; "thinking_face", "🤔"]
-
 let valid_emoji emoji =
   String.length emoji > 0 && String.length emoji <= 80
   && String.for_all (function

@@ -161,6 +161,33 @@ let native_session_roundtrip_preserves_assets_and_returns_home () =
          (Json.from_string (Native_bridge.encode_ui_session expected))
          (Json.from_string (persisted_session 8)))
 
+let reaction_picker_preserves_account_recency_and_canonical_ids () =
+  let account id = `Assoc ["account", `String id] in
+  let current = { (Model.initial ()) with selected_graph_id = Some "local";
+    collaboration = account "alice" } in
+  let choose current emoji =
+    Model.update (Model.update current (Model.OpenReactionPicker ("block-a", [])))
+      (Model.ChooseDiscussionReaction ("block-a", emoji)) in
+  let current = choose (choose (choose current "heart") "rocket") "heart" in
+  Test_util.check_eq current.reaction_picker None;
+  Test_util.check_eq (Model.recent_reaction_ids current) ["heart"; "rocket"];
+  let ids entries = List.map (fun (emoji : Reaction_emoji.emoji) -> emoji.id) entries in
+  Test_util.check_eq (ids (Reaction_emoji.quick ~limit:3 (Model.recent_reaction_ids current)))
+    ["heart"; "rocket"; "+1"];
+  Test_util.check_eq (Node_presentation.reaction_emoji "thumbsup") "👍";
+  Test_util.check_eq (Node_presentation.reaction_emoji "rocket") "🚀";
+  Test_util.check_eq ~msg:"search ranks the exact ID before keyword matches"
+    (List.hd (ids (Reaction_emoji.search "rocket"))) "rocket";
+  let session = Model.ui_session current |> Native_bridge.encode_ui_session in
+  ignore (Native_bridge.initialize 2 2 3);
+  Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
+    ignore (Native_bridge.apply_response graph_response);
+    ignore (Native_bridge.apply_host_update "restore-ui-session" session);
+    let restored = App.model (Native_bridge.app ()) in
+    Test_util.check_eq (Model.recent_reaction_ids {restored with collaboration = account "alice"})
+      ["heart"; "rocket"];
+    Test_util.check_eq (Model.recent_reaction_ids {restored with collaboration = account "bob"}) [])
+
 let quick_actions_clear_selection_before_opening_native_recorder () =
   List.iter
     (fun kind ->
@@ -282,6 +309,8 @@ let cases =
     Test_util.case
       "native session roundtrip preserves assets and returns home"
       native_session_roundtrip_preserves_assets_and_returns_home;
+    Alcotest.test_case "Reaction recency persists per account" `Quick
+      reaction_picker_preserves_account_recency_and_canonical_ids;
     Test_util.case "quick actions clear selection before opening native recorder"
       quick_actions_clear_selection_before_opening_native_recorder;
     Test_util.case "search waits 200ms and dispatches only the latest input"

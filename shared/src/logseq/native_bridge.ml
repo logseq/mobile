@@ -174,7 +174,8 @@ let host_action (update : Host_update.host_update) =
         settings_open = session.settings_open;
         recent_graph_ids = session.recent_graph_ids;
         tasks_view = Option.map decode_tasks_view session.tasks_view;
-        read_notifications = session.read_notifications }
+        read_notifications = session.read_notifications;
+        recent_reactions = session.recent_reactions }
   | Composer_draft draft -> Model.ApplyComposerDraft draft
   | Graph_loading loading -> Model.ApplyGraphLoading loading
   | Authentication authentication ->
@@ -239,6 +240,8 @@ let encode_ui_session (session : Model.ui_session) =
        | Model.JournalsDestination -> "journals")
   ^ ",\"readNotifications\":" ^ Yojson.Basic.to_string (`Assoc (List.map (fun (scope, ids) ->
     scope, `List (List.map (fun id -> `String id) ids)) session.read_notifications))
+  ^ ",\"recentReactions\":" ^ Yojson.Basic.to_string (`Assoc (List.map (fun (account, ids) ->
+    account, `List (List.map (fun id -> `String id) ids)) session.recent_reactions))
   ^ ",\"assets\":["
   ^ String.concat "," (List.map encode_session_asset session.assets)
   ^ "]" ^ ",\"composerTags\":"

@@ -67,6 +67,7 @@ type ui_session =
   ; settings_open : bool
   ; recent_graph_ids : string list
   ; read_notifications : (string * string list) list
+  ; recent_reactions : (string * string list) list
   ; tasks_view : tasks_view option
   }
 
@@ -539,6 +540,7 @@ type logseq_model =
   ; push_enabled : bool
   ; push_error : string option
   ; pending_push_route : (string * string) option
+  ; reaction_picker : (string * string list) option
   ; discussion_target : string option
   ; discussion_composition : (string list * string option) option
   ; expanded_discussions : string list
@@ -546,6 +548,7 @@ type logseq_model =
   ; saved_discussion_drafts : ((string list * string option) * string) list
   ; discussion_error : string option
   ; read_notifications : (string * string list) list
+  ; recent_reactions : (string * string list) list
   ; pdf_workspace : string option
   ; asset_preview : asset_preview option
   }
@@ -662,6 +665,9 @@ type logseq_action =
   | CloseDiscussion
   | EditDiscussionDraft of string
   | PostDiscussionComment
+  | OpenReactionPicker of string * string list
+  | CloseReactionPicker
+  | ChooseDiscussionReaction of string * string
   | ToggleDiscussionReaction of string * string
   | ReadNotification of string
   | ReadAllNotifications
@@ -870,6 +876,7 @@ val composer_tag_selection : sidebar_page list -> Yojson.Basic.t
 
 val collaboration_field : string -> Yojson.Basic.t -> Yojson.Basic.t
 val collaboration_string : string -> Yojson.Basic.t -> string
+val recent_reaction_ids : logseq_model -> string list
 val notification_items : logseq_model -> Yojson.Basic.t list
 val notification_count : logseq_model -> int
 val notification_read : logseq_model -> string -> bool

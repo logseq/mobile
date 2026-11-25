@@ -227,11 +227,14 @@ import LogseqModel
                 try extensionEvent("outliner-block-row", "menu-action", ["payload": .string("select")])
                 await pause()
                 observations["picker-available"] = find("button.outliner.selection.reaction") != nil
+                try press("button.outliner.selection.reaction")
+                await pause()
                 try press("reaction.heart")
                 await pause()
                 observations["added-inline"] = find("reaction.block." + Self.uuid(17) + ".heart") != nil
             case "notifications":
-                try press("tab.bottom.notifications")
+                observations["header-unread"] = find("notifications.unread-dot") != nil
+                try press("button.notifications")
                 await pause()
                 observations["activity-list"] = find("notification." + Self.uuid(20)) != nil
                 try press("notification." + Self.uuid(19))

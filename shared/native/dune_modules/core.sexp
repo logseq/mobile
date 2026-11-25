@@ -44,6 +44,8 @@
 "Editor_command"
 "Editor_command_effects"
 "Node_presentation"
+"Reaction_emoji"
+"Reaction_emoji_data"
 "Block_clipboard"
 "Outliner_effects"
 "Outliner_state"

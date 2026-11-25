@@ -50,7 +50,6 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.logseq.logseq.runtime.logseqIconResolver
@@ -114,6 +113,7 @@ fun logseqExtensionRegistry(
     registerNodeIcon()
     registerProperties()
     registerTaskDateSheet()
+    registerReactionSearchInput()
     registerComposerTaskToggle()
     registerPdfWorkspace(loadImage)
     registerSidebarOverlay()
@@ -273,7 +273,6 @@ fun logseqExtensionRegistry(
                     val item = items.getJSONObject(index)
                     val title = item.getString("title")
                     val name = item.getString("name")
-                    val unread = item.optString("unreadLabel").takeUnless { item.isNull("unreadLabel") }
                     val active = index == selected
                     val symbol = logseqIconResolver.icon(item.getString(if (active) "selectedImage" else "image"))
                     Box(
@@ -282,19 +281,12 @@ fun logseqExtensionRegistry(
                             .background(if (active) selection else Color.Transparent)
                             .selectable(selected = active, role = Role.Tab, onClick = { emit("select", "index" to index) })
                             .testTag("tab.bottom.$name")
-                            .semantics {
-                                contentDescription = title
-                                if (unread != null) stateDescription = unread
-                            },
+                            .semantics { contentDescription = title },
                         contentAlignment = Alignment.Center,
                     ) {
                         if (symbol != null) Icon(symbol, contentDescription = null,
                             modifier = Modifier.size(if (name == "flashcards") 32.dp else 26.dp),
                             tint = if (active) accent else foreground)
-                        if (unread != null) {
-                            Box(Modifier.align(Alignment.Center).padding(start = 28.dp, bottom = 20.dp)
-                                .size(5.dp).background(accent, CircleShape))
-                        }
                     }
                 }
             }
