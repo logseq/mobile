@@ -4,8 +4,10 @@ press prop:accessibility-identifier=button.graph-add
 type prop:accessibility-identifier=field.graph-name "Drive Graph"
 press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
-wait prop:accessibility-identifier=tab.bottom.flashcards
-press prop:accessibility-identifier=tab.bottom.flashcards
+wait prop:accessibility-identifier=button.sidebar
+press prop:accessibility-identifier=button.sidebar
+wait prop:accessibility-identifier=link.sidebar.flashcards
+press prop:accessibility-identifier=link.sidebar.flashcards
 wait prop:accessibility-identifier=button.flashcards.practice-again
 expect text:"Come back later or practice again now."
 press prop:accessibility-identifier=button.flashcards.practice-again

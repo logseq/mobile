@@ -985,10 +985,11 @@ let decorate_row context model_source row_source send body =
     View_collaboration.ready model, List.mem id model.expanded_discussions)
     model_source row_source in
   column ~gap:0 [body;
-    View_base.with_int_prop_signal PaddingLeft
-      (Signal.map (outliner_text_leading context) row_source)
-      (reactive (fun (target, reactions, threads, _, _) ->
-        View_collaboration.inline (Signal.sample model_source) send ~target ~reactions ~threads) state)]
+    if_ ~test:(Signal.map (fun (_, reactions, threads, _, _) -> reactions <> [] || threads <> []) state)
+      (View_base.with_int_prop_signal PaddingLeft
+        (Signal.map (outliner_text_leading context) row_source)
+        (box [reactive (fun (target, reactions, threads, _, _) ->
+          View_collaboration.inline (Signal.sample model_source) send ~target ~reactions ~threads) state]))]
 
 let with_embed_children model_source edit_scope row_source send render_row render_child : t =
   reactive (fun has_embed_children ->

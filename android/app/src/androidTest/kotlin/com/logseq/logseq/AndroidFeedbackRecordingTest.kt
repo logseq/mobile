@@ -536,10 +536,13 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
             }
             "notifications" -> {
                 mount(7, dark = true)
-                ui.onNodeWithTag("tab.bottom.notifications").assertDoesNotExist()
+                val notifications = ui.onNodeWithTag("tab.bottom.notifications")
+                ui.onNodeWithTag("tab.bottom.flashcards").assertDoesNotExist()
                 ui.onNodeWithTag("notifications.unread-dot", useUnmergedTree = true).assertExists()
-                ui.onNodeWithTag("button.notifications").performClick()
+                notifications.performClick()
                 pause()
+                notifications.assertIsSelected()
+                ui.onNodeWithTag("screen.notifications").assertIsDisplayed()
                 ui.onNodeWithTag("notification." + uuid(20)).assertIsDisplayed()
                 ui.onNodeWithTag("button.notifications.more").performClick()
                 ui.onNodeWithText("Mark all as read").assertIsDisplayed()
@@ -547,18 +550,71 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 pause()
                 ui.onNodeWithTag("notification." + uuid(19)).performClick()
                 pause()
-                ui.onNodeWithTag("outliner.comment." + uuid(19)).assertExists()
+                ui.onNode(hasTestTag("outliner.comment." + uuid(19)) and
+                    hasAnyAncestor(hasTestTag("screen.node"))).assertIsDisplayed()
                 instrumentation.runOnMainSync {
                     val activity = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
                         .single() as androidx.activity.ComponentActivity
                     activity.onBackPressedDispatcher.onBackPressed()
                 }
                 pause()
-                ui.onNodeWithTag("title.notifications").assertIsDisplayed()
+                ui.onNodeWithTag("screen.notifications").assertIsDisplayed()
+                notifications.assertIsSelected()
+                ui.onNodeWithTag("notifications.unread-dot", useUnmergedTree = true).assertDoesNotExist()
                 ui.onNodeWithTag("tab.bottom.home").performClick()
                 pause()
-                ui.onNodeWithTag("button.notifications").assertIsDisplayed()
-                ui.onNodeWithTag("notifications.unread-dot", useUnmergedTree = true).assertDoesNotExist()
+                ui.onNodeWithTag("button.sidebar").performClick()
+                captureFrame()
+                ui.onNodeWithTag("link.sidebar.flashcards").performClick()
+                pause()
+                ui.onNodeWithTag("screen.flashcards").assertIsDisplayed()
+            }
+            "journal-layout" -> {
+                val imagePath = File(context.cacheDir, "journal-layout.png")
+                val bitmap = Bitmap.createBitmap(260, 170, Bitmap.Config.ARGB_8888)
+                bitmap.eraseColor(android.graphics.Color.rgb(234, 104, 36))
+                imagePath.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.recycle()
+                fun row(id: String, title: String, depth: Int = 0, older: Boolean = false,
+                        hasChildren: Boolean = false, fields: JSONObject.() -> Unit = {}): JSONObject {
+                    val block = JSONObject().put("uuid", id).put("title", title)
+                        .put("pageId", if (older) "older" else "today")
+                        .put("journalDay", if (older) 20261124 else 20261125)
+                        .put("journalTitle", if (older) "Nov 24th, 2026" else "Nov 25th, 2026")
+                        .apply(fields)
+                    return JSONObject().put("depth", depth).put("hasChildren", hasChildren).put("block", block)
+                }
+                val rows = JSONArray().put(row("root", "Release checklist", hasChildren = true))
+                    .put(row("parent", "Mobile", depth = 1, hasChildren = true))
+                    .put(row("nested", "Review screenshots", depth = 2) {
+                        put("status", JSONObject().put("uuid", "todo").put("title", "Todo")
+                            .put("ident", "logseq.property/status.todo"))
+                        put("taskDates", JSONObject().put("ownerUuid", "nested").put("properties", JSONArray()
+                            .put(JSONObject().put("attr", "logseq.property/deadline").put("text", "Nov 27"))))
+                    }).put(row("photo", "Reference.png") {
+                        put("isAsset", true).put("assetType", "image/png").put("localPath", imagePath.path)
+                    }).put(row("older", "Earlier note", older = true))
+                mountProjection(JSONObject().put("outlinerRows", rows))
+                val root = ui.onNodeWithText("Release checklist").getUnclippedBoundsInRoot()
+                val parent = ui.onNodeWithText("Mobile").getUnclippedBoundsInRoot()
+                val heading = ui.onNodeWithTag("button.journal.today").getUnclippedBoundsInRoot()
+                assertTrue("The root is indented by one bullet slot", root.left - heading.left <= 30.dp)
+                assertEquals("Each depth adds one indent", 22f, (parent.left - root.left).value, 2f)
+                val status = ui.onNodeWithTag("outliner.task-status-icon.nested", useUnmergedTree = true)
+                val deadline = ui.onNodeWithTag("property.label.nested.logseq.property/deadline", useUnmergedTree = true)
+                fun centerX(node: SemanticsNodeInteraction): Float = node.getUnclippedBoundsInRoot().let {
+                    (it.left.value + it.right.value) / 2
+                }
+                assertEquals("Deadline icon aligns with the nested status icon",
+                    centerX(status), centerX(deadline), 5f)
+                val photo = ui.onNodeWithTag("asset.preview.image", useUnmergedTree = true)
+                    .assertIsDisplayed().getUnclippedBoundsInRoot()
+                val olderHeading = ui.onNodeWithTag("button.journal.older").getUnclippedBoundsInRoot()
+                assertTrue("The next journal starts below the loaded image", photo.bottom <= olderHeading.top)
+                ui.onNodeWithTag("button.journal-calendar").assertDoesNotExist()
+                ui.onNodeWithTag("button.journals.more").performClick()
+                captureFrame()
+                ui.onNodeWithText("Go to journal").assertIsDisplayed()
             }
             "bottom-navigation" -> {
                 mount(7, dark = true)

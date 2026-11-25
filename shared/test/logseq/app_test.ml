@@ -2627,8 +2627,8 @@ let graph_and_sync_actions_update_retained_status_in_place () =
   let sidebar_control =
     List.nth (children renderer (List.nth chrome 1)) 0
   in
-  let calendar = descendant_with_identifier renderer (List.nth chrome 3) "button.journal-calendar" in
   let more = descendant_with_identifier renderer (List.nth chrome 4) "button.journals.more" in
+  let calendar = descendant_with_identifier renderer more "button.journal-calendar" in
   let find_sync id = descendant_with_identifier renderer more id in
   send application Model.BeginSync;
   flush application;
@@ -2637,7 +2637,10 @@ let graph_and_sync_actions_update_retained_status_in_place () =
        check_eq ~msg:"journal header actions keep semantic ghost styling"
          (property_string renderer control Lui_protocol.VariantValue)
          "ghost")
-    [ sidebar_control; calendar ];
+    [ sidebar_control ];
+  check_eq (descendant_with_identifier renderer (List.nth chrome 3) "button.journal-calendar") (-1);
+  check_eq (node renderer calendar) (Some Lui_protocol.MenuItem);
+  check_eq (property_string renderer calendar Lui_protocol.InlineIconName) "app:calendar";
   let sync_control = find_sync "sync.connected" in
   check_eq ~msg:"the trailing More menu contains a native sync status item"
     (node renderer sync_control) (Some Lui_protocol.MenuItem);
@@ -2680,9 +2683,10 @@ let kotlin_journal_calendar_uses_the_shared_native_presentation_effect () =
   send application (Model.SelectGraph "Work");
   flush application;
   let renderer = Lui_app.runtime application in
-  let calendar = descendant_with_identifier renderer
-    (Lui_app.root_node application) "button.journal-calendar" in
-  check ~msg:"Android journals expose the same calendar entry as iOS" (calendar <> -1);
+  let more = descendant_with_identifier renderer (Lui_app.root_node application) "button.journals.more" in
+  let calendar = descendant_with_identifier renderer more "button.journal-calendar" in
+  check_eq ~msg:"Android journals expose the calendar in the overflow menu"
+    (node renderer calendar) (Some Lui_protocol.MenuItem);
   dispatch application (Lui_protocol.Press calendar);
   flush application;
   check ~msg:"Android calendar uses the shared presentation effect"
@@ -3237,9 +3241,12 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     (descendant_with_identifier renderer native_sidebar "button.graph-switch")
     (-1);
   check_eq ~msg:"Home is available from the bottom tab bar" journals (-1);
-  check_eq ~msg:"Flashcards is available from the bottom tab bar" flashcards (-1);
-  let graphs_tweak = List.hd (children renderer sidebar_content) in
-  check_eq ~msg:"the sidebar starts with the Graphs link"
+  let shortcuts = children renderer sidebar_content in
+  check_eq ~msg:"the sidebar starts with Flashcards"
+    (child_with_identifier renderer (List.hd shortcuts) "link.sidebar.flashcards") flashcards;
+  check (flashcards <> -1);
+  let graphs_tweak = List.nth shortcuts 1 in
+  check_eq ~msg:"Graphs follows Flashcards in the sidebar"
     (child_with_identifier renderer graphs_tweak "link.sidebar.graphs") graphs;
   check_eq ~msg:"VoiceOver can identify whether Graphs is the current destination"
     (extension_property application graphs_tweak "current") (Some (Lui_protocol.BoolValue false));
@@ -3281,7 +3288,7 @@ let sidebar_renders_main_branch_navigation_identifiers () =
       (property_int renderer label Lui_protocol.FontWeight) 500;
     check ~msg:"sidebar destinations have no selected background"
       (not (property_bool renderer row Lui_protocol.Selected)))
-    [graphs, "app:folder", 22];
+    [flashcards, "app:flashcards", 30; graphs, "app:folder", 22];
   check ~msg:"sidebar keeps the recent section identifier" (recent <> -1);
   check_eq ~msg:"sidebar pages keep their document icon"
     (property_string renderer favorite_link Lui_protocol.InlineIconName)
@@ -5202,7 +5209,7 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
     dispatch application (Lui_protocol.ExtensionEvent (current_strip (), "bottom-tab-strip", "select",
       Lui_protocol.String_map.singleton "index" (Lui_protocol.IntValue index)));
     flush application in
-  check_eq (children renderer tabs) (List.map tab ["home"; "tasks"; "flashcards"]);
+  check_eq (children renderer tabs) (List.map tab ["home"; "tasks"; "notifications"]);
   check_eq (children renderer actions) [search; capture];
   List.iter (fun (id, width) ->
     check_eq (property_int renderer id Lui_protocol.WidthValue) width;
@@ -5210,8 +5217,6 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
     (List.map (fun id -> id, 58) (children renderer tabs)
      @ List.map (fun id -> id, 50) (children renderer actions));
   check_eq (property_string renderer capture Lui_protocol.InlineIconName) "app:capture-circle";
-  let flashcard_icon () = property_string renderer (tab "flashcards") Lui_protocol.InlineIconName in
-  check_eq (flashcard_icon ()) "app:flashcards";
   check_eq (selected (tab "home")) true;
   swipe_to 1;
   check_eq (selected (tab "tasks")) true;
@@ -5221,18 +5226,17 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   swipe_to 3;
   check_eq (App.model application).destination Model.TasksDestination;
   let root = Lui_app.root_node application in
-  let inbox = descendant_with_identifier renderer root "button.notifications" in
-  check (inbox <> -1);
-  dispatch application (Lui_protocol.Press inbox);
-  flush application;
+  swipe_to 2;
   check_eq (App.model application).destination Model.NotificationsDestination;
+  check (selected (tab "notifications"));
   check (descendant_with_identifier renderer root "screen.notifications" <> -1);
-  check_eq (descendant_with_identifier renderer root "tab.bottom.notifications") (-1);
-  dispatch application (Lui_protocol.Press (tab "flashcards"));
+  check_eq (tab "flashcards") (-1);
+  send application Model.OpenSidebar;
+  flush application;
+  dispatch application (Lui_protocol.Press (descendant_with_identifier renderer root "link.sidebar.flashcards"));
   flush application;
   check_eq (App.model application).destination Model.FlashcardsDestination;
-  check_eq (selected (tab "flashcards")) true;
-  check_eq (flashcard_icon ()) "app:flashcards";
+  check_eq (extension_property application strip "selected-index") (Some (Lui_protocol.IntValue (-1)));
   dispatch application (Lui_protocol.Press capture);
   flush application;
   check (App.model application).composer_expanded;
@@ -7197,9 +7201,7 @@ let native_navigation_retains_the_journal_and_every_node_route () =
        Lui_protocol.AccessibilityIdentifier)
     "title.main";
   let primary = List.nth nav_children 3 in
-  check_eq ~msg:"a pushed page exposes Notifications in its primary toolbar slot"
-    (children renderer primary)
-    [descendant_with_identifier renderer primary "button.notifications"];
+  check_eq ~msg:"a pushed page has no extra primary toolbar action" (children renderer primary) [];
   check ~msg:"LG supplies the native trailing menu"
     (descendant_with_node_kind renderer
        (List.nth (children renderer (List.nth nav_children 4)) 0)

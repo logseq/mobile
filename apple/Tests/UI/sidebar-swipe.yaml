@@ -7,7 +7,7 @@ appId: com.logseq.logseq
     id: "button.sidebar"
 - assertNotVisible:
     id: "link.sidebar.journals"
-- assertNotVisible:
+- assertVisible:
     id: "link.sidebar.flashcards"
 - swipe:
     start: "60%,27%"
@@ -21,16 +21,16 @@ appId: com.logseq.logseq
     direction: RIGHT
     duration: 600
 - assertVisible:
-    id: "screen.flashcards"
+    id: "screen.notifications"
 - assertNotVisible:
     id: "button.sidebar.dismiss"
 - swipe:
     from:
-      id: "tab.bottom.flashcards"
+      id: "tab.bottom.notifications"
     direction: LEFT
     duration: 600
 - assertVisible:
-    id: "button.journal-calendar"
+    id: "button.journals.more"
 - repeat:
     times: 8
     commands:

@@ -6,7 +6,7 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "pane.journals"
 - assertVisible:
-    id: "button.journal-calendar"
+    id: "button.journals.more"
 - assertNotVisible:
     id: "BackButton"
 - assertVisible:
@@ -42,7 +42,7 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "pane.journals"
 - assertVisible:
-    id: "button.journal-calendar"
+    id: "button.journals.more"
 - assertNotVisible:
     id: "BackButton"
 - assertVisible:

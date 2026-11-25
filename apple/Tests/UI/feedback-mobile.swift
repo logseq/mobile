@@ -233,13 +233,23 @@ import LogseqModel
                 await pause()
                 observations["added-inline"] = find("reaction.block." + Self.uuid(17) + ".heart") != nil
             case "notifications":
-                observations["header-unread"] = find("notifications.unread-dot") != nil
-                try press("button.notifications")
+                let tab = "tab.bottom.notifications"
+                func tabLabel() -> String? {
+                    find(tab).flatMap { backend.model(id: $0)?.property(.accessibilityLabel)?.stringValue }
+                }
+                observations["tab-unread"] = tabLabel()?.contains("Unread notifications") == true
+                try press(tab)
                 await pause()
                 observations["activity-list"] = find("notification." + Self.uuid(20)) != nil
+                try press("button.notifications.read-all")
+                await pause()
+                observations["tab-read"] = tabLabel() == "Notifications"
                 try press("notification." + Self.uuid(19))
                 await pause()
                 observations["opened-inline"] = find("outliner.comment." + Self.uuid(19)) != nil
+                try extensionEvent("native-navigation-stack", "back", ["count": .int(1)])
+                await pause()
+                observations["returned-to-inbox"] = find("notification." + Self.uuid(20)) != nil
             default: break
             }
             await pause()

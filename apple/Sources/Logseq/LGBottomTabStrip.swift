@@ -41,7 +41,7 @@ struct LGBottomTabStrip: View {
             let horizontalMargin: CGFloat = 21
             LGNativeBottomTabBar(
                 items: items, selectedIndex: selectedIndex,
-                tint: colors["link"], layoutDirection: layoutDirection,
+                tint: colors["link"], foreground: colors["foreground"], layoutDirection: layoutDirection,
                 horizontalMargin: horizontalMargin, context: context
             )
             // UITabBar reserves horizontal margins around its floating capsule.
@@ -165,31 +165,36 @@ private struct LGNativeBottomTabBar: UIViewRepresentable {
         let name: String
         let image: String
         let selectedImage: String
+        let unread: Bool?
 
-        @MainActor func tabBarItem(tag: Int) -> UITabBarItem {
-            let item = UITabBarItem(title: nil, image: icon(image), selectedImage: icon(selectedImage))
+        @MainActor func configure(_ item: UITabBarItem, tag: Int, foreground: UIColor, accent: UIColor) {
+            item.image = icon(image, foreground: foreground, accent: accent)
+            item.selectedImage = icon(selectedImage, foreground: accent, accent: accent)
             item.tag = tag
             item.accessibilityLabel = title
             item.accessibilityIdentifier = "tab.bottom.\(name)"
-            return item
         }
 
-        private func icon(_ iconName: String) -> UIImage? {
+        @MainActor private func icon(_ iconName: String, foreground: UIColor, accent: UIColor) -> UIImage? {
             switch LGIconPolicy.icons[iconName] {
             case let .systemName(symbol):
+                if name == "notifications",
+                   let bell = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 24)) {
+                    let size = CGSize(width: 26, height: 26)
+                    return UIGraphicsImageRenderer(size: size).image { context in
+                        let origin = CGPoint(x: (size.width - bell.size.width) / 2, y: (size.height - bell.size.height) / 2)
+                        if unread == true {
+                            bell.withTintColor(foreground, renderingMode: .alwaysOriginal).draw(at: origin)
+                            context.cgContext.setFillColor(accent.cgColor)
+                            context.cgContext.fillEllipse(in: CGRect(x: size.width / 2 - 2, y: 9, width: 4, height: 4))
+                        } else {
+                            bell.draw(at: origin)
+                        }
+                    }.withRenderingMode(unread == true ? .alwaysOriginal : .alwaysTemplate)
+                }
                 return UIImage(systemName: symbol)
             case let .assetName(asset):
-                guard let image = UIImage(named: asset, in: .module, compatibleWith: nil) else { return nil }
-                guard name == "flashcards" else { return image }
-                // Enlarge the glyph inside the standard tab icon canvas.
-                let size = CGSize(width: 28, height: 28)
-                let scale: CGFloat = 1.4
-                let width = image.size.width * scale
-                let height = image.size.height * scale
-                return UIGraphicsImageRenderer(size: size).image { _ in
-                    image.draw(in: CGRect(x: (size.width - width) / 2, y: (size.height - height) / 2,
-                                          width: width, height: height))
-                }.withRenderingMode(.alwaysTemplate)
+                return UIImage(named: asset, in: .module, compatibleWith: nil)
             default:
                 return nil
             }
@@ -199,6 +204,7 @@ private struct LGNativeBottomTabBar: UIViewRepresentable {
     let items: [Item]
     let selectedIndex: Int?
     let tint: Color?
+    let foreground: Color?
     let layoutDirection: LayoutDirection
     let horizontalMargin: CGFloat
     let context: LUIAppleExtensionViewContext
@@ -222,10 +228,24 @@ private struct LGNativeBottomTabBar: UIViewRepresentable {
     func updateUIView(_ bar: UITabBar, context: Context) {
         let coordinator = context.coordinator
         coordinator.context = self.context
-        if coordinator.items != items {
-            bar.items = items.enumerated().map { $0.element.tabBarItem(tag: $0.offset) }
-            coordinator.items = items
+        let trait = bar.traitCollection
+        let primary = (foreground.map { UIColor($0) } ?? UIColor.label).resolvedColor(with: trait)
+        let accent = (tint.map { UIColor($0) } ?? bar.tintColor ?? UIColor.systemBlue).resolvedColor(with: trait)
+        let unreadColors = items.contains { $0.unread == true } ? [primary, accent] : []
+        if coordinator.items.map(\.name) != items.map(\.name) {
+            bar.items = items.enumerated().map { index, item in
+                let tab = UITabBarItem(title: nil, image: nil, selectedImage: nil)
+                item.configure(tab, tag: index, foreground: primary, accent: accent)
+                return tab
+            }
+        } else if let tabs = bar.items {
+            for (index, item) in items.enumerated() where item != coordinator.items[index]
+                || (item.unread == true && coordinator.unreadColors != unreadColors) {
+                item.configure(tabs[index], tag: index, foreground: primary, accent: accent)
+            }
         }
+        coordinator.items = items
+        coordinator.unreadColors = unreadColors
         coordinator.selectedIndex = selectedIndex
         if bar.selectedItem?.tag != selectedIndex {
             bar.selectedItem = bar.items?.first(where: { $0.tag == selectedIndex })
@@ -237,6 +257,7 @@ private struct LGNativeBottomTabBar: UIViewRepresentable {
     @MainActor final class Coordinator: NSObject, UITabBarDelegate, UIGestureRecognizerDelegate {
         var context: LUIAppleExtensionViewContext
         var items: [Item] = []
+        var unreadColors: [UIColor] = []
         var selectedIndex: Int?
         let horizontalMargin: CGFloat
 

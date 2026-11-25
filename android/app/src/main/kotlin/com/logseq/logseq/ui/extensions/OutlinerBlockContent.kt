@@ -201,7 +201,8 @@ internal fun OutlinerBlockContent(
     val hoverColor by animateColorAsState(
         when {
             dragHover -> MaterialTheme.colorScheme.primaryContainer
-            menuOpen -> MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+            menuOpen && actions?.optBoolean("selectionMember") != true ->
+                (luiThemeColor("link", foreground = true) ?: MaterialTheme.colorScheme.primary).copy(alpha = 0.24f)
             else -> Color.Transparent
         },
         label = "dropHighlight",

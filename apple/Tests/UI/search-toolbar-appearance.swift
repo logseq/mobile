@@ -38,7 +38,7 @@ import UIKit
         func tabsFrame() -> CGRect? {
             if #available(iOS 26, *) {
                 guard let bar = views(window).compactMap({ $0 as? UITabBar }).first,
-                      bar.items?.map(\.accessibilityIdentifier) == ["tab.bottom.home", "tab.bottom.tasks", "tab.bottom.flashcards"]
+                      bar.items?.map(\.accessibilityIdentifier) == ["tab.bottom.home", "tab.bottom.tasks", "tab.bottom.notifications"]
                 else { return nil }
                 return bar.convert(bar.bounds, to: window)
             }
