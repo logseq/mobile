@@ -1808,12 +1808,14 @@ let page_loading_view model_source : t =
 
 let placeholder_block context model_source (value : View_rows.placeholder) show_button send : t =
   let android = Lui_ui.host context = KotlinHost in
+  let vertical_padding = if Lui_ui.host context = SwiftUIHost then 4 else 2 in
+  let height = 24 + 2 * vertical_padding in
   let label = View_base.tr (Signal.sample model_source) "Add block" in
   let placeholder : t = custom @@ fun mount_context parent ->
     let node = mount mount_context ?parent (box
-      ?height:(if android then None else Some 28) ~min_height:28
+      ?height:(if android then None else Some height) ~min_height:height
       ~accessibility_identifier:("button.outliner.placeholder." ^ value.parent_uuid)
-      [row ~cross:`center ~gap:0 ~padding_vertical:2
+      [row ~cross:`center ~gap:0 ~padding_vertical:vertical_padding
         [box ~opacity:0.35 [icon ~name:(`app "outliner-bullet") ~width:24 ~height:24 ~foreground:"muted-foreground"
            ~accessibility_identifier:("outliner.placeholder.bullet." ^ value.parent_uuid) []];
          (if android then text ~value:label ~style_class:"caption" ~foreground:"muted-foreground" []

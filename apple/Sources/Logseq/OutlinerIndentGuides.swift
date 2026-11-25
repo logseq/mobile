@@ -9,9 +9,11 @@ enum OutlinerGuideGeometry {
             path.move(to: CGPoint(x: x, y: 0))
             path.addLine(to: CGPoint(x: x, y: size.height))
         }
-        if expanded, size.height > 17.5 {
+        let guideStart = OutlinerLayoutMetrics.rowVerticalPadding + OutlinerLayoutMetrics.bulletHitSize / 2
+            + OutlinerLayoutMetrics.bulletInkRadius
+        if expanded, size.height > guideStart {
             let x = OutlinerLayoutMetrics.bulletCenterX(depth: max(0, depth))
-            path.move(to: CGPoint(x: x, y: 17.5))
+            path.move(to: CGPoint(x: x, y: guideStart))
             path.addLine(to: CGPoint(x: x, y: size.height))
         }
         return path

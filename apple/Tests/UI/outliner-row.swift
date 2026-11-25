@@ -94,7 +94,9 @@ import UIKit
             precondition(guidePoints[level * 2 + 1].y == guide.bounds.height,
                          "Ancestor guides must reach the next virtual row")
         }
-        precondition(guidePoints[4] == CGPoint(x: OutlinerLayoutMetrics.bulletCenterX(depth: 2), y: 17.5),
+        let bullet = element("button.outliner.zoom.row.Visible title") as! UIButton
+        let bulletCenter = bullet.convert(CGPoint(x: bullet.bounds.midX, y: bullet.bounds.midY), to: guide)
+        precondition(guidePoints[4] == CGPoint(x: bulletCenter.x, y: bulletCenter.y + OutlinerLayoutMetrics.bulletInkRadius),
                      "The expanded parent guide starts below its bullet")
         let gap = tag.accessibilityFrame.minY - title.accessibilityFrame.maxY
         precondition(gap >= 0 && gap <= 4, "Tags must follow their title without an oversized gap")

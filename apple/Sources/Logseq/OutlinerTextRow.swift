@@ -303,29 +303,33 @@ struct OutlinerTextRow: UIViewRepresentable {
         let titleHeight = OutlinerNativeTextMeasurement.size(text: title.attributedText?.string ?? "",
             font: title.font, width: bodyWidth, verticalInset: title.verticalInset,
             scale: traitCollection.displayScale).height
-        var height = titleHeight + 4
+        let padding = OutlinerLayoutMetrics.rowVerticalPadding
+        var height = padding + titleHeight
         if apply {
-            bullet.frame = CGRect(x: inset, y: 2, width: 24, height: 24)
-            status.frame = CGRect(x: inset + iconLeading, y: 2, width: OutlinerLayoutMetrics.statusIconSize, height: 24)
-            priority.frame = CGRect(x: inset + iconLeading + statusWidth, y: 2, width: 20, height: 24)
-            title.frame = CGRect(x: leading, y: 2, width: bodyWidth, height: titleHeight)
-            disclosure.frame = CGRect(x: width - trailing, y: -8, width: trailing, height: disclosureSize)
+            bullet.frame = CGRect(x: inset, y: padding, width: 24, height: 24)
+            status.frame = CGRect(x: inset + iconLeading, y: padding, width: OutlinerLayoutMetrics.statusIconSize, height: 24)
+            priority.frame = CGRect(x: inset + iconLeading + statusWidth, y: padding, width: 20, height: 24)
+            title.frame = CGRect(x: leading, y: padding, width: bodyWidth, height: titleHeight)
+            let disclosureTop = padding + (OutlinerLayoutMetrics.titleLineHeight - disclosureSize) / 2
+            disclosure.frame = CGRect(x: width - trailing, y: disclosureTop, width: trailing, height: disclosureSize)
         }
         if !tags.isEmpty {
+            height += 2
             var x = leading
             for button in tags {
                 let size = button.sizeThatFits(CGSize(width: bodyWidth, height: 22))
                 if apply { button.frame = CGRect(x: x, y: height, width: size.width, height: 22) }
                 x += size.width + 6
             }
-            height += 24
+            height += 22
         }
         if row.syncFailed {
+            height += 2
             let size = failure.sizeThatFits(CGSize(width: bodyWidth, height: .greatestFiniteMagnitude))
             if apply { failure.frame = CGRect(x: leading, y: height, width: bodyWidth, height: size.height) }
-            height += size.height + 2
+            height += size.height
         }
-        return height
+        return height + padding
     }
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
         super.point(inside: point, with: event)
