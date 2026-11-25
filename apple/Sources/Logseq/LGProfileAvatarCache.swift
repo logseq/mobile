@@ -30,11 +30,18 @@ enum LGProfileAvatarCache {
         let resource = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
         let cached: UIImage? = if let size = resource?.fileSize, (1...byteLimit).contains(size),
                                    let data = try? Data(contentsOf: file) { thumbnail(data) } else { nil }
-        if let cached, let modified = resource?.contentModificationDate,
-           Date().timeIntervalSince(modified) < lifetime { return cached }
-        if let data = await download(url), let image = thumbnail(data) {
-            store(data, for: url)
-            return image
+        let modified = resource?.contentModificationDate
+        let mustRevalidate = url.host.map(isProfileBucketHost) == true
+        if let cached, let modified, !mustRevalidate, Date().timeIntervalSince(modified) < lifetime { return cached }
+        if let result = await download(url, since: cached == nil ? nil : modified) {
+            if result.notModified {
+                touch(file)
+                return cached
+            }
+            if let data = result.data, let image = thumbnail(data) {
+                store(data, for: url)
+                return image
+            }
         }
         return cached
     }
@@ -76,23 +83,39 @@ enum LGProfileAvatarCache {
         return UIImage(cgImage: thumbnail)
     }
 
-    private static func download(_ url: URL) async -> Data? {
+    private static func touch(_ file: URL) {
+        try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: file.path)
+    }
+
+    private static func httpDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+        return formatter.string(from: date)
+    }
+
+    private static func download(_ url: URL, since modified: Date?) async -> (data: Data?, notModified: Bool)? {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 2
         configuration.timeoutIntervalForResource = 2
         configuration.httpShouldSetCookies = false
         let session = URLSession(configuration: configuration, delegate: NoAvatarRedirect(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
+        var request = URLRequest(url: url)
+        if let modified { request.setValue(httpDate(modified), forHTTPHeaderField: "If-Modified-Since") }
         do {
-            let (bytes, response) = try await session.bytes(from: url)
-            guard let response = response as? HTTPURLResponse, response.statusCode == 200,
+            let (bytes, response) = try await session.bytes(for: request)
+            guard let response = response as? HTTPURLResponse else { return nil }
+            if response.statusCode == 304 { return (nil, true) }
+            guard response.statusCode == 200,
                   response.expectedContentLength <= byteLimit, response.mimeType?.hasPrefix("image/") == true else { return nil }
             var data = Data()
             for try await byte in bytes {
                 guard data.count < byteLimit else { return nil }
                 data.append(byte)
             }
-            return data
+            return (data, false)
         } catch {
             return nil
         }

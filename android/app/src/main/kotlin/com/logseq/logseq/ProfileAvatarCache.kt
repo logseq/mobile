@@ -10,6 +10,9 @@ import okhttp3.Request
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 internal object ProfileAvatarCache {
@@ -36,8 +39,15 @@ internal object ProfileAvatarCache {
         val cached = try {
             if (file.length() in 1..byteLimit) decode(file.readBytes()) else null
         } catch (_: IOException) { null }
-        if (cached != null && System.currentTimeMillis() - file.lastModified() < lifetime) return cached
-        val bytes = download(url) ?: return cached
+        val modified = file.lastModified().takeIf { it > 0 }
+        val mustRevalidate = isProfileBucketHost(url.host)
+        if (cached != null && modified != null && !mustRevalidate && System.currentTimeMillis() - modified < lifetime) return cached
+        val result = download(url, if (cached == null) null else modified)
+        if (result?.notModified == true) {
+            file.setLastModified(System.currentTimeMillis())
+            return cached
+        }
+        val bytes = result?.bytes ?: return cached
         val image = decode(bytes) ?: return cached
         store(context, url.toString(), bytes)
         return image
@@ -76,13 +86,22 @@ internal object ProfileAvatarCache {
         return File(File(context.cacheDir, "profile-avatars"), key)
     }
 
-    private fun download(url: HttpUrl): ByteArray? = try {
-        http.newCall(Request.Builder().url(url).build()).execute().use { response ->
+    private data class AvatarDownload(val bytes: ByteArray? = null, val notModified: Boolean = false)
+
+    private fun download(url: HttpUrl, modified: Long?): AvatarDownload? = try {
+        val request = Request.Builder().url(url).apply {
+            if (modified != null) {
+                val date = Instant.ofEpochMilli(modified).atOffset(ZoneOffset.UTC).format(DateTimeFormatter.RFC_1123_DATE_TIME)
+                header("If-Modified-Since", date)
+            }
+        }.build()
+        http.newCall(request).execute().use { response ->
+            if (response.code == 304) return@use AvatarDownload(notModified = true)
             val body = response.body ?: return@use null
             if (response.code != 200 || body.contentType()?.type != "image" || body.contentLength() > byteLimit) return@use null
             val source = body.source()
             if (source.request(byteLimit + 1)) return@use null
-            source.readByteArray()
+            AvatarDownload(bytes = source.readByteArray())
         }
     } catch (_: IOException) { null }
 
