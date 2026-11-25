@@ -22,6 +22,7 @@ enum LGTaskDateSheetExtension {
                 .init(name: "dismiss", fields: [])
             ]
         ) { context in
+            let _ = context.revision
             guard case let .string(payload) = context.property("payload"),
                   let state = try? JSONDecoder().decode(LGTaskDateSheetState.self, from: Data(payload.utf8))
             else { return AnyView(EmptyView()) }
@@ -63,7 +64,7 @@ struct LGTaskDateSheetState: Decodable, Equatable {
 struct LGTaskDateSheetDetent: CustomPresentationDetent {
     static func height(in context: Context) -> CGFloat? {
         // Allow a six-week month, the search field, and the task date actions.
-        min(560, context.maxDetentValue)
+        min(500, context.maxDetentValue)
     }
 }
 
@@ -102,11 +103,12 @@ private struct LGTaskDatePresentation: View {
 }
 
 struct LGTaskDateSheet: View {
-    let context: LUIAppleExtensionViewContext
-    let state: LGTaskDateSheetState
+    let request: LGTaskDateSheetRequest
     @Environment(\.calendar) private var calendar
     @FocusState private var editingInput: Bool
     @State private var input = ""
+    private var context: LUIAppleExtensionViewContext { request.context }
+    private var state: LGTaskDateSheetState { request.state }
     private var enabled: Bool { state.ready && !state.waiting }
     private var canSubmit: Bool { enabled && !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -139,6 +141,16 @@ struct LGTaskDateSheet: View {
 
             Divider()
 
+            if let error = state.error {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .accessibilityIdentifier("task-dates.error")
+            }
+
             if state.ready {
                 ScrollView {
                     VStack(spacing: 0) {
@@ -146,7 +158,13 @@ struct LGTaskDateSheet: View {
                             .padding(.horizontal, 16)
                             .padding(.bottom, 8)
                             .disabled(!enabled)
-                        feedback
+                        if state.mixed && state.error == nil {
+                            Text(state.mixedTitle)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                        }
                         dateActions
                     }
                 }
@@ -162,24 +180,6 @@ struct LGTaskDateSheet: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("sheet.task-dates")
-    }
-
-    @ViewBuilder
-    private var feedback: some View {
-        if let error = state.error {
-            Text(error)
-                .font(.footnote)
-                .foregroundStyle(.red)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .accessibilityIdentifier("task-dates.error")
-        } else if state.mixed {
-            Text(state.mixedTitle)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-        }
     }
 
     @ViewBuilder

@@ -1768,6 +1768,17 @@ let recurring_task_modes_keep_calendar_cadence () =
   check_eq (next Skip_to_future) (Some (midnight 20260331));
   check_eq (next From_completion) (Some (midnight 20260401))
 
+let recurring_task_dates_advance_as_one_occurrence () =
+  let module Date = Dev_query.Date_time_util in
+  let start = Int64.to_int (Date.journal_day_to_local_ms 20260307) + 9 * 3_600_000 in
+  let deadline = start + 8 * 3_600_000 in
+  let now = Int64.to_int (Date.plus Days 1 (Int64.of_int start)) + 3 * 3_600_000 in
+  let rule = {Task_recurrence.unit_name = "day"; frequency = 1; mode = Skip_to_future} in
+  let dates = [Task_recurrence.scheduled, start; Task_recurrence.deadline, deadline] in
+  let next = Task_recurrence.next_dates ~now rule dates in
+  check_eq (List.map (fun (c : Pending_ops.property_change) -> c.value) next)
+    (List.map (fun (_, date) -> Some (Pending_ops.Int_value (Int64.to_int (Date.plus Days 2 (Int64.of_int date))))) dates)
+
 let task_date_sheet_rejects_invalid_text () =
   List.iter (fun backend -> R.with_runtime (fun session _ _ ->
     Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
@@ -1793,6 +1804,10 @@ let task_date_sheet_rejects_invalid_text () =
         Lui_protocol.String_map.singleton "value" (Lui_protocol.StringValue value))) in
       submit "invalid date";
       check_eq ~msg:"invalid text cannot save the midnight default" (submitted ()) None;
+      (match App_test.extension_property app node "payload" with
+       | Some (Lui_protocol.StringValue payload) ->
+         check_eq (member "error" (J.from_string payload)) (`String "Choose a valid date and time")
+       | _ -> fail "Expected task date sheet state");
       submit "October 15, 2030 at 3:00pm";
       match submitted () with
       | Some request ->
@@ -1826,6 +1841,25 @@ let agenda_date_save_releases_hidden_editor () = R.with_runtime (fun session run
   check_eq ~msg:"a date outside the agenda releases the scoped editor" (draft hidden) `Null;
   check_eq ~msg:"the title draft is saved before closing" (value runtime Q.alpha "block/title")
     (Some (Ds.String "Edited agenda task")))
+
+let today_date_save_keeps_visible_journal_task_editing () = R.with_runtime (fun session runtime conn ->
+  let now = Session_types.now_ms () in
+  let day = Cache_model.journal_day_for_ms now in
+  rebase runtime conn [put Q.page "block/journal-day" (Ds.Int64 (Int64.of_int day));
+    put Q.alpha Task_recurrence.scheduled (Ds.Int64 (Int64.of_int now))];
+  ignore (start session "Draft in Today");
+  let save collapsed original next =
+    let input = `Assoc [
+      "action", `String "saveTaskDates"; "editingUuid", `String Q.alpha;
+      "targets", `List [`Assoc ["uuid", `String Q.alpha; "scheduled", `Int original]];
+      "agendaCollapsedSections", `List collapsed;
+      "tasksView", `Assoc ["section", `String "today"; "groupByPage", `Bool true;
+        "showCompleted", `Bool true; "showPast", `Bool true];
+      "changes", `Assoc ["scheduled", `Int next]] in
+    result (Rpc_test.dispatch_json session "nodeProperty" (J.to_string input)) in
+  check_eq (member "uuid" (draft (save [] now (now + 1)))) (`String Q.alpha);
+  let group = Journal_task_dates.task_group_key "today" Q.page in
+  check_eq (draft (save [`String group] (now + 1) (now + 2))) `Null)
 
 let starting_old_task_makes_it_recent () = R.with_runtime (fun session runtime conn ->
   let before = Session_types.now_ms () in
@@ -1886,6 +1920,7 @@ let splitting_query_result_focuses_new_outline_row () =
 let cases = [
   case "task date sheet rejects invalid text" task_date_sheet_rejects_invalid_text;
   case "agenda date save releases the hidden editor" agenda_date_save_releases_hidden_editor;
+  case "saving a date preserves a visible Today task editor" today_date_save_keeps_visible_journal_task_editing;
   case "starting an old undated task makes it recent" starting_old_task_makes_it_recent;
   case "splitting a query result focuses the new outline row" splitting_query_result_focuses_new_outline_row;
   case "editor date buttons follow Task membership" editor_task_date_buttons_follow_task_membership;
@@ -1900,6 +1935,7 @@ let cases = [
   case "journal task dates batch uses atomic guarded properties" journal_task_dates_batch_is_atomic_and_guarded;
   case "recurring tasks advance when completed" recurring_tasks_advance_when_completed;
   case "recurring task modes keep their calendar cadence" recurring_task_modes_keep_calendar_cadence;
+  case "recurring task dates advance as one occurrence" recurring_task_dates_advance_as_one_occurrence;
   case "calendar task dates preserve individual times" journal_task_dates_calendar_preserves_each_task_time;
   case "date command NLP inputs open empty without initializing the engine" temporal_command_inputs_open_empty;
   case "date command calendars preview valid NLP input on both hosts" temporal_command_previews_follow_valid_input;

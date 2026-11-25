@@ -80,31 +80,58 @@ let recurrence_json db eid =
     `Assoc ["unit", `String unit_name; "frequency", `Int frequency; "mode", `String mode;
       "custom", `Bool custom]
 
-let next_repetition ~now ~current {unit_name; frequency; mode} =
+let repetition_shift {unit_name; frequency; _} anchor count =
   let module Date = Dev_query.Date_time_util in
   let period = Option.get (repeat_period unit_name) in
   let max_units = match period with
     | Minutes -> 5_300_000_000 | Hours -> 88_000_000 | Days -> 3_660_000
     | Weeks -> 525_000 | Months -> 120_000 | Years -> 10_000 in
-  let shift anchor count =
-    if count > max_units / frequency then None
-    else
-      let next = Int64.to_int (Date.plus period (frequency * count) (Int64.of_int anchor)) in
-      if valid_date next && next > anchor then Some next else None in
+  if count > max_units / frequency then None
+  else
+    let next = Int64.to_int (Date.plus period (frequency * count) (Int64.of_int anchor)) in
+    if valid_date next && next > anchor then Some next else None
+
+let repetitions_until_future ~now ~current rule =
+  let shift = repetition_shift rule current in
   let after_now = function None -> true | Some next -> next > now in
   let rec first_after low high =
-    if high - low = 1 then shift current high
+    if high - low = 1 then high
     else
       let middle = low + (high - low) / 2 in
-      if after_now (shift current middle) then first_after low middle
+      if after_now (shift middle) then first_after low middle
       else first_after middle high in
   let rec find_upper low high =
-    if after_now (shift current high) then first_after low high
+    if after_now (shift high) then first_after low high
     else find_upper high (high * 2) in
-  match mode with
-  | From_completion -> shift now 1
-  | From_scheduled -> shift current 1
-  | Skip_to_future -> find_upper 0 1
+  find_upper 0 1
+
+let next_repetition ~now ~current rule =
+  let anchor, count = match rule.mode with
+    | From_completion -> now, 1
+    | From_scheduled -> current, 1
+    | Skip_to_future -> current, repetitions_until_future ~now ~current rule in
+  repetition_shift rule anchor count
+
+let next_dates ~now rule dates =
+  let change attr current next =
+    {Ops.attr; expected = Some (Ops.Int_value current); value = Some (Ops.Int_value next)} in
+  match dates with
+  | [] -> []
+  | [attr, current] ->
+    Option.to_list (Option.map (change attr current) (next_repetition ~now ~current rule))
+  | (_, first) :: rest ->
+    let anchor = List.fold_left (fun earliest (_, value) -> min earliest value) first rest in
+    let count = match rule.mode with
+      | Skip_to_future -> repetitions_until_future ~now ~current:anchor rule
+      | From_completion | From_scheduled -> 1 in
+    let changes = List.map (fun (attr, current) ->
+      let base = match rule.mode with
+        | From_completion -> now + (current - anchor)
+        | From_scheduled | Skip_to_future -> current in
+      Option.map (change attr current) (repetition_shift rule base count)) dates in
+    List.fold_right (fun change acc ->
+      Option.bind change (fun change -> Option.map (List.cons change) acc)) changes (Some [])
+    |> Option.value ~default:[]
 
 let complete_repetition db ~uuid ~expected ~now =
   let temporal_attrs = match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
@@ -114,12 +141,10 @@ let complete_repetition db ~uuid ~expected ~now =
       if checked <> None && checked <> Some status_attr then None else
       Option.map (fun rule ->
         let attrs = match referenced_ident db eid (repeat_attr "temporal-property") with
-          | Some attr when attr <> scheduled && attr <> deadline -> [attr]
-          | _ -> [scheduled; deadline] in
-        List.filter_map (fun attr ->
-          Option.bind (date db eid attr) (fun current ->
-            Option.map (fun next -> {Ops.attr; expected = Some (Ops.Int_value current);
-              value = Some (Ops.Int_value next)}) (next_repetition ~now ~current rule))) attrs)
+          | Some attr -> [attr]
+          | None -> [scheduled; deadline] in
+        List.filter_map (fun attr -> Option.map (fun value -> attr, value) (date db eid attr)) attrs
+        |> next_dates ~now rule)
         (recurrence db eid) in
   match temporal_attrs with
   | Some (_ :: _ as changes) when Ds.entid db "db/ident" (Ds.Keyword todo_ident) <> None ->
@@ -128,6 +153,18 @@ let complete_repetition db ~uuid ~expected ~now =
     let guard = {Ops.attr = repeat_attr "repeated?"; expected = repeated; value = repeated} in
     Some (Ops.Set_properties {uuid; changes = status :: guard :: changes; updated_at = Some now})
   | _ -> None
+
+let status_edit ?db ~now ~uuid ~expected ~value fallback =
+  let status_ident db = function
+    | Some (Ops.Ref_ident ident) -> Some ident
+    | Some (Ops.Ref_uuid uuid) ->
+      Option.bind (Ds.entid db "block/uuid" (Ds.Uuid uuid)) (fun eid ->
+        match Read.value db eid "db/ident" with Some (Ds.Keyword ident) -> Some ident | _ -> None)
+    | _ -> None in
+  match db with
+  | Some db when status_ident db value = Some done_ident && status_ident db expected <> Some done_ident ->
+    Option.value ~default:fallback (complete_repetition db ~uuid ~expected ~now)
+  | _ -> fallback
 
 let stored_property db eid attr =
   match Read.value db eid attr with

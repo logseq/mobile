@@ -9,6 +9,30 @@ let member = Json.Util.member
 let json_int = function Some value -> `Int value | None -> `Null
 let identity value = Ok value
 let week_days = 7
+let max_upcoming_days = 31
+
+let task_group_key section page = "task-page:" ^ section ^ ":" ^ page
+
+let task_field key = function
+  | `Assoc fields -> Option.value ~default:`Null (List.assoc_opt key fields)
+  | _ -> `Null
+
+let visible_in_tasks ~section ~show_completed ~show_past task =
+  let status = task_field "ident" (task_field "status" (task_field "block" task)) in
+  (show_completed || status <> `String Task_recurrence.done_ident)
+  && (section = "upcoming" || show_past || task_field "past" task <> `Bool true)
+
+let task_is_visible agenda ~section ~collapsed ~group_by_page ~show_completed ~show_past uuid =
+  match task_field section agenda with
+  | `List tasks ->
+    List.exists (fun task ->
+      task_field "uuid" task = `String uuid
+      && visible_in_tasks ~section ~show_completed ~show_past task
+      && (not group_by_page ||
+        match task_field "pageId" (task_field "block" task) with
+        | `String page -> not (List.mem (task_group_key section page) collapsed)
+        | _ -> true)) tasks
+  | _ -> false
 
 let configuration db =
   let read_config datom =
@@ -19,10 +43,10 @@ let configuration db =
   | Some (Ds.Map entries) ->
     let setting key = List.assoc_opt (Ds.Keyword key) entries in
     let days = match setting "scheduled/future-days" with
-      | Some (Ds.Int64 days) when days >= 0L -> Int64.to_int (min (Int64.of_int week_days) days)
-      | _ -> week_days in
+      | Some (Ds.Int64 days) when days >= 0L -> Int64.to_int (min (Int64.of_int max_upcoming_days) days)
+      | _ -> max_upcoming_days in
     setting "feature/disable-scheduled-and-deadline-query?" = Some (Ds.Bool true), days
-  | _ -> false, week_days
+  | _ -> false, max_upcoming_days
 
 let valid_date = Task_recurrence.valid_date
 let date = Task_recurrence.date
@@ -41,7 +65,8 @@ let rows db today lookahead =
   let module Date = Dev_query.Date_time_util in
   let midnight = Date.journal_day_to_local_ms today in
   let last_upcoming = Cache_model.journal_day_for_ms (Int64.to_int (Date.plus Months 1 midnight)) in
-  let end_day = Option.map offset_day lookahead in
+  let end_day = Option.map (fun days -> offset_day (min week_days days)) lookahead in
+  let upcoming_end = Option.map (fun days -> min last_upcoming (offset_day days)) lookahead in
   let within_window = function
     | Some timestamp as value ->
       let day = Cache_model.journal_day_for_ms timestamp in
@@ -136,9 +161,10 @@ let rows db today lookahead =
           Some (Doing, -(Option.value ~default:0 (Lazy.force activity)))
         | _, _ -> dated_section in
       let dates = List.filter_map (Option.map Cache_model.journal_day_for_ms) [scheduled_at; deadline_at] in
-      let upcoming = List.exists (fun day -> day >= first_upcoming && day <= last_upcoming) dates in
+      let upcoming = Option.exists (fun last -> List.exists (fun day -> day >= first_upcoming && day <= last) dates)
+        upcoming_end in
       let recent day = day >= first_today && day <= today in
-      let due = List.exists recent dates in
+      let due = lookahead <> None && List.exists recent dates in
       if Read.recycled db eid then None
         else match Read.ref_eids db eid "block/page" with
           | page :: _ ->
@@ -199,8 +225,11 @@ let preserve_for_local_edit cache ~before ~after changes =
     | "logseq.property/status" -> true
     | _ -> false in
   let changed = Hashtbl.create 4 in
+  let hierarchy = Hashtbl.create 4 in
   if List.for_all (fun (d : Ds.datom) ->
     Hashtbl.replace changed d.e ();
+    if List.mem d.a ["block/order"; "block/page"; "block/parent"] then
+      Hashtbl.replace hierarchy d.e ();
     ordinary_attr d.a) changes then
     List.iter (fun (_, cached) ->
       if member "success" cached.result = `Bool true
@@ -209,7 +238,9 @@ let preserve_for_local_edit cache ~before ~after changes =
         let unreferenced db eid =
           List.for_all (fun attr -> Seq.is_empty (Datascript_value.datoms_by_ref db Ds.Aevt attr eid))
             ["block/refs"; "block/tags"; "logseq.property/status"; "logseq.property/priority";
-             "logseq.property/asset"; "logseq.property/order-list-type"] in
+             "logseq.property/asset"; "logseq.property/order-list-type"]
+          && (not (Hashtbl.mem hierarchy eid)
+              || Seq.is_empty (Datascript_value.datoms_by_ref db Ds.Aevt "block/parent" eid)) in
         let local_body db eid = match Read.uuid_for_eid db eid with
           | None -> Seq.is_empty (Ds.Db.datoms db Ds.Eavt ~e:eid ())
           | Some _ ->

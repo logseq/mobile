@@ -1675,13 +1675,9 @@ let update_block_status session input fields =
               | None -> None)
          in
          let value = Some (Rpc.status_semantic_ref status) in
-         let repetition =
-           if value = Some (Ops.Ref_ident Task_recurrence.done_ident) && expected <> value then
-             Option.bind (query_db session) (fun db ->
-               Task_recurrence.complete_repetition db ~uuid ~expected ~now:(now_ms ()))
-           else None in
-         stage_result session operation_id cursor (Option.value repetition
-           ~default:(Ops.Set_property {Ops.uuid; attr = "logseq.property/status"; expected; value})))
+         let intent = Task_recurrence.status_edit ?db:(query_db session) ~now:(now_ms ()) ~uuid ~expected ~value
+           (Ops.Set_property {Ops.uuid; attr = "logseq.property/status"; expected; value}) in
+         stage_result session operation_id cursor intent)
   else
     match
       let ( let* ) = Result.bind in
@@ -1897,7 +1893,7 @@ let publish_flashcards session (decks : Flashcard_decks.state) cards error =
   session.Types.state := {(state session) with flashcards = cards;
     flashcard_decks = {decks with choices; error}}
 
-let reload_flashcards session now =
+let reload_flashcards ?(resume = false) session now =
   let decks = flashcard_deck_state session in
   match flashcards_in_scope ~all:true session now decks.selected with
   | Error message -> publish_flashcards session {decks with total_cards = 0} [] (Some message)
@@ -1910,7 +1906,20 @@ let reload_flashcards session now =
         List.iter (fun (card : Flashcards.due_card) -> Hashtbl.replace by_uuid card.block.uuid card) all;
         Ok (List.filter_map (Hashtbl.find_opt by_uuid) remaining) in
     (match cards with
-     | Ok cards -> publish_flashcards session decks cards None
+     | Ok cards ->
+       let uuid (card : Flashcards.due_card) = card.block.uuid in
+       let cards = if resume && decks.practice_remaining = None then begin
+           let by_uuid = Hashtbl.create (List.length cards) in
+           List.iter (fun card -> Hashtbl.replace by_uuid (uuid card) card) cards;
+           let retained = List.filter_map (fun old ->
+             let id = uuid old in
+             let card = Hashtbl.find_opt by_uuid id in
+             Hashtbl.remove by_uuid id;
+             card) (state session).flashcards in
+           retained @ List.filter (fun card -> Hashtbl.mem by_uuid (uuid card)) cards
+         end else cards in
+       let decks = {decks with practice_remaining = Option.map (fun _ -> List.map uuid cards) decks.practice_remaining} in
+       publish_flashcards session decks cards None
      | Error message -> publish_flashcards session decks [] (Some message))
 
 let flashcard_deck_action session fields =
@@ -2231,8 +2240,10 @@ let set_widget_task_status session fields =
     else if current.uuid <> expected_uuid then Error "The task status has changed" else
     let* status = match List.find_opt (fun (status : Model.status) -> status.uuid = status_uuid) choices with
       | Some status -> Ok status | None -> Error "The task status is no longer available" in
-    Ok (Some (Ops.Set_property { uuid; attr = widget_status;
-      expected = Effects.stored_status_value db uuid; value = Some (Effects.status_reference status) })) in
+    let expected = Effects.stored_status_value db uuid in
+    let value = Some (Effects.status_reference status) in
+    Ok (Some (Task_recurrence.status_edit ~db ~now:(now_ms ()) ~uuid ~expected ~value
+      (Ops.Set_property { uuid; attr = widget_status; expected; value }))) in
   match update with
   | Error message -> Rpc.failure "invalid_widget_task" message
   | Ok None -> snapshot_visible session
@@ -2683,11 +2694,21 @@ let rec dispatch session action payload =
                         Json.Util.member "editingUuid" input, current.outliner_state.editing with
                   | `List collapsed, `String uuid, Some editing when editing.uuid = uuid ->
                     let agenda = journal_tasks_json session in
-                    let visible = List.exists (fun section ->
-                      not (List.mem (`String section) collapsed)
-                      && match Json.Util.member section agenda with
-                         | `List tasks -> List.exists (fun task -> Json.Util.member "uuid" task = `String uuid) tasks
-                         | _ -> false) ["overdue"; "doing"; "planned"] in
+                    let visible = match Json.Util.member "tasksView" input with
+                      | `Assoc _ as view ->
+                        let boolean key = Json.Util.member key view = `Bool true in
+                        (match Json.Util.member "section" view with
+                         | `String ("today" | "upcoming" as section) ->
+                           Journal_task_dates.task_is_visible agenda ~section
+                             ~collapsed:(List.filter_map (function `String key -> Some key | _ -> None) collapsed)
+                             ~group_by_page:(boolean "groupByPage") ~show_completed:(boolean "showCompleted")
+                             ~show_past:(boolean "showPast") uuid
+                         | _ -> false)
+                      | _ -> List.exists (fun section ->
+                        not (List.mem (`String section) collapsed)
+                        && match Json.Util.member section agenda with
+                           | `List tasks -> List.exists (fun task -> Json.Util.member "uuid" task = `String uuid) tasks
+                           | _ -> false) ["overdue"; "doing"; "planned"] in
                     if not visible then session.state := {current with
                       outliner_state = {current.outliner_state with editing = None; autocomplete = None}}
                   | _ -> () in
@@ -2794,9 +2815,11 @@ let rec dispatch session action payload =
          | None -> now_ms ())
       | None -> now_ms ()
     in
-    session.Types.state := {(state session) with flashcard_decks =
-      {(flashcard_deck_state session) with practice_remaining = None; completed = false}};
-    reload_flashcards session now;
+    let resume = (state session).flashcards <> [] in
+    if not resume then
+      session.Types.state := {(state session) with flashcard_decks =
+        {(flashcard_deck_state session) with practice_remaining = None; completed = false}};
+    reload_flashcards ~resume session now;
     debug
       ("loadFlashcards count="
        ^ string_of_int (List.length (state session).flashcards)

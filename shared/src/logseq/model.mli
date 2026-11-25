@@ -50,6 +50,7 @@ type tasks_view =
   }
 
 val default_tasks_view : tasks_view
+val tasks_view_section : tasks_tab -> string
 
 type ui_session =
   { graph_id : string option

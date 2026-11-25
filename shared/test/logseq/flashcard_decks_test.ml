@@ -474,7 +474,7 @@ let practice_when_nothing_is_due_preserves_scope_and_resets_on_navigation () =
     let reviewed = result (dispatch session "reviewFlashcard" ["uuid", `String Q.beta;
       "rating", `String "good"; "operationId", `String "94000000-0000-4000-8000-000000000098"; "now", `Int (now ())]) in
     expect [R.gamma] reviewed;
-    expect [] (result (Rpc_test.dispatch_json session "loadFlashcards" (string_of_int (now ()))));
+    expect [R.gamma] (result (Rpc_test.dispatch_json session "loadFlashcards" (string_of_int (now ()))));
     ignore (deck session ["action", `String "practice"]);
     ignore (Rpc_test.dispatch_json session "configure" {|{"graphId":"other","baseUrl":"https://api.logseq.io","token":"test-token"}|});
     check_eq (member "ok" (deck session ["action", `String "practice"; "graphId", `String "graph"])) (`Bool false);
@@ -495,7 +495,25 @@ let empty_and_unavailable_groups_do_not_offer_unrelated_practice () =
     check_eq (member "ok" (deck session ["action", `String "practice"])) (`Bool false);
     check_eq (Graph_runtime.pending_operations runtime) [])) [App_test.ios_backend; App_test.kotlin_backend]
 
+let resumed_reviews_drop_cards_that_lost_the_card_tag () = with_runtime (fun session runtime conn ->
+  let reload () = result (Rpc_test.dispatch_json session "loadFlashcards" (string_of_int (now ()))) in
+  ignore (select session (`String page_deck));
+  let practice = result (deck session ["action", `String "practice"]) in
+  let first = items "flashcards" practice |> List.hd |> member "block" |> member "uuid" |> R.text in
+  let retained = ids practice |> List.filter ((<>) (`String first)) in
+  let tag = if first = R.gamma then D.Ref_to (Q.ref_uuid subclass)
+    else D.Ref_to (D.Ident "logseq.class/Card") in
+  ignore (D.transact_conn conn [D.Retract (Q.ref_uuid first, "block/tags", Some tag)]);
+  Graph_runtime.rebase runtime 42 [] [first];
+  let resumed = reload () in
+  check_eq (member "practicing" (metadata resumed)) (`Bool true);
+  check_eq (ids resumed) retained;
+  let next = items "flashcards" resumed |> List.hd |> member "block" |> member "uuid" in
+  ignore (result (dispatch session "reviewFlashcard" ["uuid", next;
+    "rating", `String "good"; "operationId", `String "94000000-0000-4000-8000-000000000097"; "now", `Int (now ())])))
+
 let cases = [
+  case "resuming practice removes cards that lost their Card tag" resumed_reviews_drop_cards_that_lost_the_card_tag;
   case "due cards show the linked category on Android" native_due_card_shows_its_linked_category;
   case "Android can select a saved group with an advanced query" native_selects_an_advanced_saved_group;
   case "both native hosts can repeatedly practice all cards in the completed group" native_practice_again_repeats_the_whole_selected_group;

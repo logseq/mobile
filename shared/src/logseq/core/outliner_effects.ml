@@ -97,11 +97,8 @@ let next_status_value (block : Model.block) =
   | _ -> Some (Ops.Ref_ident "logseq.property/status.todo")
 
 let task_status_edit (context : State.outliner_context) ~now ~uuid ~expected ~value =
-  let repetition =
-    if value = Some (Ops.Ref_ident Task_recurrence.done_ident) && expected <> value then
-      Option.bind context.db (fun db -> Task_recurrence.complete_repetition db ~uuid ~expected ~now)
-    else None in
-  Option.value ~default:(Ops.task_status_edit ~now ~uuid ~expected ~value) repetition
+  Task_recurrence.status_edit ?db:context.db ~now ~uuid ~expected ~value
+    (Ops.task_status_edit ~now ~uuid ~expected ~value)
 
 let append_result left right =
   result (left.operations @ right.operations) (left.platform @ right.platform)

@@ -50,7 +50,7 @@ type page_entry = Outline_entry of retained_row | Reference_entry of reference_e
   | Placeholder_entry of placeholder
   | Journal_task_gap
   | Journal_task_heading of string
-  | Tasks_page_heading of string * string
+  | Tasks_page_heading of string * string * string
   | Journal_task_row of Yojson.Basic.t * bool
   | Journal_task_error
 val task_field : string -> Yojson.Basic.t -> Yojson.Basic.t

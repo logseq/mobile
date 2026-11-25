@@ -100,10 +100,18 @@ let task_dates_dialog model_source send : t =
             | Some uuid, Some (scope, target) when target = uuid && scope = View_rows.journal_task_scope uuid ->
               `List (List.map (fun name -> `String name) (Model.journal_tasks_collapsed current))
             | _ -> `Null in
+          let task_view = match current.destination, collapsed with
+            | Model.TasksDestination, `List _ ->
+              let options = current.tasks_view in
+              `Assoc ["section", `String (Model.tasks_view_section options.tab);
+                "groupByPage", `Bool options.group_by_page;
+                "showCompleted", `Bool options.show_completed; "showPast", `Bool options.show_past]
+            | _ -> `Null in
           let payload = Yojson.Basic.to_string (`Assoc [
             "action", `String "saveTaskDates"; "graphId", `String graph;
             "editingUuid", Option.fold ~none:`Null ~some:(fun uuid -> `String uuid) editing;
             "agendaCollapsedSections", collapsed;
+            "tasksView", task_view;
             "targets", `List targets; "changes", `Assoc changes; "repeat", repeat]) in
           ignore (send (Model.SubmitNodeProperty (key, payload)))
         | _ -> () in
@@ -1895,7 +1903,7 @@ let journal_task_row ?(tasks_screen = false) context model_source task_source se
           (with_ios_trailing_padding inset (box [metadata])));
       ])
 
-let task_heading ?(divider = true) context model_source send section ~identifier label =
+let task_heading ?page context model_source send section ~identifier label =
     let collapsed = Signal.map (fun (model : Model.logseq_model) ->
       List.mem section (Model.journal_tasks_collapsed model)) model_source in
     let title = text ~value:label ~style_class:"semibold" ~foreground:"muted-foreground" [] in
@@ -1915,12 +1923,30 @@ let task_heading ?(divider = true) context model_source send section ~identifier
     let contents = if Lui_ui.host context = KotlinHost then
         [row ~gap:6 ~cross:`center [title; chevron]]
       else [title; box ~width:6 []; chevron] in
-    box ~padding_horizontal:16 ~margin_top:12 ((if divider then [separator []] else []) @ [
-      button ~variant:`ghost ~padding_horizontal:0 ~foreground:"muted-foreground"
+    let toggle () = ignore (send (Model.ToggleJournalTaskSection section)) in
+    let current = Signal.sample model_source in
+    box ~padding_horizontal:16 ~margin_top:12 (match page with
+    | Some page when page <> "" ->
+      let disclosure_label = Signal.map (fun collapsed ->
+        View_base.tr current (if collapsed then "Expand" else "Collapse")) collapsed in
+      [row ~gap:0 ~cross:`center [
+        button ~variant:`ghost ~padding_horizontal:0 ~foreground:"muted-foreground"
+          ~min_height:44 ~text_alignment:`start ~text:label
+          ~label:(View_base.tr_named current "Open {1}" label)
+          ~disabled_signal:(Signal.map View_base.outliner_selection_active_ model_source)
+          ~accessibility_identifier:(identifier ^ ".open")
+          ~on_press:(fun _ -> ignore (send (View_base.request_node_action (Signal.sample model_source) page))) [title];
+        View_base.with_string_prop_signal AccessibilityLabel disclosure_label
+          (button ~variant:`ghost ~width:44 ~min_height:44 ~text:""
+            ~disabled_signal:(Signal.map View_base.outliner_selection_active_ model_source)
+            ~accessibility_identifier:identifier ~on_press:(fun _ -> toggle ()) [chevron]);
+      ]]
+    | _ ->
+      (if page = None then [separator []] else []) @
+      [button ~variant:`ghost ~padding_horizontal:0 ~foreground:"muted-foreground"
         ~min_height:44 ~text_alignment:`start ~text:label ~label
         ~accessibility_identifier:identifier
-        ~on_press:(fun _ -> ignore (send (Model.ToggleJournalTaskSection section))) contents;
-    ])
+        ~on_press:(fun _ -> toggle ()) contents])
 
 let journal_task_entry context model_source send = function
   | View_rows.Journal_task_gap -> box ~height:80 []
@@ -1963,9 +1989,9 @@ let mount_journal_task_entry ?tasks_screen context model_source send entry_sourc
   | View_rows.Journal_task_row (initial, _) ->
     journal_task_row ?tasks_screen context model_source (Signal.map (function
       | View_rows.Journal_task_row (task, _) -> task | _ -> initial) entry_source) send
-  | View_rows.Tasks_page_heading (section, initial) ->
-    reactive (task_heading ~divider:false context model_source send section ~identifier:section)
-      (Signal.map (function View_rows.Tasks_page_heading (_, title) -> title | _ -> initial) entry_source)
+  | View_rows.Tasks_page_heading (section, page, initial) ->
+    reactive (task_heading ~page context model_source send section ~identifier:section)
+      (Signal.map (function View_rows.Tasks_page_heading (_, _, title) -> title | _ -> initial) entry_source)
   | entry -> journal_task_entry context model_source send entry
 
 let outliner_bottom_spacer () =
@@ -2046,6 +2072,7 @@ let tasks_screen context model_source send : t = custom @@ fun mount_context par
     View_base.with_string_prop_signal BackgroundValue background (box ~corner_radius:22 [
       button ~text:label ~label ~icon:(`app image) ~variant:`ghost ~min_height:44
         ~padding_horizontal:15 ~corner_radius:22 ~selected_signal:selected
+        ~disabled_signal:(own (Signal.map View_base.outliner_selection_active_ model_source))
         ~foreground_signal:(own (Signal.map (fun selected -> if selected then "link" else "foreground") selected))
         ~accessibility_identifier:("tasks.tab." ^ id)
         ~on_press:(fun _ -> update_tasks_view model_source send (fun options -> { options with tab = value })) [];

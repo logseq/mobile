@@ -288,7 +288,7 @@ struct LGPlatformPresentationHost: ViewModifier {
                 get: { coordinator.taskDateSheet },
                 set: { if $0 == nil { coordinator.taskDateSheetDismissedByUser() } }
             )) { request in
-                LGTaskDateSheet(context: request.context, state: request.state)
+                LGTaskDateSheet(request: request)
                     .modifier(LGSheetSurface())
                     .presentationDetents([.custom(LGTaskDateSheetDetent.self)])
                     .presentationContentInteraction(.scrolls)

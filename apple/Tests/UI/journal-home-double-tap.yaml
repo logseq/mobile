@@ -1,0 +1,15 @@
+appId: com.logseq.logseq.PageBenchmark
+---
+- assertVisible:
+    id: outliner.block-action.home-tap-0
+- scrollUntilVisible:
+    element:
+      id: outliner.block-action.home-tap-70
+    direction: DOWN
+    timeout: 20000
+- assertNotVisible:
+    id: outliner.block-action.home-tap-0
+- doubleTapOn:
+    id: tab.bottom.home
+- assertVisible:
+    id: outliner.block-action.home-tap-0

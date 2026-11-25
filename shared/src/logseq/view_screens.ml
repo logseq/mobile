@@ -136,14 +136,15 @@ let search_screen model_source send : t =
 let uses_ios_native_header context =
   Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost
 
-let bottom_tab_row model_source send : t =
+let bottom_tab_row ~show_flashcards model_source send : t =
   let current = Signal.sample model_source in
   let cell = 50 and tab_width = 58 and inset = 4 in
   let destinations = [
     Model.JournalsDestination, "Home", "home", "tab-home", "tab-home-selected", Model.ShowJournals;
     Model.TasksDestination, "Tasks", "tasks", "tab-tasks", "tab-tasks-selected", Model.ShowTasks;
-    Model.FlashcardsDestination, "Flashcards", "flashcards", "flashcards", "flashcards", Model.ShowFlashcards;
-  ] in
+  ] @ (if show_flashcards then
+    [Model.FlashcardsDestination, "Flashcards", "flashcards", "flashcards", "flashcards", Model.ShowFlashcards]
+    else []) in
   let navigate destination action =
     let current : Model.logseq_model = Signal.sample model_source in
     if current.destination <> destination || current.app_navigation_path <> []
@@ -206,7 +207,10 @@ let bottom_tab_row model_source send : t =
 
 let capture_and_search_row (context : Lui_ui.ui_context) model_source send
     : t =
-  if uses_ios_native_header context then bottom_tab_row model_source send
+  if uses_ios_native_header context then
+    let show_flashcards = Signal.map (fun (current : Model.logseq_model) ->
+      List.mem "flashcards" current.sidebar_tabs) model_source in
+    reactive (fun show_flashcards -> bottom_tab_row ~show_flashcards model_source send) show_flashcards
   else if Lui_ui.host context = KotlinHost then
     row ~grow:1.0 ~gap:10 ~cross:`center
       ~accessibility_identifier:"row.bottom.capture"

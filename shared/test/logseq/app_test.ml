@@ -3512,9 +3512,9 @@ let flashcard_presentation_and_review_state_are_owned_by_lg () =
   check ~msg:"opening flashcards closes the sidebar"
     (not shown.sidebar_open);
   check_eq
-    ~msg:"reopening a loaded review just clears page context"
+    ~msg:"reopening refreshes the active review against the graph"
     shown.pending_effects
-    [ Model.ClearSelectedPageEffect 1 ];
+    [ Model.ClearSelectedPageEffect 1; Model.LoadFlashcardsEffect 2 ];
   check_eq
     ~msg:"opening flashcards with no review still loads due cards"
     (Model.update (Model.initial ()) Model.ShowFlashcards).pending_effects
@@ -3527,7 +3527,8 @@ let flashcard_presentation_and_review_state_are_owned_by_lg () =
     reviewed.pending_effects
     [
       Model.ClearSelectedPageEffect 1;
-      Model.ReviewFlashcardEffect (2, "card-a", "good");
+      Model.LoadFlashcardsEffect 2;
+      Model.ReviewFlashcardEffect (3, "card-a", "good");
     ];
   let resumed =
     List.fold_left Model.update answer [Model.ShowJournals; Model.ShowTasks; Model.ShowFlashcards] in
@@ -4037,7 +4038,8 @@ let flashcards_render_the_main_branch_reveal_and_rating_contract () =
     (App.model application).pending_effects
     [
       Model.ClearSelectedPageEffect 1;
-      Model.ReviewFlashcardEffect (2, "card-a", "good");
+      Model.LoadFlashcardsEffect 2;
+      Model.ReviewFlashcardEffect (3, "card-a", "good");
     ]
 
 let flashcards_render_empty_and_non_cloze_control_states () =
@@ -8062,6 +8064,29 @@ let journal_task_results_edit_and_select_the_source_block () =
       ["scheduled", "calendar", scheduled (); "deadline", "deadline", deadline ()]
   ) [true, ios_backend; false, kotlin_backend]
 
+let task_view_changes_settle_the_editor_and_respect_selection () =
+  let task = `Assoc ["uuid", `String "task"; "block", `Assoc ["pageId", `String "page"];
+    "past", `Bool true] in
+  let editing = Some {Model.editing_uuid = "task"; editing_is_task = Some true;
+    editing_title = "Draft"; caret_utf16_offset = 2} in
+  let current = { (Model.initial ()) with destination = Model.TasksDestination;
+    outliner_editing = editing; outliner_edit_scope = Some ("journal-task.task", "task");
+    journal_tasks = `Assoc ["today", `List [task]; "upcoming", `List []] } in
+  let upcoming = {current.tasks_view with tab = Model.TasksUpcoming} in
+  let update model options = Model.update model (Model.SetTasksView options) in
+  List.iter (fun options ->
+    let updated = update current options in
+    check_eq updated.outliner_edit_scope None;
+    check_eq updated.outliner_editing None;
+    check (List.exists (function Model.CancelOutlinerEditingEffect _ -> true | _ -> false)
+      updated.pending_effects))
+    [upcoming; {current.tasks_view with show_past = false}];
+  let selecting = {current with outliner_selected_block_ids = ["task"]} in
+  check_eq (update selecting upcoming) selecting;
+  let selecting = Model.update {current with outliner_editing = None} (Model.ToggleOutlinerSelection "task") in
+  check_eq ~msg:"switching tabs cannot race an in-flight selection"
+    (update selecting upcoming) selecting
+
 let older_journals_only_appear_at_the_journal_root () =
   let available =
     {
@@ -12068,6 +12093,7 @@ let cases =
     case "graph-switch-rearms-journal-pagination" graph_switch_rearms_journal_pagination;
     case "journal-agenda-is-retained-across-navigation" journal_agenda_is_retained_across_navigation;
     case "journal-task-results-edit-and-select-the-source-block" journal_task_results_edit_and_select_the_source_block;
+    case "task view changes settle the editor and respect selection" task_view_changes_settle_the_editor_and_respect_selection;
     case "older-journals-only-appear-at-the-journal-root" older_journals_only_appear_at_the_journal_root;
     case "journal-date-headings-open-their-page-on-both-hosts" journal_date_headings_open_their_page_on_both_hosts;
     case "journal dates follow the app language on both hosts" journal_dates_follow_the_app_language;

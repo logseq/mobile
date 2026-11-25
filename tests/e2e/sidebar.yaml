@@ -43,17 +43,13 @@ appId: com.logseq.logseq
 - assertNotVisible:
     id: "link.sidebar.graphs"
 - tapOn:
-    id: "button.sidebar"
-- tapOn:
-    id: "link.sidebar.flashcards"
+    id: "tab.bottom.flashcards"
 - assertVisible:
     id: "menu.flashcards.deck"
 - assertNotVisible:
     id: "button.graph-switch"
 - tapOn:
-    id: "button.sidebar"
-- tapOn:
-    id: "link.sidebar.journals"
+    id: "tab.bottom.home"
 - extendedWaitUntil:
     visible:
       id: "button.graph-switch"

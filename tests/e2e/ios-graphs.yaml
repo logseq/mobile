@@ -30,8 +30,6 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "screen.graphs"
 - tapOn:
-    id: "button.sidebar"
-- tapOn:
-    id: "link.sidebar.journals"
+    id: "tab.bottom.home"
 - assertNotVisible:
     id: "screen.graphs"

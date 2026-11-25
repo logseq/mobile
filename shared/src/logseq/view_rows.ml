@@ -281,7 +281,7 @@ type page_entry = Outline_entry of retained_row | Reference_entry of reference_e
   | Placeholder_entry of placeholder
   | Journal_task_gap
   | Journal_task_heading of string
-  | Tasks_page_heading of string * string
+  | Tasks_page_heading of string * string * string
   | Journal_task_row of Yojson.Basic.t * bool
   | Journal_task_error
 
@@ -353,7 +353,7 @@ let task_rows current =
 
 let tasks_view_rows (current : Model.logseq_model) =
   let options = current.tasks_view in
-  let section = match options.tab with TasksToday -> "today" | TasksUpcoming -> "upcoming" in
+  let section = Model.tasks_view_section options.tab in
   let agenda = current.journal_tasks in
   let text = function `String text -> text | _ -> "" in
   let number ~default = function `Int value -> value | _ -> default in
@@ -383,10 +383,8 @@ let tasks_view_rows (current : Model.logseq_model) =
       | order -> order in
     match options.sort_pages with
     | PageName -> by_name () | PageUpdated -> latest "pageUpdated" | PageCreated -> latest "pageCreated" in
-  let display task =
-    let status = task_field "status" (task_field "block" task) in
-    (options.show_completed || task_field "ident" status <> `String "logseq.property/status.done")
-    && (options.tab = TasksUpcoming || options.show_past || task_field "past" task <> `Bool true) in
+  let display = Journal_task_dates.visible_in_tasks ~section ~show_completed:options.show_completed
+    ~show_past:options.show_past in
   let render tasks =
     List.sort (fun left right -> match compare_tasks left right with
       | 0 -> String.compare (journal_task_uuid left) (journal_task_uuid right)
@@ -405,8 +403,9 @@ let tasks_view_rows (current : Model.logseq_model) =
       |> List.sort (fun left right -> compare_pages (List.hd left) (List.hd right))
       |> List.concat_map (function
         | task :: _ as tasks ->
-          let key = "task-page:" ^ section ^ ":" ^ page_id task in
-          Tasks_page_heading (key, page_title task) ::
+          let page = page_id task in
+          let key = Journal_task_dates.task_group_key section page in
+          Tasks_page_heading (key, page, page_title task) ::
           (if List.mem key (Model.journal_tasks_collapsed current) then [] else render tasks)
         | [] -> []) in
     (if task_field "error" agenda = `Bool true then [Journal_task_error] else []) @ entries
@@ -501,7 +500,7 @@ let page_entry_identifier = function
   | Placeholder_entry value -> "placeholder." ^ value.parent_uuid
   | Journal_task_gap -> "journal-tasks.gap"
   | Journal_task_heading section -> "journal-tasks." ^ section
-  | Tasks_page_heading (key, _) -> key
+  | Tasks_page_heading (key, _, _) -> key
   | Journal_task_row (task, _) -> journal_task_scope (journal_task_uuid task)
   | Journal_task_error -> "journal-tasks.error"
 

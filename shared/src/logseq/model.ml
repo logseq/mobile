@@ -1138,6 +1138,20 @@ let set_journal_tasks_collapsed (current : logseq_model) sections =
       else Lui_protocol.String_map.add graph (day, sections) current.journal_task_disclosures}
   | _ -> current
 
+let tasks_view_section = function TasksToday -> "today" | TasksUpcoming -> "upcoming"
+
+let tasks_selection_active current =
+  let selecting = function
+    | LongPressOutlinerBlockEffect _ -> true
+    | EditorOutlinerEventEffect (_, payload) ->
+      (match Yojson.Basic.from_string payload with
+       | `Assoc fields -> List.assoc_opt "type" fields = Some (`String "toggleBlockSelection")
+       | _ | exception Yojson.Json_error _ -> false)
+    | _ -> false in
+  current.destination = TasksDestination
+  && (current.tasks_selection_mode || current.outliner_selected_block_ids <> []
+      || List.exists selecting current.pending_effects || List.exists selecting current.in_flight_effects)
+
 let graph_refresh_active_ current = graph_effect_active_ current "refresh"
 let graph_create_active_ current = graph_effect_active_ current "create"
 let graph_unlock_active_ current = graph_effect_active_ current "unlock"
@@ -1735,6 +1749,24 @@ let cancel_outliner_editing (current : logseq_model) =
     }
   | None -> current
 
+let settle_hidden_task_editor ?(remount = false) current =
+  let options = current.tasks_view in
+  match current.destination, current.outliner_edit_scope with
+  | TasksDestination, Some (scope, uuid) when scope = "journal-task." ^ uuid ->
+    let visible = Journal_task_dates.task_is_visible current.journal_tasks
+      ~section:(tasks_view_section options.tab) ~collapsed:(journal_tasks_collapsed current)
+      ~group_by_page:options.group_by_page ~show_completed:options.show_completed
+      ~show_past:options.show_past uuid in
+    if remount || not visible then begin
+      let updated = { (cancel_outliner_editing current) with task_date_editor = None } in
+      (* An edit tap may still be queued when its row is removed from the Tasks list. *)
+      if current.outliner_editing = None then
+        enqueue_effect updated (CancelOutlinerEditingEffect updated.next_effect_id)
+      else updated
+    end
+    else current
+  | _ -> current
+
 let back_app_navigation (current : logseq_model) requested =
   if requested = 0 then
     (* System back below the last pushed route: settle transient state
@@ -2297,11 +2329,13 @@ let rec update (current : logseq_model) action =
       | _ -> None in
     if field = "scheduled" || field = "deadline" then open_task_date_editor current [uuid] editing field
     else current
+  | ToggleJournalTaskSection _ when tasks_selection_active current -> current
   | ToggleJournalTaskSection section ->
     let collapsed = journal_tasks_collapsed current in
-    set_journal_tasks_collapsed current
+    let updated = set_journal_tasks_collapsed current
       (if List.mem section collapsed then List.filter ((<>) section) collapsed
-       else section :: collapsed)
+       else section :: collapsed) in
+    settle_hidden_task_editor updated
   | RetryJournalTasks ->
     let key = "journal-tasks.refresh" in
     let running = List.exists (function NodePropertyEffect (_, id, _) -> id = key | _ -> false)
@@ -3087,12 +3121,15 @@ let rec update (current : logseq_model) action =
     in
     let id = updated.next_effect_id in
     enqueue_effect updated (ClearSelectedPageEffect id)
+  | SetTasksView _ when tasks_selection_active current -> current
   | SetTasksView tasks_view ->
-    let updated = { current with tasks_view } in
+    let updated = settle_hidden_task_editor ~remount:(current.tasks_view.tab <> tasks_view.tab)
+      { current with tasks_view } in
     if { current.tasks_view with tab = tasks_view.tab } = tasks_view then updated
     else update updated SaveUISession
   | SelectTasks ->
     { (cancel_outliner_editing current) with tasks_selection_mode = true }
+  | ShowFlashcards when not (List.mem "flashcards" current.sidebar_tabs) -> current
   | ShowFlashcards ->
     let updated =
       {
@@ -3106,10 +3143,9 @@ let rec update (current : logseq_model) action =
     let cleared =
       enqueue_effect updated (ClearSelectedPageEffect clear_id)
     in
-    (* Reloading starts a new due-card queue, so keep an active review across tabs. *)
     let loading = List.exists (function LoadFlashcardsEffect _ -> true | _ -> false)
       (current.pending_effects @ current.in_flight_effects) in
-    if current.flashcards <> [] || loading then cleared
+    if loading then cleared
     else enqueue_effect cleared (LoadFlashcardsEffect cleared.next_effect_id)
   | ShowGraphs ->
     {
@@ -3226,6 +3262,7 @@ let rec update (current : logseq_model) action =
     (match request with None -> updated
      | Some payload -> enqueue_effect updated (SignInEffect (updated.next_effect_id, payload)))
   | ApplySettingsSnapshot settings ->
+    let sidebar_tabs = normalize_sidebar_tabs settings.sidebar_tabs in
     {
       current with
       appearance = settings.appearance;
@@ -3234,7 +3271,9 @@ let rec update (current : logseq_model) action =
       system_language = Option.value ~default:current.system_language settings.system_language;
       spell_check = settings.spell_check;
       auto_correction = settings.auto_correction;
-      sidebar_tabs = normalize_sidebar_tabs settings.sidebar_tabs;
+      sidebar_tabs;
+      destination = (if current.destination = FlashcardsDestination && not (List.mem "flashcards" sidebar_tabs)
+        then JournalsDestination else current.destination);
       base_url = settings.base_url;
       base_url_draft = settings.base_url;
       version = settings.version;
@@ -3399,10 +3438,13 @@ let rec update (current : logseq_model) action =
     persist_settings_change current
       { current with auto_correction = enabled }
   | ToggleSidebarTab tab ->
+    let sidebar_tabs = toggle_sidebar_tab current.sidebar_tabs tab in
     persist_settings_change current
       {
         current with
-        sidebar_tabs = toggle_sidebar_tab current.sidebar_tabs tab;
+        sidebar_tabs;
+        destination = (if current.destination = FlashcardsDestination && not (List.mem "flashcards" sidebar_tabs)
+          then JournalsDestination else current.destination);
       }
   | MoveSidebarTab (tab, offset) ->
     persist_settings_change current

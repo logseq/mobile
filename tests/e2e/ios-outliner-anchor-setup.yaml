@@ -12,9 +12,7 @@ appId: com.logseq.logseq
             id: "button.sidebar"
           timeout: 30000
 - tapOn:
-    id: "button.sidebar"
-- tapOn:
-    id: "link.sidebar.journals"
+    id: "tab.bottom.home"
 - extendedWaitUntil:
     visible:
       id: "button.composer.expand"
