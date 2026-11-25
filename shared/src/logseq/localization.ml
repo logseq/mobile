@@ -5308,6 +5308,9 @@ let dictionaries = [
     ("Unread notifications", "有未读通知");
     ("Unread", "未读");
     ("Add reaction", "添加表情回应");
+    ("Add reaction {1}", "添加表情回应 {1}");
+    ("Remove reaction {1}", "移除表情回应 {1}");
+    ("Search all emoji", "搜索所有表情");
     ("Add comment", "添加评论");
     ("Show comments", "展开评论");
     ("Hide comments", "收起评论");

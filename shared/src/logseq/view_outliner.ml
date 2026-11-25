@@ -211,15 +211,17 @@ let metadata_member key row =
 let row_reactions row =
   match metadata_member "reactions" row with `List values -> values | _ -> []
 
-let block_menu_reactions row =
+let block_menu_reactions current row =
   let owned = View_collaboration.selected_reactions (row_reactions row) in
-  `List (List.map (fun (id, emoji) -> `Assoc [
-    "id", `String id; "emoji", `String emoji; "selected", `Bool (List.mem id owned);
-  ]) Collaboration.emoji_choices)
+  let choices = Reaction_emoji.quick ~limit:5 (Model.recent_reaction_ids current) in
+  `List (List.map (fun (choice : Reaction_emoji.emoji) -> `Assoc [
+    "id", `String choice.id; "emoji", `String choice.glyph; "name", `String choice.name;
+    "selected", `Bool (List.mem choice.id owned);
+  ]) choices)
 
 let block_menu_labels current =
   `Assoc (List.map (fun label -> label, `String (View_base.tr current label))
-    ["Open block"; "Add comment"; "Add reaction"; "Edit"; "Scheduled"; "Deadline"; "Status"; "Copy"; "Cut"; "Copy reference"; "Copy URL";
+    ["Open block"; "More actions"; "Add comment"; "Add reaction"; "Edit"; "Scheduled"; "Deadline"; "Status"; "Copy"; "Cut"; "Copy reference"; "Copy URL";
      "Move"; "Move up"; "Move down"; "Outdent"; "Indent"; "Delete"; "Select"; "Unselect"])
 
 let handle_block_menu_event model_source row_source send = function
@@ -233,10 +235,13 @@ let handle_block_menu_event model_source row_source send = function
      | Some (StringValue "comments") ->
        let uuid = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
        ignore (send (Model.ComposeDiscussion ([uuid], None)))
+     | Some (StringValue "reaction") ->
+       let uuid = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
+       ignore (send (Model.OpenReactionPicker (uuid, View_collaboration.selected_reactions (row_reactions row))))
      | Some (StringValue action) when String.starts_with ~prefix:"reaction:" action ->
        let uuid = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
        let emoji = String.sub action 9 (String.length action - 9) in
-       ignore (send (Model.ToggleDiscussionReaction (uuid, emoji)))
+       ignore (send (Model.ChooseDiscussionReaction (uuid, emoji)))
      | Some (StringValue ("scheduled" | "deadline" as field)) ->
        if metadata_member "isTask" row = `Bool true then
          ignore (send (Model.OpenBlockTaskDate (row.row_uuid, field)))
@@ -292,7 +297,7 @@ let outliner_rich_block_view ?(show_code_language = true) model_source title_sou
            "isComment", `Bool (metadata_member "discussionKind" row = `String "comment");
            "statuses", `List statuses;
            "labels", block_menu_labels current;
-           "reactionChoices", block_menu_reactions row;
+           "reactionChoices", block_menu_reactions current row;
          ]))) model_source row_source);
    Lui_ui.on_event context node (handle_block_menu_event model_source row_source send);
    node
@@ -775,7 +780,7 @@ let native_outliner_row ~allow_drag ~trailing_inset model_source retained_source
       "selectionMember", `Bool (View_base.row_selected_ current row);
       "isTask", metadata_member "isTask" row;
       "menuLabels", block_menu_labels current;
-      "reactionChoices", block_menu_reactions row;
+      "reactionChoices", block_menu_reactions current row;
       "editing", `Bool (View_rows.retained_row_editing_ retained);
       "allowsDrag", `Bool allow_drag;
       "trailingInset", `Int trailing_inset;
@@ -1348,22 +1353,21 @@ let outliner_selection_toolbar ?(retain_task_actions = false) model_source send 
           current.outliner_rows in
         List.filter (Hashtbl.mem pending) blocks @ ordered in
       let add_comment () = ignore (send (Model.ComposeDiscussion (selected (), None))) in
-      let owned = Signal.map (fun (current : Model.logseq_model) ->
-        match current.outliner_selected_block_ids with
-        | [target] ->
-          List.find_opt (fun (row : Model.outline_row) -> row.row_uuid = target) current.outliner_rows
-          |> Option.fold ~none:[] ~some:(fun row -> View_collaboration.selected_reactions (row_reactions row))
-        | _ -> []) model_source in
-      let choose_reaction emoji = match selected () with
-        | [target] -> ignore (send (Model.ToggleDiscussionReaction (target, emoji)))
+      let open_reaction () =
+        let current : Model.logseq_model = Signal.sample model_source in
+        match selected (), current.outliner_selected_block_ids with
+        | [target], [row_id] ->
+          let owned =
+            List.find_opt (fun (row : Model.outline_row) -> row.row_uuid = row_id) current.outliner_rows
+            |> Option.fold ~none:[] ~some:(fun row -> View_collaboration.selected_reactions (row_reactions row)) in
+          ignore (send (Model.OpenReactionPicker (target, owned)))
         | _ -> () in
       let discussion_actions = [
         if_toolbar ~test:can_comment (quick_button ~on_press:add_comment (`app "discussion-comment")
           "Add comment" "button.outliner.selection.comment" "");
         if_toolbar ~test:can_react
-          (toolbar_menu ~icon:(`app "reaction-add") ~label:(View_base.tr current "Add reaction")
-            ~accessibility_identifier:"button.outliner.selection.reaction"
-            (View_collaboration.reaction_options ~owned choose_reaction));
+          (quick_button ~on_press:open_reaction (`app "reaction-add")
+            "Add reaction" "button.outliner.selection.reaction" "");
       ] in
       (* The native iOS toolbar supplies the first action's status menu. *)
       let leading_actions = if android then discussion_actions @ [status_menu]

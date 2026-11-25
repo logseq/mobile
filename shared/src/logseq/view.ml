@@ -398,6 +398,15 @@ let extension_registry () =
   Lui_extension.register_component registry (table_viewport_schema ());
   Lui_extension.register_component registry (property_date_schema ());
   Lui_extension.register_component registry (task_date_sheet_schema ());
+  Lui_extension.register_component registry
+    (Lui_extension.component "native-reaction-picker" [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]
+      true [] [] [Lui_extension.event "dismiss" []]);
+  Lui_extension.register_component registry
+    (Lui_extension.component "reaction-search-input"
+      [Lui_protocol.profile Lui_protocol.AndroidOS Lui_protocol.KotlinHost; Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]
+      false [] [Lui_extension.property "clear-title" Lui_extension.StringScalar true None;
+        Lui_extension.property "placeholder" Lui_extension.StringScalar true None]
+      [Lui_extension.event "query-changed" [Lui_extension.event_field "query" Lui_extension.StringScalar true]]);
   Lui_extension.register_component registry (journal_task_transition_schema ());
   Lui_extension.register_component registry (outliner_bottom_spacer_schema ());
   Lui_extension.register_component registry (journal_task_chevron_schema ());

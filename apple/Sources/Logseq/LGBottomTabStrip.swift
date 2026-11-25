@@ -47,7 +47,6 @@ struct LGBottomTabStrip: View {
             // UITabBar reserves horizontal margins around its floating capsule.
             .frame(width: CGFloat(items.count) * tabWidth + inset * 2 + 2 * horizontalMargin, height: 58)
             .padding(.horizontal, -horizontalMargin)
-            .overlay { unreadDot(items: items) }
             .background(LGSidebarPanExclusion())
             // Align the floating items within UITabBar with the trailing actions.
             .offset(y: 11)
@@ -78,11 +77,6 @@ struct LGBottomTabStrip: View {
                         .accessibilityHidden(true)
                 }
             }
-            #if os(iOS)
-            .overlay {
-                if let items = nativeItems { unreadDot(items: items) }
-            }
-            #endif
             .onGeometryChange(for: CGSize.self, of: \.size) { size = $0 }
             .contentShape(Capsule())
             .highPriorityGesture(tabDrag(count: count, cellWidth: cellWidth, inset: inset))
@@ -99,24 +93,6 @@ struct LGBottomTabStrip: View {
     }
 
     #if os(iOS)
-    @ViewBuilder private func unreadDot(items: [LGNativeBottomTabBar.Item]) -> some View {
-        if let index = items.firstIndex(where: { $0.unreadLabel != nil }) {
-            GeometryReader { geometry in
-                let width = geometry.size.width
-                let cell = (width - 2 * inset) / CGFloat(items.count)
-                let center = inset + (CGFloat(index) + 0.5) * cell
-                let leading = center + 13
-                Circle()
-                    .fill((colors["link"] ?? .secondary).opacity(0.8))
-                    .frame(width: 5, height: 5)
-                    .position(x: layoutDirection == .rightToLeft ? width - leading : leading,
-                              y: geometry.size.height / 2 - 10)
-            }
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
-    }
-
     private var nativeItems: [LGNativeBottomTabBar.Item]? {
         guard case let .string(json) = context.property("items") else { return nil }
         return try? JSONDecoder().decode([LGNativeBottomTabBar.Item].self, from: Data(json.utf8))
@@ -189,13 +165,11 @@ private struct LGNativeBottomTabBar: UIViewRepresentable {
         let name: String
         let image: String
         let selectedImage: String
-        let unreadLabel: String?
 
         @MainActor func tabBarItem(tag: Int) -> UITabBarItem {
             let item = UITabBarItem(title: nil, image: icon(image), selectedImage: icon(selectedImage))
             item.tag = tag
             item.accessibilityLabel = title
-            item.accessibilityValue = unreadLabel
             item.accessibilityIdentifier = "tab.bottom.\(name)"
             return item
         }

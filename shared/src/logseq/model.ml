@@ -81,6 +81,7 @@ type ui_session =
   ; settings_open : bool
   ; recent_graph_ids : string list
   ; read_notifications : (string * string list) list
+  ; recent_reactions : (string * string list) list
   ; tasks_view : tasks_view option
   }
 
@@ -553,6 +554,7 @@ type logseq_model =
   ; push_enabled : bool
   ; push_error : string option
   ; pending_push_route : (string * string) option
+  ; reaction_picker : (string * string list) option
   ; discussion_target : string option
   ; discussion_composition : (string list * string option) option
   ; expanded_discussions : string list
@@ -560,6 +562,7 @@ type logseq_model =
   ; saved_discussion_drafts : ((string list * string option) * string) list
   ; discussion_error : string option
   ; read_notifications : (string * string list) list
+  ; recent_reactions : (string * string list) list
   ; pdf_workspace : string option
   ; asset_preview : asset_preview option
   }
@@ -676,6 +679,9 @@ type logseq_action =
   | CloseDiscussion
   | EditDiscussionDraft of string
   | PostDiscussionComment
+  | OpenReactionPicker of string * string list
+  | CloseReactionPicker
+  | ChooseDiscussionReaction of string * string
   | ToggleDiscussionReaction of string * string
   | ReadNotification of string
   | ReadAllNotifications
@@ -977,6 +983,7 @@ let initial () =
     asset_preview = None;
     collaboration = `Null;
     push_enabled = false; push_error = None; pending_push_route = None;
+    reaction_picker = None;
     discussion_target = None;
     discussion_composition = None;
     expanded_discussions = [];
@@ -984,6 +991,7 @@ let initial () =
     saved_discussion_drafts = [];
     discussion_error = None;
     read_notifications = [];
+    recent_reactions = [];
     pdf_workspace = None;
     app_navigation_previews = [];
     app_navigation_path = [];
@@ -2222,10 +2230,12 @@ let ui_session (current : logseq_model) =
     settings_open = current.settings_open;
     tasks_view = Some current.tasks_view;
     read_notifications = current.read_notifications;
+    recent_reactions = current.recent_reactions;
   }
 
 let restore_ui_session (current : logseq_model) (session : ui_session) =
-  let current = {current with read_notifications = session.read_notifications} in
+  let current = {current with read_notifications = session.read_notifications;
+    recent_reactions = session.recent_reactions; reaction_picker = None} in
   let current = match session.tasks_view with
     | None -> current
     | Some preferences -> { current with tasks_view = { preferences with tab = current.tasks_view.tab } } in
@@ -2307,6 +2317,10 @@ let collaboration_field key = function
 
 let collaboration_string key json = match collaboration_field key json with
   | `String value -> value | _ -> ""
+
+let recent_reaction_ids (current : logseq_model) =
+  let account = collaboration_string "account" current.collaboration in
+  Option.value ~default:[] (List.assoc_opt account current.recent_reactions)
 
 let notification_items (current : logseq_model) = match collaboration_field "inbox" current.collaboration with
   | `List values -> values | _ -> []
@@ -2523,11 +2537,11 @@ let rec update (current : logseq_model) action =
     let applied = if projection.is_pdf_patch || projection.is_collaboration_patch then current
       else apply_core_snapshot current projection in
     let graph_changed = applied.selected_graph_id <> current.selected_graph_id in
-    let applied = if graph_changed then {applied with collaboration = `Null; discussion_target = None;
+    let applied = if graph_changed then {applied with collaboration = `Null; reaction_picker = None; discussion_target = None;
       discussion_composition = None; expanded_discussions = [];
       discussion_draft = ""; saved_discussion_drafts = []; discussion_error = None} else applied in
     let applied = match projection.collaboration_update with
-      | Some `Null -> {applied with collaboration = `Null; discussion_target = None; discussion_composition = None;
+      | Some `Null -> {applied with collaboration = `Null; reaction_picker = None; discussion_target = None; discussion_composition = None;
           expanded_discussions = []; saved_discussion_drafts = []}
       | Some data when Option.map (fun graph -> `String graph) applied.selected_graph_id
            = Some (collaboration_field "graphId" data) -> {applied with collaboration = data}
@@ -3288,7 +3302,7 @@ let rec update (current : logseq_model) action =
     let expanded_discussions = if List.mem target current.expanded_discussions then remaining else target :: remaining in
     {current with expanded_discussions}
   | CloseDiscussion ->
-    let next = {current with discussion_target = None; discussion_composition = None;
+    let next = {current with reaction_picker = None; discussion_target = None; discussion_composition = None;
       discussion_draft = ""; discussion_error = None} in
     (match current.discussion_composition with
      | Some composition ->
@@ -3308,6 +3322,21 @@ let rec update (current : logseq_model) action =
          "replyTo", (match reply with Some thread -> `String thread | None -> `Null)] in
     Option.fold ~none:current ~some:(fun target -> collaboration_request current target "comment"
       (("text", `String current.discussion_draft) :: fields)) current.discussion_target
+  | OpenReactionPicker (target, owned) ->
+    if target <> "" && notification_scope current <> None then
+      {current with reaction_picker = Some (target, owned)}
+    else current
+  | CloseReactionPicker -> {current with reaction_picker = None}
+  | ChooseDiscussionReaction (_, emoji) when Reaction_emoji.find emoji = None -> current
+  | ChooseDiscussionReaction (target, emoji) ->
+    let next = update {current with reaction_picker = None} (ToggleDiscussionReaction (target, emoji)) in
+    if next.next_effect_id = current.next_effect_id then next else
+      let account = collaboration_string "account" current.collaboration in
+      let previous = recent_reaction_ids current in
+      let recent = emoji :: List.take (Reaction_emoji.recent_limit - 1) (List.filter ((<>) emoji) previous) in
+      if account = "" || recent = previous then next
+      else update {next with recent_reactions =
+        (account, recent) :: List.remove_assoc account current.recent_reactions} SaveUISession
   | ToggleDiscussionReaction (target, emoji) ->
     collaboration_request {current with discussion_error = None}
       target "reaction" ["emoji", `String emoji]

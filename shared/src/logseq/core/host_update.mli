@@ -21,6 +21,7 @@ type host_ui_session =
   ; settings_open : bool
   ; recent_graph_ids : string list
   ; read_notifications : (string * string list) list
+  ; recent_reactions : (string * string list) list
   ; tasks_view : Yojson.Safe.t option
   }
 

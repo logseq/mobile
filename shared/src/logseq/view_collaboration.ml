@@ -7,16 +7,7 @@ let send_event send event _ = ignore (send event)
 let copy current key = View_base.tr current key
 let ready (current : Model.logseq_model) = current.collaboration <> `Null
 
-let emoji id = match List.assoc_opt id Collaboration.emoji_choices with
-  | Some value -> value
-  | None -> Node_presentation.reaction_emoji id
-
-let reaction_options ?owned choose =
-  List.map (fun (id, symbol) ->
-    let selected_signal = Option.map (Signal.map (List.mem id)) owned in
-    dropdown_menu_item ~text:symbol ?selected_signal
-      ~accessibility_identifier:("reaction." ^ id)
-      ~on_press:(fun _ -> choose id) []) Collaboration.emoji_choices
+let emoji = Node_presentation.reaction_emoji
 
 let selected_reactions items =
   List.filter_map (fun item -> if field "selected" item = `Bool true
@@ -32,21 +23,22 @@ let reaction_chip current send target reaction =
     text ~value:label ~font_size:"13" ~foreground
       ~padding_horizontal:8 ~padding_vertical:4 ~corner_radius:12 ~background:"muted" []
   else
+    let toggle = if selected || Reaction_emoji.find id = None then Model.ToggleDiscussionReaction (target, id)
+      else Model.ChooseDiscussionReaction (target, id) in
     box ~corner_radius:14
       ~background:(if selected then "task-tab-selected-background" else "task-tab-background") [
       button ~text:label ~size:`sm ~min_height:36 ~min_width:44 ~variant:`ghost ~selected
         ~foreground ~label ~accessibility_identifier:("reaction.block." ^ target ^ "." ^ id)
-        ~on_press:(send_event send (Model.ToggleDiscussionReaction (target, id)))
+        ~on_press:(send_event send toggle)
         [text ~value:label ~font_size:"13" ~foreground []];
     ]
 
 let add_reaction current send target reactions =
-  custom (fun context parent ->
-    let owned = Signal.constant context.Lui_ui.ui_scheduler (selected_reactions reactions) in
-    mount context ?parent
-      (menu ~icon:(`app "reaction-add") ~foreground:"muted-foreground"
-        ~label:(copy current "Add reaction") ~accessibility_identifier:("reaction.add." ^ target)
-        (reaction_options ~owned (fun id -> ignore (send (Model.ToggleDiscussionReaction (target, id)))))))
+  let label = copy current "Add reaction" in
+  button ~text:"" ~icon:(`app "reaction-add") ~size:`sm ~variant:`ghost
+    ~min_width:44 ~min_height:44 ~foreground:"muted-foreground" ~label
+    ~accessibility_identifier:("reaction.add." ^ target)
+    ~on_press:(send_event send (Model.OpenReactionPicker (target, selected_reactions reactions))) []
 
 let reaction_buttons current send item =
   let target = string "id" item in
@@ -123,6 +115,107 @@ let discussion_source source =
 
 let compose_input source send = composer source send ~autofocus:true
 
+let reaction_picker source send ~target ~owned =
+  custom @@ fun context parent ->
+  let current = Signal.sample source in
+  let query = Signal.state context.Lui_ui.ui_scheduler "" in
+  let search = Signal.own_signal context.ui_scope
+    (Signal.map String.trim (Signal.value query)) in
+  let recent = Reaction_emoji.quick ~limit:Reaction_emoji.recent_limit (Model.recent_reaction_ids current) in
+  let recent_ids = List.map (fun (entry : Reaction_emoji.emoji) -> entry.id) recent in
+  let entries query =
+    if query = "" then recent @
+      List.filter (fun (entry : Reaction_emoji.emoji) -> not (List.mem entry.id recent_ids)) (Reaction_emoji.all ())
+    else Reaction_emoji.search query in
+  let dismiss = send_event send Model.CloseReactionPicker in
+  let emoji_row (entry : Reaction_emoji.emoji) =
+    let selected = List.mem entry.id owned in
+    let label = View_base.tr_named current (if selected then "Remove reaction {1}" else "Add reaction {1}") entry.name in
+    box ~height:46 ~corner_radius:8
+      ?background:(if selected then Some "task-tab-selected-background" else None) [
+      row ~height:46 [
+        button ~text:entry.id ~label ~variant:`ghost ~grow:1.0 ~height:46 ~main:`start ~selected
+          ~accessibility_identifier:("reaction." ^ entry.id)
+          ~on_press:(send_event send (Model.ChooseDiscussionReaction (target, entry.id)))
+          [row ~grow:1.0 ~gap:12 ~cross:`center [
+             row ~width:28 ~main:`center [text ~value:entry.glyph ~font_size:"20" []];
+             text ~value:entry.id ~font_size:"15" ~foreground:"foreground" [];
+             box ~grow:1.0 [];
+             if selected then icon ~name:(`app "selection-done") ~point_size:14 ~margin_right:8 ~foreground:"link" [] else box [];
+           ]];
+      ];
+    ] in
+  let catalog = keyed ~source:(Signal.map (fun query -> [query]) search)
+    ~key:Fun.id ~cmp:String.compare ~mount:(fun key ->
+      match entries (Signal.sample key) with
+      | [] -> text ~value:(copy current "No results") ~foreground:"muted-foreground" ~padding:12 []
+      | entries -> virtual_list ~grow:1.0 ~accessibility_identifier:"reaction.catalog" [
+        View_rows.windowed_keyed ~identifier:"reaction.catalog.window" ~item_extent:46 ~window_size:16
+          ~source:(Signal.constant context.ui_scheduler entries)
+          ~key:(fun (entry : Reaction_emoji.emoji) -> entry.id) ~cmp:String.compare
+          ~mount:(fun entry -> reactive (Signal.map emoji_row entry)) ();
+      ]) in
+  let search_label = copy current "Search all emoji" in
+  let search_input =
+    match Lui_ui.profile context with
+    | { profile_os = Lui_protocol.IOS; profile_host = Lui_protocol.SwiftUIHost }
+    | { profile_os = Lui_protocol.AndroidOS; profile_host = Lui_protocol.KotlinHost } ->
+      box ~grow:1.0 [custom (fun context parent ->
+        let node = Lui_ui.extension context "reaction-search-input" in
+        attach context parent node;
+        Lui_ui.extension_property context node "placeholder" (Lui_protocol.StringValue search_label);
+        Lui_ui.extension_property context node "clear-title" (Lui_protocol.StringValue (copy current "Clear"));
+        Lui_ui.on_event context node (function
+          | Lui_protocol.ExtensionEvent (_, _, "query-changed", values) ->
+            (match Lui_protocol.String_map.find_opt "query" values with
+             | Some (Lui_protocol.StringValue text) -> Signal.set query text | _ -> ())
+          | _ -> ());
+        node)]
+    | _ -> search_field ~grow:1.0 ~min_height:44 ~text_signal:(Signal.value query)
+      ~placeholder:search_label ~label:search_label
+      ~accessibility_identifier:"reaction.search" ~on_input:(Signal.set query) [] in
+  let content = column ~grow:1.0 ~gap:6 ~padding_horizontal:16 ~padding_vertical:8 [
+    row ~gap:8 ~cross:`center [
+      search_input;
+      box ~width:44 ~height:44 ~corner_radius:22 ~background:"task-tab-background" [
+        button ~text:"" ~icon:(`app "close") ~variant:`ghost ~size:`sm ~width:44 ~height:44
+          ~foreground:"muted-foreground" ~label:(copy current "Close")
+          ~accessibility_identifier:"reaction.close" ~on_press:dismiss [];
+      ];
+    ];
+    separator [];
+    box ~grow:1.0 [catalog];
+  ] in
+  match Lui_ui.profile context with
+  | { profile_os = Lui_protocol.IOS; profile_host = Lui_protocol.SwiftUIHost } ->
+    let node = Lui_ui.extension context "native-reaction-picker" in
+    attach context parent node;
+    Lui_ui.on_event context node (function
+      | Lui_protocol.ExtensionEvent (_, _, "dismiss", _) -> dismiss ()
+      | _ -> ());
+    ignore (mount context ~parent:node content);
+    node
+  | profile ->
+    let android = profile.profile_host = Lui_protocol.KotlinHost in
+    let sheet = View_base.sheet ~model_source:source
+      ~title:(if android then "" else copy current "Add reaction") ~detents:"large"
+      ?height:(if android then Some 380 else None)
+      ~accessibility_identifier:"sheet.reactions" ~on_dismiss:dismiss [content] in
+    let panel =
+      if android then
+        themed ~tokens:["background", Lui_ui.Adaptive { light = "#F2F2F7"; dark = "#073642" }]
+          (stack [sheet])
+      else sheet in
+    mount context ?parent panel
+
+let reaction_overlay root source send =
+  let picker = Signal.map (fun (current : Model.logseq_model) ->
+    let thread_open = current.discussion_target <> None && current.discussion_composition = None in
+    if root <> thread_open then current.reaction_picker else None) source in
+  reactive (function
+    | Some (target, owned) -> reaction_picker source send ~target ~owned
+    | None -> box []) picker
+
 let thread_sheet source send =
   let current = Signal.sample source in
   let discussion = discussion_source source in
@@ -150,12 +243,16 @@ let thread_sheet source send =
       scroll ~grow:1.0 [body];
       if_ ~test:(Signal.map (fun discussion -> field "subject" discussion <> `Null) discussion)
         (composer source send ~autofocus:false);
+      reaction_overlay false source send;
     ]]
 
 let overlays source send =
-  if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
-    current.discussion_target <> None && current.discussion_composition = None) source)
-    (thread_sheet source send)
+  stack [
+    if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
+      current.discussion_target <> None && current.discussion_composition = None) source)
+      (thread_sheet source send);
+    reaction_overlay true source send;
+  ]
 
 let date current item =
   match field "createdAt" item with
@@ -169,6 +266,27 @@ let date current item =
 
 let notification_root (current : Model.logseq_model) =
   current.destination = Model.NotificationsDestination && current.app_navigation_path = []
+
+let notification_button source send =
+  let label current =
+    let title = copy current "Notifications" in
+    if Model.notification_count current > 0
+    then title ^ ", " ^ copy current "Unread notifications"
+    else title in
+  let unread = Signal.map (fun current -> Model.notification_count current > 0) source in
+  View_base.with_label_signal (Signal.map label source)
+    (button ~text:"" ~label:(label (Signal.sample source)) ~variant:`ghost ~size:`sm
+      ~width:44 ~height:44 ~foreground:"foreground" ~padding:0
+      ~accessibility_identifier:"button.notifications"
+      ~on_press:(send_event send Model.ShowNotifications) [
+        overlay ~width:24 ~height:24 [
+          icon ~name:(`app "tab-notifications") ~width:22 ~height:22 ~point_size:22
+            ~foreground:"foreground" [];
+          if_ ~test:unread
+            (align `top_trailing (box ~width:6 ~height:6 ~margin_top:2 ~margin_right:1
+              ~corner_radius:3 ~background:"link" ~accessibility_identifier:"notifications.unread-dot" []));
+        ];
+      ])
 
 let notification_menu ~android source send =
   let current = Signal.sample source in

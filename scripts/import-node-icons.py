@@ -66,6 +66,15 @@ for alias, key in emoji["aliases"].items():
     if key in emojis:
         emojis[alias] = emojis[key]
 data = json.dumps({"tabler": glyphs, "emoji": emojis}, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+# Keep the canonical IDs used by desktop reactions and the picker’s search terms.
+reactions = {"groups": {
+    category["id"]: [
+        [entry["id"], entry["skins"][0]["native"], entry["name"], " ".join(entry["keywords"])]
+        for key in category["emojis"] if (entry := emoji["emojis"].get(key))
+    ] for category in emoji["categories"]
+}, "aliases": emoji["aliases"]}
+catalog = root / "shared/native/reaction-emoji.json"
+catalog.write_text(json.dumps(reactions, ensure_ascii=False, separators=(",", ":")) + "\n")
 with tarfile.open(archive) as package:
     files = {name: package.extractfile("package/dist/fonts/" + name).read()
              for name in ["tabler-icons.ttf", "tabler-icons-filled.ttf"]}

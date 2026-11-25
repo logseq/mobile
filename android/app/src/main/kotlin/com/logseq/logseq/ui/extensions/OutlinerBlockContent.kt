@@ -36,7 +36,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -86,6 +88,8 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.text.AnnotatedString
@@ -415,18 +419,12 @@ private fun AndroidBlockActionMenu(
     fun label(key: String) = labels?.optString(key, key) ?: key
     fun perform(action: String) { onDismiss(); onAction(action) }
 
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, modifier = Modifier.testTag("outliner.block.menu")) {
+    val hasReactions = actions.optBoolean("discussionsAvailable") && reactions.length() > 0
+    val menuModifier = Modifier.testTag("outliner.block.menu").then(
+        if (hasReactions && submenu == null) Modifier.width(320.dp) else Modifier,
+    )
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, modifier = menuModifier) {
         when (submenu) {
-            "Reaction" -> for (index in 0 until reactions.length()) {
-                val choice = reactions.getJSONObject(index)
-                DropdownMenuItem(
-                    text = { Text(choice.getString("emoji")) },
-                    onClick = { perform("reaction:" + choice.getString("id")) },
-                    trailingIcon = if (choice.optBoolean("selected")) {
-                        { logseqIconResolver.icon("selection-done")?.let { Icon(it, contentDescription = null) } }
-                    } else null,
-                )
-            }
             "Move" -> {
                 BlockActionItem(label("Move up"), "toolbar-move-up") { perform("moveUp") }
                 BlockActionItem(label("Move down"), "toolbar-move-down") { perform("moveDown") }
@@ -442,6 +440,51 @@ private fun AndroidBlockActionMenu(
                 }
             }
             else -> {
+                if (hasReactions) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        for (index in 0 until reactions.length()) {
+                            val choice = reactions.optJSONObject(index) ?: continue
+                            val id = choice.getString("id")
+                            val active = choice.optBoolean("selected")
+                            Surface(
+                                onClick = { perform("reaction:" + id) },
+                                shape = CircleShape,
+                                color = Color.Transparent,
+                                modifier = Modifier.size(48.dp).testTag("reaction.quick.$id").semantics {
+                                    contentDescription = choice.getString("name")
+                                    selected = active
+                                },
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    val color = if (active) luiThemeColor("task-tab-selected-background", foreground = false)
+                                        ?: MaterialTheme.colorScheme.secondaryContainer
+                                    else MaterialTheme.colorScheme.surfaceContainerHighest
+                                    Box(Modifier.size(44.dp).background(color, CircleShape), contentAlignment = Alignment.Center) {
+                                        Text(choice.getString("emoji"), fontSize = 22.sp)
+                                    }
+                                }
+                            }
+                        }
+                        Surface(
+                            onClick = { perform("reaction") },
+                            shape = CircleShape,
+                            color = Color.Transparent,
+                            modifier = Modifier.size(48.dp).testTag("reaction.more"),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                val color = MaterialTheme.colorScheme.surfaceContainerHighest
+                                Box(Modifier.size(44.dp).background(color, CircleShape), contentAlignment = Alignment.Center) {
+                                    logseqIconResolver.icon("reaction-add")?.let {
+                                        Icon(it, contentDescription = label("Add reaction"))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 BlockActionItem(label("Open block"), "external-link") { perform("open") }
                 if (canEdit) BlockActionItem(label("Edit"), "edit") { perform("edit") }
                 if (canCut) {
@@ -451,9 +494,6 @@ private fun AndroidBlockActionMenu(
                 if (actions.optBoolean("discussionsAvailable")) {
                     if (!actions.optBoolean("isComment")) {
                         BlockActionItem(label("Add comment"), "discussion-comment") { perform("comments") }
-                    }
-                    if (reactions.length() > 0) {
-                        BlockActionItem(label("Add reaction"), "reaction-add") { submenu = "Reaction" }
                     }
                 }
                 if (actions.optBoolean("isTask")) {
