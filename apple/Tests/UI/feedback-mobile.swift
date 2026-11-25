@@ -338,26 +338,34 @@ import LogseqModel
                 try extensionEvent("native-navigation-stack", "back", ["count": .int(1)])
                 await pause()
                 func inboxScrollView() -> UIScrollView? {
-                    func scrollViews(_ view: UIView) -> [UIScrollView] {
-                        let selfView = (view as? UIScrollView).map { [$0] } ?? []
-                        return selfView + view.subviews.flatMap(scrollViews)
-                    }
                     let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
-                    return windows.filter(\.isKeyWindow).flatMap(scrollViews).first {
-                        $0.bounds.height > 250 && $0.contentSize.height > $0.bounds.height * 2 && $0.isScrollEnabled
+                    guard let window = windows.first(where: \.isKeyWindow) else { return nil }
+                    // The Duo can keep additional scrollers attached behind the visible destination.
+                    let stableArea = CGPoint(x: window.bounds.width * 0.25, y: window.bounds.midY)
+                    var ancestor = window.hitTest(stableArea, with: nil)
+                    while let view = ancestor {
+                        if let scroll = view as? UIScrollView, scroll.isScrollEnabled,
+                           scroll.bounds.height > 250, scroll.contentSize.height > scroll.bounds.height * 2 {
+                            return scroll
+                        }
+                        ancestor = view.superview
                     }
+                    return nil
                 }
                 let scroll = inboxScrollView()
                 scroll?.setContentOffset(CGPoint(x: 0, y: 1_680), animated: false)
                 await pause()
                 let offset = scroll?.contentOffset.y ?? 0
+                measurements["inbox-offset-before-switch"] = Double(offset)
                 observations["scrolled-inbox"] = offset > 700
                 try press("tab.bottom.home")
                 await pause()
                 try press(tab)
                 await pause()
                 observations["retained-list"] = list != nil && find("screen.notifications") == list
-                observations["retained-offset"] = abs((inboxScrollView()?.contentOffset.y ?? 0) - offset) < 6
+                let returnedOffset = inboxScrollView()?.contentOffset.y ?? 0
+                measurements["inbox-offset-after-switch"] = Double(returnedOffset)
+                observations["retained-offset"] = abs(returnedOffset - offset) < 6
                 let history = notificationFixture?.filter { ($0["ageDays"] as? Int ?? 0) > 30 } ?? []
                 let oldActivity = Self.encoded(["ok":true, "result":["isCollaborationPatch":true,
                     "collaboration":["graphId":"feedback", "account":Self.uuid(31), "inbox":history]]])
