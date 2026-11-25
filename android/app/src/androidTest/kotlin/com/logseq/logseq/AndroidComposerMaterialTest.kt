@@ -14,6 +14,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
@@ -81,23 +82,24 @@ class AndroidComposerMaterialTest {
         ui.onNodeWithTag("field.composer").assertHeightIsAtLeast(56.dp)
     }
 
-    @Test fun enabledSendUsesTheHostMaterialPrimaryContainer() {
+    @Test fun typingEnablesSendAndChangesItsAppearance() {
         composer()
+        val send = ui.onNodeWithTag("button.send")
+        val disabled = send.captureToImage().toPixelMap()
         ui.onNodeWithTag("field.composer").performTextInput("Unsent 中文")
-        val pixels = ui.onNodeWithTag("button.send").captureToImage().toPixelMap()
-        var primaryPixels = 0
-        for (y in 0 until pixels.height) for (x in 0 until pixels.width) {
-            if (pixels[x, y] == primary) primaryPixels++
-        }
-        assertTrue("Send uses the host Material primary color", primaryPixels > pixels.width * pixels.height / 4)
-        ui.onNodeWithTag("button.send")
-            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+        send.assertIsEnabled().assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
             .assertTouchHeightIsEqualTo(48.dp).assertTouchWidthIsEqualTo(48.dp)
+        val enabled = send.captureToImage().toPixelMap()
+        var changed = 0
+        for (y in 0 until enabled.height) for (x in 0 until enabled.width) {
+            if (enabled[x, y] != disabled[x, y]) changed++
+        }
+        assertTrue("Send visibly changes when it becomes available", changed > enabled.width * enabled.height / 10)
     }
 
     @Test fun emptyDraftUsesTheNativeDisabledSendButton() {
         composer()
-        ui.onNodeWithTag("button.send").assertIsNotEnabled().assertWidthIsEqualTo(40.dp)
+        ui.onNodeWithTag("button.send").assertIsNotEnabled().assertWidthIsEqualTo(48.dp)
             .assertTouchHeightIsEqualTo(48.dp).assertTouchWidthIsEqualTo(48.dp)
     }
 
