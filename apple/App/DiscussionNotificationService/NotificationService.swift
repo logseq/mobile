@@ -6,13 +6,18 @@ final class NotificationService: UNNotificationServiceExtension {
     override func didReceive(_ request: UNNotificationRequest,
                              withContentHandler handler: @escaping (UNNotificationContent) -> Void) {
         let delivery = Delivery(content: request.content, handler: handler)
-        Task { delivery.handler(await Self.displayContent(delivery.content)) }
+        Task { await delivery.deliver() }
     }
 
     // Transfer the read-only request content and the system's async completion callback to one task.
     private struct Delivery: @unchecked Sendable {
         let content: UNNotificationContent
         let handler: (UNNotificationContent) -> Void
+
+        func deliver() async {
+            let updated = await NotificationService.displayContent(content)
+            handler(updated)
+        }
     }
 
     private static func displayContent(_ content: UNNotificationContent) async -> UNNotificationContent {

@@ -31,14 +31,25 @@ import SwiftUI
             window.frame = CGRect(x: 0, y: 0, width: width, height: scene.screen.bounds.height)
             window.layoutIfNeeded()
             try await Task.sleep(for: .milliseconds(900))
-            for action in ["copy", "tag", "status", "scheduled", "deadline", "outdent", "indent", "moveUp", "moveDown", "more", "done"] {
+            for action in ["copy", "tag", "status", "scheduled", "deadline", "outdent", "indent", "moveUp", "moveDown", "done"] {
                 _ = try model("button.outliner.selection." + action)
             }
             func descendants(_ view: UIView) -> [UIView] {
                 [view] + view.subviews.flatMap(descendants)
             }
             func rect(_ view: UIView) -> CGRect { view.convert(view.bounds, to: window) }
-            let scrollViews = descendants(window).compactMap { $0 as? UIScrollView }
+            let views = descendants(window)
+            guard let overflow = views.compactMap({ $0 as? UIButton }).first(where: {
+                $0.accessibilityIdentifier == "button.outliner.selection.more" && !$0.isHidden && $0.window === window
+            }), overflow.showsMenuAsPrimaryAction, overflow.menu?.children.count == 5 else {
+                throw failure("The native selection overflow must expose all five menu actions")
+            }
+            let overflowFrame = rect(overflow)
+            guard window.bounds.insetBy(dx: -1, dy: -1).contains(overflowFrame),
+                  overflowFrame.width >= 44, overflowFrame.height >= 44 else {
+                throw failure("The selection overflow needs a full tap target inside the window: \(overflowFrame)")
+            }
+            let scrollViews = views.compactMap { $0 as? UIScrollView }
             guard let scroll = scrollViews.first(where: {
                 (44...80).contains(rect($0).height) && rect($0).minY > window.bounds.height - 120
             }) else {
@@ -46,7 +57,7 @@ import SwiftUI
             }
             let viewport = rect(scroll)
             let actionsWidth: CGFloat = 9 * 44
-            let allowedWidth = window.bounds.width - 2 * 16 - 44 - 12
+            let allowedWidth = overflowFrame.minX - viewport.minX - 12
             guard abs(viewport.width - min(actionsWidth, allowedWidth)) < 1,
                   abs(scroll.contentSize.width - actionsWidth) < 1 else {
                 throw failure("Selection viewport at width \(width) must fit the actions or allow horizontal scrolling: \(viewport)")
