@@ -264,10 +264,12 @@ let local_asset_path session uuid checksum =
     Option.map (host session).resolve_asset_path block.local_path
   | _ -> None
 
+let asset_cache_relative_path uuid asset_type =
+  Filename.concat "Assets"
+    (Api.url_encode uuid ^ "." ^ Api.url_encode (Api.normalize_asset_type asset_type))
+
 let asset_cache_path session uuid asset_type =
-  (host session).resolve_asset_path
-    (Filename.concat "Assets"
-      (Api.url_encode uuid ^ "." ^ Api.url_encode (Api.normalize_asset_type asset_type)))
+  (host session).resolve_asset_path (asset_cache_relative_path uuid asset_type)
 
 let with_local_assets session result =
   let rec decorate = function
@@ -282,8 +284,8 @@ let with_local_assets session result =
          let imported = local_asset_path session uuid checksum in
          let path = match imported, List.assoc_opt "assetType" fields with
            | Some path, _ when Sys.file_exists path -> imported
-           | _, Some (`String kind) ->
-             let cached = asset_cache_path session uuid kind in
+           | _, Some (`String kind) when Api.is_image_asset_type kind ->
+             let cached = (host session).locate_asset_path (asset_cache_relative_path uuid kind) in
              if Sys.file_exists cached then Some cached else imported
            | _ -> imported in
          (match path with

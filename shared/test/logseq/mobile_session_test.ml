@@ -285,6 +285,11 @@ let assets_are_stored_inside_the_open_graph () =
     Unix.mkdir legacy 0o700;
     ignore (Asset_files.write_file (Filename.concat legacy "legacy.png") "old-image");
     let graph = host.Mobile_session.database.Mobile_database.graph in
+    check_eq ~msg:"projection lookup reads the legacy image in place"
+      (Mobile_graph.resolve_asset_path ~migrate:false graph "Assets/legacy.png")
+      (Filename.concat legacy "legacy.png");
+    check ~msg:"projection lookup does not migrate file contents"
+      (not (Sys.file_exists (Filename.concat directory "Assets/legacy.png")));
     check_eq ~msg:"old upload references migrate to this graph"
       (Mobile_graph.resolve_asset_path graph "Assets/legacy.png")
       (Filename.concat directory "Assets/legacy.png");

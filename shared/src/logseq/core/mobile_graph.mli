@@ -26,7 +26,7 @@ type mobile_graph =
 val create : graph_crypto -> mobile_graph
 val configure_identity : mobile_graph -> string -> unit
 val import_asset_file : mobile_graph -> string -> string -> (string, string) result
-val resolve_asset_path : mobile_graph -> string -> string
+val resolve_asset_path : ?migrate:bool -> mobile_graph -> string -> string
 val sync_cursor : mobile_graph -> int option
 val blocks : mobile_graph -> Cache_model.block list option
 val projected_db : mobile_graph -> Datascript.db option

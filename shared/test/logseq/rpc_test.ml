@@ -739,18 +739,23 @@ let graph_assets_download_and_cache_binary_files () =
     end else Sys.remove path in
     remove root) (fun () ->
     let page : Model.entity_summary = { uuid = "album-page"; title = "Album" } in
-    let asset uuid parent = { (Model.local_block uuid uuid page.uuid None 1) with
-      is_asset = true; asset_type = Some "png"; parent_id = Some parent } in
+    let asset ?(kind = "png") uuid parent = { (Model.local_block uuid uuid page.uuid None 1) with
+      is_asset = true; asset_type = Some kind; parent_id = Some parent } in
+    let resolve path = Filename.concat root path in
     let session = Session.create_session { Session.default_options with
       load_graph_catalog = Some (fun () -> Some plain_graph_catalog);
       graph_sidebar_pages = Some (fun () -> Some { Graph.favorites = [page]; recent_pages = [] });
-      graph_page_blocks = Some (fun _ -> Some [asset "image-uuid" "album"; asset "sibling" "album"; asset "unrelated" "other"]);
-      resolve_asset_path = (fun path -> Filename.concat root path) } |> configure_plain_session in
+      graph_page_blocks = Some (fun _ -> Some [asset "image-uuid" "album"; asset "sibling" "album";
+        asset "unrelated" "other"; asset ~kind:"m4a" "recording" "album"]);
+      resolve_asset_path = resolve;
+      locate_asset_path = (fun path ->
+        check ~msg:"the projection never probes a recording's download cache" (Filename.extension path <> ".m4a");
+        resolve path) } |> configure_plain_session in
     let selected () = response_result (dispatch_json session "selectPage" page.uuid) in
-    let projected_image result =
+    let projected_asset uuid result =
       List.map (member "block") (json_items "outlinerRows" result)
-      |> List.find (fun block -> member "uuid" block = `String "image-uuid") in
-    check_eq (member "localPath" (projected_image (selected ()))) `Null;
+      |> List.find (fun block -> member "uuid" block = `String uuid) in
+    check_eq (member "localPath" (projected_asset "image-uuid" (selected ()))) `Null;
     let fields = ["uuid", `String "image-uuid"; "assetType", `String "image/png";
       "graphId", `String "plain-1"] in
     let dispatch action extra = dispatch_json session action (Json.to_string (`Assoc (fields @ extra))) in
@@ -764,7 +769,11 @@ let graph_assets_download_and_cache_binary_files () =
     let cached = response_result (dispatch "cacheDownloadedAsset" ["path", `String source]) in
     let path = json_string (member "localPath" cached) in
     check_eq (Asset_files.read_file path) (Ok bytes);
-    check_eq (member "localPath" (projected_image (selected ()))) (`String path);
+    check_eq (member "localPath" (projected_asset "image-uuid" (selected ()))) (`String path);
+    ignore (response_result (dispatch_json session "cacheDownloadedAsset"
+      (Json.to_string (`Assoc ["uuid", `String "recording"; "assetType", `String "m4a";
+        "graphId", `String "plain-1"; "path", `String source]))));
+    check_eq (member "localPath" (projected_asset "recording" (selected ()))) `Null;
     let reopened = response_result (dispatch "prepareAssetDownload" []) in
     check_eq (member "localPath" reopened) (`String path);
     check_eq (member "request" reopened) `Null;
