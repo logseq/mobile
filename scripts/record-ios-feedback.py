@@ -16,6 +16,7 @@ parser.add_argument("phase", choices=["before", "after"])
 parser.add_argument("simulator")
 parser.add_argument("scenarios", nargs="+")
 parser.add_argument("--build-root", type=Path)
+parser.add_argument("--display", help="Simulator display ID or name, as reported by simctl io enumerate")
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 build = args.build_root.resolve() if args.build_root else root
@@ -24,6 +25,7 @@ out.mkdir(parents=True, exist_ok=True)
 env = os.environ.copy()
 env["LOGSEQ_IOS_SIMULATOR"] = args.simulator
 live_app_ready = False
+display_args = [f"--display={args.display}"] if args.display else []
 for scenario in args.scenarios:
     server = None
     requests = []
@@ -77,7 +79,7 @@ for scenario in args.scenarios:
                             str(build / "apple/Tests/UI" / source), "--interactive", str(fixture)],
                            env=env, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=180)
         live_app_ready = not math
-    recorder = subprocess.Popen(["xcrun", "simctl", "io", args.simulator, "recordVideo", "--codec=h264", "--force", str(out / f"ios-{scenario}.mp4")],
+    recorder = subprocess.Popen(["xcrun", "simctl", "io", args.simulator, "recordVideo", *display_args, "--codec=h264", "--force", str(out / f"ios-{scenario}.mp4")],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         if math and args.phase == "before":
@@ -107,7 +109,7 @@ for scenario in args.scenarios:
             if args.phase == "after" and not all(result["observations"].values()):
                 raise RuntimeError(str(result))
             time.sleep(2)
-        subprocess.run(["xcrun", "simctl", "io", args.simulator, "screenshot", str(out / f"ios-{scenario}.png")], check=True)
+        subprocess.run(["xcrun", "simctl", "io", args.simulator, "screenshot", *display_args, str(out / f"ios-{scenario}.png")], check=True)
     finally:
         recorder.send_signal(signal.SIGINT)
         recorder.communicate(timeout=20)
