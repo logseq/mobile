@@ -1050,26 +1050,44 @@ let outliner_row ?(trailing_inset = 0) context model_source retained_row_source 
   let discussion = outliner_discussion context model_source row_source send in
   let render_block = render_result_block context model_source in
   let bullet_inset = if Lui_ui.host context = KotlinHost then 12 else 20 in
-  reactive (fun (has_query, has_properties, has_dates) ->
-    let dates = if has_properties || not has_dates then [] else [outliner_task_dates context model_source row_source send] in
-    let properties = if not has_properties then [] else [
-      View_base.with_int_prop_signal PaddingLeft
-        (Signal.map (fun row -> max 0 (outliner_text_leading context row - 16)) row_source)
-        (box [node_properties context model_source send])] in
-    let query = if not has_query then [] else [
-      View_base.with_int_prop_signal PaddingLeft
-        (Signal.map (fun (row : Model.outline_row) -> bullet_inset + row.depth * 22) row_source)
-        (box ~padding_horizontal:8
-          ~accessibility_identifier_signal:(Signal.map (fun (row : Model.outline_row) -> "query.inset." ^ row.row_uuid) row_source)
-          [View_query.view ~render_block model_source row_source send])] in
-    column ~gap:0 [body;
-      outliner_continuation row_source
-        (with_ios_trailing_padding trailing_inset (column ~gap:0 (dates @ properties @ (discussion :: query))))])
+  custom @@ fun mount_context parent ->
+  let layout = Signal.own_signal mount_context.ui_scope
     (Signal.map2 (fun (model : Model.logseq_model) (row : Model.outline_row) ->
-      row.query_json <> "", (match View_base.active_node_projection model with
+      let has_properties = match View_base.active_node_projection model with
       | Some route -> route.node_uuid = row.row_uuid && route.node_uuid <> route.node_page_uuid
         && View_property.has_properties route.node_properties_json
-      | None -> false), View_property.has_properties row.row_task_dates_json) model_source row_source))
+      | None -> false in
+      row.query_json <> "", has_properties, View_property.has_properties row.row_task_dates_json)
+      model_source row_source) in
+  let has_discussion = Signal.own_signal mount_context.ui_scope
+    (Signal.map (fun row ->
+      match row_metadata row with
+      | `Assoc fields ->
+        List.exists (function ("reactions" | "commentThreads"), `List (_ :: _) -> true | _ -> false) fields
+      | _ -> false) row_source) in
+  let has_metadata = Signal.own_signal mount_context.ui_scope
+    (Signal.map2 (fun (query, properties, dates) discussion ->
+      query || properties || dates || discussion) layout has_discussion) in
+  (* The body keeps its editor and layout when metadata appears or disappears. *)
+  mount mount_context ?parent (column ~gap:0 [
+    body;
+    if_ ~test:has_metadata (outliner_continuation row_source
+      (reactive (fun (has_query, has_properties, has_dates) ->
+        let dates = if has_properties || not has_dates then [] else
+          [outliner_task_dates context model_source row_source send] in
+        let properties = if not has_properties then [] else [
+          View_base.with_int_prop_signal PaddingLeft
+            (Signal.map (fun row -> max 0 (outliner_text_leading context row - 16)) row_source)
+            (box [node_properties context model_source send])] in
+        let query = if not has_query then [] else [
+          View_base.with_int_prop_signal PaddingLeft
+            (Signal.map (fun (row : Model.outline_row) -> bullet_inset + row.depth * 22) row_source)
+            (box ~padding_horizontal:8
+              ~accessibility_identifier_signal:(Signal.map (fun (row : Model.outline_row) -> "query.inset." ^ row.row_uuid) row_source)
+              [View_query.view ~render_block model_source row_source send])] in
+        with_ios_trailing_padding trailing_inset
+          (column ~gap:0 (dates @ properties @ (discussion :: query)))) layout));
+  ]))
     (render_result_block_in_scope context model_source)
 
 let page_heading_text ?accessibility_identifier ?(tracks_scroll_title = true) parts =
