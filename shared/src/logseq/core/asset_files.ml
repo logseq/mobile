@@ -44,7 +44,7 @@ let resolve_path checkpoint_path source_path =
     | None -> source_path
   else source_path
 
-let resolve_legacy_path checkpoint_path graph_id source_path =
+let resolve_legacy_path ?(migrate = true) checkpoint_path graph_id source_path =
   let resolved = resolve_path checkpoint_path source_path in
   match checkpoint_path with
   | None -> resolved
@@ -61,8 +61,9 @@ let resolve_legacy_path checkpoint_path graph_id source_path =
       else [source_path; destination; Filename.concat legacy_assets name] in
     if Sys.file_exists destination then destination
     else match List.find_opt (fun path -> Sys.file_exists path && not (Sys.is_directory path)) candidates with
-      | Some source ->
+      | Some source when migrate ->
         copy_file source destination; destination
+      | Some source -> source
       | None -> resolved
 
 let import_file checkpoint_path graph_id uuid source_path =

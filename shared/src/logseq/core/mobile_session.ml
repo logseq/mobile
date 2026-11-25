@@ -129,6 +129,7 @@ let host_options ?journal_tasks (database : Database.mobile_database) ring catal
     import_asset_file = (fun uuid source_path -> Graph.import_asset_file graph uuid source_path);
     resolve_asset_path =
       (fun source_path -> Graph.resolve_asset_path graph source_path);
+    locate_asset_path = Graph.resolve_asset_path ~migrate:false graph;
     decrypt_asset = Some (fun graph_id bytes ->
       let ( let* ) = Result.bind in
       let* key = Keyring.graph_key ring graph_id in

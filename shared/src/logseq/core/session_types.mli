@@ -116,6 +116,7 @@ type host_options =
   ; encrypt_title : (string -> string -> (string, string) result) option
   ; import_asset_file : string -> string -> (string, string) result
   ; resolve_asset_path : string -> string
+  ; locate_asset_path : string -> string
   ; decrypt_asset : (string -> string -> (string, string) result) option
   ; encrypt_asset_file :
       (string -> string -> (string * int, string) result) option

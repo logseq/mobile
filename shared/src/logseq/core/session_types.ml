@@ -123,6 +123,7 @@ type host_options =
   ; encrypt_title : (string -> string -> (string, string) result) option
   ; import_asset_file : string -> string -> (string, string) result
   ; resolve_asset_path : string -> string
+  ; locate_asset_path : string -> string
   ; decrypt_asset : (string -> string -> (string, string) result) option
   ; encrypt_asset_file :
       (string -> string -> (string * int, string) result) option
@@ -235,6 +236,7 @@ let default_options =
     encrypt_title = None;
     import_asset_file = (fun _ path -> Ok path);
     resolve_asset_path = (fun path -> path);
+    locate_asset_path = (fun path -> path);
     decrypt_asset = None;
     encrypt_asset_file = None;
     journal_page_id = None;
