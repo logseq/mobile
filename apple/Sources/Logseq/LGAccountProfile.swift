@@ -16,6 +16,7 @@ struct LGAccountProfile: View {
     @State private var name = ""
     @State private var originalName = ""
     @State private var photoURL: URL?
+    @State private var originalPhoto: UIImage?
     @State private var pickerItem: PhotosPickerItem?
     @State private var showingPhotoPicker = false
     @State private var photo: Data?
@@ -68,6 +69,11 @@ struct LGAccountProfile: View {
             .interactiveDismissDisabled(saving)
             .photosPicker(isPresented: $showingPhotoPicker, selection: $pickerItem, matching: .images)
             .task { await load() }
+            .task(id: photoURL) {
+                guard let url = photoURL else { return }
+                let image = await LGProfileAvatarCache.image(at: url)
+                if photoURL == url { originalPhoto = image }
+            }
             .task(id: pickerItem) {
                 guard let item = pickerItem else { return }
                 processingPhoto = true
@@ -92,8 +98,8 @@ struct LGAccountProfile: View {
         Group {
             if let photo, let image = UIImage(data: photo) {
                 Image(uiImage: image).resizable().scaledToFill()
-            } else if let photoURL, photoURL.scheme == "https" {
-                AsyncImage(url: photoURL) { image in image.resizable().scaledToFill() } placeholder: { initials }
+            } else if let originalPhoto {
+                Image(uiImage: originalPhoto).resizable().scaledToFill()
             } else {
                 initials
             }

@@ -700,6 +700,17 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 pause()
                 empty.assertIsDisplayed()
             }
+            "account-settings" -> {
+                mount(1, dark = true)
+                ui.onNodeWithTag("button.sidebar").performClick()
+                pause()
+                ui.onNodeWithTag("button.sidebar.settings").performClick()
+                pause()
+                ui.onNodeWithTag("label.settings.account").assertIsDisplayed()
+                ui.onNodeWithTag("button.settings.account-profile").assertIsDisplayed()
+                ui.onNodeWithTag("button.sign-out").performScrollTo().assertIsDisplayed()
+                pause()
+            }
             "notification-settings" -> {
                 val push = AndroidDiscussionPush(pushTestContext)
                 runBlocking { push.setPreferences(DiscussionPushPreferences(false, true, true), "", null) }

@@ -115,6 +115,20 @@ struct CognitoTokenStore: Sendable {
     }
 
     func readProfile() async throws -> LogseqAccountProfile {
+        do { return try await fetchProfile() }
+        catch {
+            guard !Task.isCancelled, let token = try? tokenStore.load()?.idToken,
+                  let payload = token.split(separator: ".").dropFirst().first else { throw error }
+            let encoded = payload.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+            let padded = encoded + String(repeating: "=", count: (4 - encoded.count % 4) % 4)
+            guard let data = Data(base64Encoded: padded),
+                  let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw error }
+            return LogseqAccountProfile(fullName: claims["name"] as? String ?? "",
+                                       photo: (claims["picture"] as? String).flatMap(URL.init(string:)))
+        }
+    }
+
+    private func fetchProfile() async throws -> LogseqAccountProfile {
         guard let access = try await sessionTokens(needsAccess: true)?.accessToken else { throw LogseqAuthenticationError.notSignedIn }
         let response = try await post("GetUser", ["AccessToken": access])
         try checkServiceError(response)
@@ -156,6 +170,7 @@ struct CognitoTokenStore: Sendable {
         guard (stored as? HTTPURLResponse)?.statusCode == 200 else { throw CognitoAuthProviderError.invalidResponse }
         publicURL.query = nil
         guard let url = publicURL.url else { throw CognitoAuthProviderError.invalidResponse }
+        LGProfileAvatarCache.store(photo, for: url)
         return url
     }
 

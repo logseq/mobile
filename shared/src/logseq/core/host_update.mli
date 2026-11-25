@@ -65,7 +65,7 @@ type host_update =
   | Open_quick_action of string
   | Confirm_outliner_delete
   | Open_capture
-  | Open_settings
+  | Resume_settings
   | Open_pushed_discussion of string * string
   | Push_preference of bool * bool * bool
   | Open_node of string

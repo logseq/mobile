@@ -68,11 +68,14 @@ public struct LogseqRootView : View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(themePalette.background.ignoresSafeArea())
         .sheet(isPresented: $accountProfile.isPresented, onDismiss: {
-            try? runtime.lgRuntime.applyHostUpdate(kind: "open-settings", payload: "null")
+            try? runtime.lgRuntime.applyHostUpdate(kind: "resume-settings", payload: "null")
         }) {
             LGAccountProfile(readProfile: runtime.authentication.readProfile) { name, photo in
                 try await runtime.authentication.updateProfile(fullName: name, photo: photo)
-                if let token = try? await runtime.authentication.apiToken() { await runtime.store.updateAccessToken(token) }
+                if let token = try? await runtime.authentication.apiToken() {
+                    await runtime.store.updateAccessToken(token)
+                    await runtime.syncCoordinator.kickForeground()
+                }
             }
         }
         .alert("Error", isPresented: Binding(

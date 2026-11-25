@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -20,14 +19,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.IconCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.io.IOException
 import java.text.BreakIterator
 import java.util.Locale
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 
 class DiscussionMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
@@ -74,7 +68,7 @@ internal fun showDiscussionNotification(context: Context, data: Map<String, Stri
         .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
     if (sender != null) {
         val person = Person.Builder().setName(sender).setKey(data["senderId"])
-            .setIcon(IconCompat.createWithBitmap(profileAvatar(data["avatarURL"]) ?: discussionAvatar(sender))).build()
+            .setIcon(IconCompat.createWithBitmap(ProfileAvatarCache.image(context, data["avatarURL"]) ?: discussionAvatar(sender))).build()
         notification.setStyle(NotificationCompat.MessagingStyle(
             Person.Builder().setName(context.getString(R.string.discussion_push_you)).build(),
         ).addMessage(body, System.currentTimeMillis(), person))
@@ -97,31 +91,4 @@ private fun discussionAvatar(name: String): Bitmap {
     paint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
     canvas.drawText(initial, 64f, 64f - (paint.ascent() + paint.descent()) / 2, paint)
     return bitmap
-}
-
-private val avatarHosts = setOf("logseq-user-public-metadata-bucket-prod.s3.amazonaws.com", "assets.logseq.com", "assets.logseq.io", "avatars.githubusercontent.com", "lh3.googleusercontent.com")
-private val avatarClient = OkHttpClient.Builder().callTimeout(2, TimeUnit.SECONDS).followRedirects(false).build()
-
-internal fun profileAvatar(rawUrl: String?): Bitmap? {
-    val url = rawUrl?.toHttpUrlOrNull() ?: return null
-    if (!url.isHttps || url.host !in avatarHosts || url.port != 443 || url.query != null ||
-        url.fragment != null || url.username.isNotEmpty() || url.password.isNotEmpty()) return null
-    return try {
-        avatarClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
-            val body = response.body ?: return null
-            val limit = 128L * 1024
-            if (response.code != 200 || body.contentType()?.type != "image" || body.contentLength() > limit) return null
-            val source = body.source()
-            if (source.request(limit + 1)) return null
-            val bytes = source.readByteArray()
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            val size = maxOf(bounds.outWidth, bounds.outHeight)
-            if (size <= 0) return null
-            val options = BitmapFactory.Options().apply { inSampleSize = Integer.highestOneBit(maxOf(1, size / 128)) }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-        }
-    } catch (_: IOException) {
-        null
-    }
 }

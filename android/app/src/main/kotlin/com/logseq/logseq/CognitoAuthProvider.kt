@@ -55,7 +55,19 @@ internal class CognitoAuthProvider(context: Context, transport: CognitoUserPool?
         return refreshed
     }
 
-    suspend fun readProfile(): AccountProfile {
+    suspend fun readProfile(): AccountProfile = try {
+        fetchProfile()
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        val payload = loadTokens()?.idToken?.split('.')?.getOrNull(1) ?: throw failure
+        val claims = runCatching {
+            JSONObject(String(Base64.decode(payload, Base64.URL_SAFE or Base64.NO_WRAP), StandardCharsets.UTF_8))
+        }.getOrElse { throw failure }
+        AccountProfile(claims.optString("name"), claims.optString("picture").takeIf { it.isNotBlank() })
+    }
+
+    private suspend fun fetchProfile(): AccountProfile {
         val access = checkNotNull(sessionTokens(needsAccess = true)?.accessToken)
         val response = transport.post("GetUser", JSONObject().put("AccessToken", access))
         check(!response.has("__type"))
@@ -91,7 +103,9 @@ internal class CognitoAuthProvider(context: Context, transport: CognitoUserPool?
         val upload = Request.Builder().url(signed).header("Cache-Control", "public, max-age=0")
             .put(photo.toRequestBody("image/jpeg".toMediaType())).build()
         profileClient.newCall(upload).execute().use { check(it.code == 200) }
-        signed.newBuilder().query(null).build().toString()
+        val publicUrl = signed.newBuilder().query(null).build().toString()
+        ProfileAvatarCache.store(applicationContext, publicUrl, photo)
+        publicUrl
     }
 
     // The shared OCaml form owns all challenge and recovery decisions.

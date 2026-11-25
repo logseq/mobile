@@ -715,6 +715,7 @@ type logseq_action =
   | SetOutlinerTaskPriority of string * string
   | OpenJournalCalendar
   | OpenSettings
+  | ResumeSettings
   | DismissSettings
   | OpenSettingsTabs
   | BackSettings

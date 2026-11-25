@@ -620,7 +620,7 @@ internal class LogseqRuntime(
 
     fun closeAccountProfile() {
         accountProfileOpen = false
-        scope.launch { applyPatch(bridge.applyHostUpdate("open-settings", "null")) }
+        scope.launch { applyPatch(bridge.applyHostUpdate("resume-settings", "null")) }
     }
 
     suspend fun refreshAccountProfileToken() {

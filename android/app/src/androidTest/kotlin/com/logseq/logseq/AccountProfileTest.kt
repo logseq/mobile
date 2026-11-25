@@ -41,6 +41,21 @@ class AccountProfileTest {
         ui.runOnIdle { assertEquals("Ada Lin", savedName) }
     }
 
+    @Test fun usesAndReplacesTheLocallyCachedAvatar() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val url = "https://assets.logseq.com/avatar-cache-test-${java.util.UUID.randomUUID()}.png"
+        fun store(color: Int) {
+            val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
+            val bytes = java.io.ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes)
+            ProfileAvatarCache.store(context, url, bytes.toByteArray())
+        }
+        store(android.graphics.Color.BLUE)
+        assertEquals(android.graphics.Color.BLUE, ProfileAvatarCache.image(context, url)?.getPixel(0, 0))
+        store(android.graphics.Color.RED)
+        assertEquals(android.graphics.Color.RED, ProfileAvatarCache.image(context, url)?.getPixel(0, 0))
+    }
+
     @Test fun capsAHighlyDetailedPhotoAndKeepsTheLongestEdgeAt512Pixels() {
         val random = Random(7)
         val width = 1024

@@ -16,12 +16,11 @@ class DiscussionNotificationTest {
         }
         val manager = context.getSystemService(NotificationManager::class.java)
         val graph = "a3fe84fa-72ab-4c5d-b3d9-35630653298c"
-        val event = "67449ea2-c708-4b31-8b16-b33a71ec849"
         val fixtures = listOf(
-            mapOf("eventId" to event + "1", "kind" to "comment", "senderName" to "Ada",
+            mapOf("eventId" to "67449ea2-c708-4b31-8b16-b33a71ec8491", "kind" to "comment", "senderName" to "Ada",
                 "commentPreview" to "I updated the checklist for tomorrow."),
-            mapOf("eventId" to event + "2", "kind" to "reaction", "senderName" to "Robin", "reactionEmoji" to "❤️"),
-            mapOf("eventId" to event + "3", "kind" to "comment", "senderName" to "Kai"),
+            mapOf("eventId" to "67449ea2-c708-4b31-8b16-b33a71ec8492", "kind" to "reaction", "senderName" to "Robin", "reactionEmoji" to "❤️"),
+            mapOf("eventId" to "67449ea2-c708-4b31-8b16-b33a71ec8493", "kind" to "comment", "senderName" to "Kai"),
         )
         val expected = listOf("I updated the checklist for tomorrow.",
             context.getString(R.string.discussion_push_reaction_emoji, "❤️"), context.getString(R.string.discussion_push_comment))

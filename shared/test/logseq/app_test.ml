@@ -1322,6 +1322,15 @@ let cancel_outliner_editing_has_a_stable_native_effect_payload () =
     (Native_bridge.encode_effect (Model.CancelOutlinerEditingEffect 9))
     "{\"id\":9,\"kind\":\"cancel-outliner-editing\",\"text\":\"\"}"
 
+let returning_from_profile_preserves_the_sync_server_draft () =
+  let opened = Model.update (Model.initial ()) Model.OpenSettings in
+  let edited = Model.update opened (Model.ChangeBaseURL "https://other.example.com") in
+  let profile = Model.update edited Model.OpenAccountProfile in
+  check (not profile.settings_open);
+  let resumed = Model.update profile Model.ResumeSettings in
+  check resumed.settings_open;
+  check_eq "https://other.example.com" resumed.base_url_draft
+
 let settings_render_the_main_branch_navigation_contract () =
   let application = App.create (ios_backend ()) in
   start application;
@@ -12000,6 +12009,7 @@ let cases =
     case "encrypted-graph-unlock-has-a-stable-native-effect-payload" encrypted_graph_unlock_has_a_stable_native_effect_payload;
     case "graph-database-export-has-a-stable-native-effect-payload" graph_database_export_has_a_stable_native_effect_payload;
     case "cancel-outliner-editing-has-a-stable-native-effect-payload" cancel_outliner_editing_has_a_stable_native_effect_payload;
+    case "returning from profile preserves the sync server draft" returning_from_profile_preserves_the_sync_server_draft;
     case "settings-render-the-main-branch-navigation-contract" settings_render_the_main_branch_navigation_contract;
     case "kotlin-settings-sheet-uses-one-bounded-scroll-layout" kotlin_settings_sheet_uses_one_bounded_scroll_layout;
     case "kotlin-settings-tabs-open-through-the-rendered-press-handler" kotlin_settings_tabs_open_through_the_rendered_press_handler;

@@ -376,6 +376,33 @@ import LogseqModel
                 try press(recentOnly)
                 await pause()
                 observations["filter-restored"] = checked() && find("notifications.empty") != nil
+            case "account-settings":
+                try press("button.sidebar")
+                await pause()
+                try press("button.sidebar.settings")
+                await pause()
+                let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                    .flatMap(\.windows).first(where: \.isKeyWindow)
+                let sheet = window?.rootViewController?.presentedViewController
+                sheet?.sheetPresentationController?.selectedDetentIdentifier = .large
+                await pause()
+                if let screen = find("screen.settings"), let first = backend.model(id: screen)?.children.first {
+                    observations["account-first"] = backend.model(id: first)?.property(.accessibilityIdentifier)?.stringValue == "label.settings.account"
+                }
+                observations["sign-out-red"] = find("button.sign-out").flatMap { backend.model(id: $0)?.property(.foreground)?.stringValue } == "red"
+                func scrollViews(_ view: UIView) -> [UIScrollView] {
+                    let current = (view as? UIScrollView).map { [$0] } ?? []
+                    return current + view.subviews.flatMap(scrollViews)
+                }
+                let viewport = (sheet?.view).flatMap { scrollViews($0).first { $0.isScrollEnabled && $0.contentSize.height > $0.bounds.height + 100 } }
+                if let viewport {
+                    for _ in 0..<3 {
+                        let bottom = viewport.contentSize.height - viewport.bounds.height + viewport.adjustedContentInset.bottom
+                        viewport.setContentOffset(CGPoint(x: 0, y: bottom), animated: true)
+                        await pause()
+                    }
+                }
+                observations["scrolled-to-bottom"] = (viewport?.contentOffset.y ?? 0) > 100
             case "notification-settings":
                 let push = LGDiscussionPush.shared
                 try await push.setPreferences(.init(enabled: false, comments: true, reactions: true), sessionToken: nil)

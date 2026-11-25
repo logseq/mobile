@@ -729,6 +729,7 @@ type logseq_action =
   | SetOutlinerTaskPriority of string * string
   | OpenJournalCalendar
   | OpenSettings
+  | ResumeSettings
   | DismissSettings
   | OpenSettingsTabs
   | BackSettings
@@ -3658,6 +3659,7 @@ let rec update (current : logseq_model) action =
       runtime_log_open = false;
       base_url_draft = current.base_url;
     }
+  | ResumeSettings -> {current with settings_open = true}
   | DismissSettings ->
     {
       current with

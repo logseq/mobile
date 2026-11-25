@@ -1456,8 +1456,32 @@ let comment_notifications_are_scoped_to_block_owners_and_prior_participants () =
   check_eq (notifications "sender") ["joined"];
   check_eq (notifications "page-owner") []
 
+let already_attributed_reaction_refreshes_sender_profile () =
+  let module C = Collaboration in
+  let schema = [(C.creator, ref_attr); (C.reaction_target, ref_attr);
+    (C.reaction_emoji, string_attr); ("logseq.property.user/name", string_attr);
+    ("logseq.property.user/avatar", string_attr)] @ schema in
+  let before = with_tx (base_db ~schema ()) [
+    add 22 "block/uuid" (Ds.Uuid "member");
+    add 22 "logseq.property.user/name" (Ds.String "Old Name");
+  ] in
+  let reaction = Ops.Set_reaction {target = "block"; actor = "member";
+    uuid = "reaction"; emoji = "heart"; active = true; created_at = 200} in
+  let tx = match Projection.compile before reaction with
+    | Ok tx -> tx | Error message -> fail message in
+  let report = Ds.with_tx before tx in
+  let reaction_id = Option.get (C.entity report.db_after "reaction") in
+  check (Graph_read.has_ref report.db_after reaction_id C.creator 22);
+  let identity : Created_by.identity = {uuid = "member"; username = "member";
+    email = ""; full_name = "New Name"; avatar = "https://assets.logseq.com/profile.png"} in
+  let updated = with_tx report.db_after (Created_by.additions identity report) in
+  check_eq (C.text updated 22 "logseq.property.user/name") (Some "New Name");
+  check_eq (C.text updated 22 "logseq.property.user/avatar") (Some identity.avatar);
+  check (Graph_read.has_ref updated reaction_id C.creator 22)
+
 let cases =
-  [ case "comment alerts go only to block owners and prior thread participants"
+  [
+    case "attributed reactions refresh the current author profile" already_attributed_reaction_refreshes_sender_profile; case "comment alerts go only to block owners and prior thread participants"
       comment_notifications_are_scoped_to_block_owners_and_prior_participants;
     case "discussion writes reuse threads and preserve reaction ownership"
       discussion_writes_reuse_the_thread_and_preserve_reaction_ownership;

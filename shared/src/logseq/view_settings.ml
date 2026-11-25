@@ -695,15 +695,11 @@ let settings_runtime_log_row model_source (context : Lui_ui.ui_context) send : t
       ~text:(View_base.tr (Signal.sample model_source) "Check log") []
 
 let settings_sign_out_row model_source (context : Lui_ui.ui_context) send : t =
-  if Lui_ui.host context = KotlinHost then
-    list_item ~icon:(`app "sign-out") ~padding:0
-      ~accessibility_identifier:"button.sign-out"
-      ~on_press:(press send Model.RequestSignOut)
-      ~text:(View_base.tr (Signal.sample model_source) "Sign Out") []
-  else
-    list_item ~padding:0 ~accessibility_identifier:"button.sign-out"
-      ~on_press:(press send Model.RequestSignOut)
-      ~text:(View_base.tr (Signal.sample model_source) "Sign Out") []
+  let icon = if Lui_ui.host context = KotlinHost then Some (`app "sign-out") else None in
+  list_item ?icon ~foreground:"red"
+    ~accessibility_identifier:"button.sign-out"
+    ~on_press:(press send Model.RequestSignOut)
+    ~text:(View_base.tr (Signal.sample model_source) "Sign Out") []
 
 let sign_in_label ?(centered = false) model_source : t =
   row ~main:(if centered then `center else `start) ~gap:8 ~cross:`center [
@@ -713,7 +709,7 @@ let sign_in_label ?(centered = false) model_source : t =
       if View_base.authentication_signing_in_ current then "Signing in…" else "Sign in") model_source)) [];
   ]
 
-let settings_account_row context model_source send : t =
+let settings_account_row model_source send : t =
   let signed_out = Signal.map View_base.authentication_required_ model_source in
   column ~gap:8 [
     if_ ~test:signed_out
@@ -724,8 +720,6 @@ let settings_account_row context model_source send : t =
       (list_item ~padding:0 ~accessibility_identifier:"button.settings.account-profile"
         ~on_press:(press send Model.OpenAccountProfile)
         ~text:(View_base.tr (Signal.sample model_source) "Edit Profile") []);
-    if_ ~test:(Signal.map not signed_out) (settings_sign_out_row model_source context send);
-
   ]
 
 let sign_out_dialog model_source (context : Lui_ui.ui_context) send : t =
@@ -788,6 +782,14 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
   column ~gap:24 ~padding_horizontal:8 ~padding_vertical:16 ~cross:`stretch
     ~accessibility_identifier:"screen.settings"
     [
+      column ~gap:8 ~cross:`stretch
+        [
+          text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
+            ~accessibility_identifier:"label.settings.account"
+            ~value:(View_base.tr (Signal.sample model_source) "Account") [];
+          column ~padding_horizontal:16 ~background:card_bg
+            [settings_account_row model_source send];
+        ];
       column ~gap:8 ~cross:`stretch
         [
           text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
@@ -894,7 +896,6 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
         ];
       column ~padding:16 ~background:card_bg
         [
-          settings_account_row context model_source send;
           list_item ~icon:(`app "open-external") ~padding:0
             ~accessibility_identifier:"link.settings.account-deletion"
             ~on_press:(press send (Model.OpenExternalURL "https://logseq.com/account-deletion"))
@@ -904,6 +905,8 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
             ~on_press:(press send (Model.OpenExternalURL "https://logseq.com/privacy-policy"))
             ~text:(View_base.tr (Signal.sample model_source) "Privacy Policy") [];
         ];
+      if_ ~test:(Signal.map (fun current -> not (View_base.authentication_required_ current)) model_source)
+        (column ~background:card_bg [settings_sign_out_row model_source context send]);
     ]
 
 (* Native grouped-settings form: a `form`-styled content column whose
@@ -912,6 +915,7 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
    separators, Logseq accent toggles). *)
 let settings_form_screen (context : Lui_ui.ui_context) model_source send
     : t =
+  let can_sign_out = Signal.map (fun current -> not (View_base.authentication_required_ current)) model_source in
   let version_row label value_signal identifier : t =
     row ~cross:`center ~accessibility_identifier:identifier
       [
@@ -923,6 +927,9 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
   column ~style_class:"form"
     ~accessibility_identifier:"screen.settings"
     ([
+      heading ~value:(View_base.tr (Signal.sample model_source) "Account") ~foreground:"muted-foreground"
+        ~accessibility_identifier:"label.settings.account" [];
+      settings_account_row model_source send;
       heading ~value:(View_base.tr (Signal.sample model_source) "General") ~foreground:"muted-foreground"
         ~accessibility_identifier:"label.settings.general" [];
       settings_appearance_control context model_source send;
@@ -1017,9 +1024,8 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
                          : Model.settings_community_link)
                         .url)))
             []);
-      heading ~value:(View_base.tr (Signal.sample model_source) "Account")
-        ~accessibility_identifier:"label.settings.account" [];
-      settings_account_row context model_source send;
+      if_ ~test:can_sign_out (heading ~value:"" []);
+      if_ ~test:can_sign_out (settings_sign_out_row model_source context send);
     ])
 
 let settings_screen (context : Lui_ui.ui_context) model_source send : t =

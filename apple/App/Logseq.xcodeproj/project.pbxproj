@@ -23,6 +23,7 @@
 		499CD4402AC5B799001AE8D8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 49F90C2F2A52156300F06D93 /* Assets.xcassets */; };
 		A60000000000000000000001 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000004 /* NotificationService.swift */; };
 		A60000000000000000000002 /* LogseqDiscussionNotificationService.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A60000000000000000000006 /* LogseqDiscussionNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A60000000000000000000010 /* LGProfileAvatarCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000011 /* LGProfileAvatarCache.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -101,6 +102,7 @@
 		A60000000000000000000004 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		A60000000000000000000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A60000000000000000000006 /* LogseqDiscussionNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LogseqDiscussionNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A60000000000000000000011 /* LGProfileAvatarCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LGProfileAvatarCache.swift; path = ../Sources/Logseq/LGProfileAvatarCache.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -200,6 +202,7 @@
 			isa = PBXGroup;
 			children = (
 				A60000000000000000000004 /* NotificationService.swift */,
+				A60000000000000000000011 /* LGProfileAvatarCache.swift */,
 				A60000000000000000000005 /* Info.plist */,
 			);
 			path = DiscussionNotificationService;
@@ -406,6 +409,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A60000000000000000000001 /* NotificationService.swift in Sources */,
+				A60000000000000000000010 /* LGProfileAvatarCache.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

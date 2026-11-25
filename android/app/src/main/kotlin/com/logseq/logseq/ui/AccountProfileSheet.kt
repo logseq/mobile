@@ -26,7 +26,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.logseq.logseq.AccountProfile
 import com.logseq.logseq.R
-import com.logseq.logseq.profileAvatar
+import com.logseq.logseq.ProfileAvatarCache
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -61,7 +61,7 @@ import kotlinx.coroutines.withContext
             val profile = readProfile()
             name = profile.fullName
             originalName = profile.fullName
-            originalPhoto = profile.photo?.let { withContext(Dispatchers.IO) { profileAvatar(it) } }
+            originalPhoto = profile.photo?.let { withContext(Dispatchers.IO) { ProfileAvatarCache.image(context, it) } }
         } catch (failure: CancellationException) {
             throw failure
         } catch (_: Exception) {

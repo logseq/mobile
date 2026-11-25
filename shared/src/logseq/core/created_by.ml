@@ -48,19 +48,24 @@ let value db eid attr =
 
 let additions identity (report : Ds.tx_report) =
   let targets = Hashtbl.create 8 in
+  let actor_eid = Ds.entid report.db_after "block/uuid" (Ds.Uuid identity.uuid) in
+  let authored_reaction = ref false in
   List.iter (fun (datom : Ds.datom) ->
     if datom.added then begin
-      let newly_created = datom.a = "block/uuid" && value report.db_before datom.e "block/uuid" = None
-        && value report.db_after datom.e property = None in
+      let newly_created = datom.a = "block/uuid" && value report.db_before datom.e "block/uuid" = None in
+      if newly_created && value report.db_after datom.e "logseq.property.reaction/target" <> None
+         && Option.exists (Graph_read.has_ref report.db_after datom.e property) actor_eid then
+        authored_reaction := true;
       let first_text = datom.a = "block/title" && (match datom.v with
         | Ds.String title when not (String_kit.is_blank title) ->
           (match value report.db_before datom.e "block/title" with
            | None -> true | Some (Ds.String old) -> String_kit.is_blank old | _ -> false)
         | _ -> false) in
-      if newly_created || first_text then Hashtbl.replace targets datom.e ()
+      if (newly_created && value report.db_after datom.e property = None) || first_text then
+        Hashtbl.replace targets datom.e ()
     end) report.tx_data;
-  if Hashtbl.length targets = 0 then [] else
-  let actor, create = match Ds.entid report.db_after "block/uuid" (Ds.Uuid identity.uuid) with
+  if Hashtbl.length targets = 0 && not !authored_reaction then [] else
+  let actor, create = match actor_eid with
     | Some eid ->
       let actor = Ds.Entity_id eid in
       let changed attr contents =

@@ -185,7 +185,7 @@ let host_action (update : Host_update.host_update) =
   | Open_quick_action kind -> Model.OpenQuickAction kind
   | Confirm_outliner_delete -> Model.ConfirmOutlinerDelete
   | Open_capture -> Model.ExpandComposer
-  | Open_settings -> Model.OpenSettings
+  | Resume_settings -> Model.ResumeSettings
   | Open_pushed_discussion (graph, id) -> Model.OpenPushedDiscussion (graph, id)
   | Push_preference (enabled, comments, reactions) ->
     Model.ApplyPushPreference {enabled; comments; reactions}
