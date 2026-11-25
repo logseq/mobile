@@ -181,6 +181,8 @@ type pending_property_value =
 
 type pending_intent =
   | Atomic of pending_intent list
+  | Add_comment of Collaboration.comment_write
+  | Set_reaction of Collaboration.reaction_write
   | Set_key_value of { key : string; value : semantic_value option }
   | Create_property_value of pending_property_value
   | Save_title of pending_title
@@ -352,7 +354,8 @@ let search_visible_property attr =
 let rec affected_uuids db intent =
   match intent with
   | Atomic intents -> List.concat_map (affected_uuids db) intents |> List.sort_uniq String.compare
-  | Set_key_value _ -> []
+  | Add_comment write -> [write.target; write.thread; write.uuid]
+  | Set_reaction _ | Set_key_value _ -> []
   | Set_property value -> if search_visible_property value.attr then [ value.uuid ] else []
   | Set_properties value ->
     if
@@ -380,6 +383,7 @@ let rec affected_uuids db intent =
 let rec safe_to_rebase intent =
   match intent with
   | Atomic intents -> List.for_all safe_to_rebase intents
+  | Add_comment _ | Set_reaction _
   | Set_key_value _ | Create_property_value _ | Save_title _ | Set_property _ | Set_properties _ | Split_block _
   | Merge_backward _ | Create_tag _ | Create_page _ | Create_property _ | Create_journal _
   | Add_tag _ | Insert_block _ | Create_asset _ | Move_block _ | Move_blocks _
@@ -388,6 +392,7 @@ let rec safe_to_rebase intent =
 
 let inserted_result_exists db intent =
   match intent with
+  | Add_comment write -> Option.is_some (Collaboration.entity db write.uuid)
   | Insert_block value ->
     Option.is_some (Ds.entid db "block/uuid" (Ds.Uuid value.uuid))
   | Create_asset value ->
@@ -421,6 +426,8 @@ let remove_raw = Graph_sqlite.remove_pending
 
 let outliner_op intent =
   match intent with
+  | Set_reaction _ -> "toggle-reaction"
+  | Add_comment _ -> "insert-blocks"
   | Atomic _ | Set_key_value _ | Create_property_value _ | Save_title _ | Set_property _ | Set_properties _ | Create_tag _
   | Create_page _ | Create_property _ | Add_tag _ -> "save-block"
   | Insert_block _ | Create_asset _ | Create_journal _ -> "insert-blocks"
@@ -610,6 +617,12 @@ let rec intent_json intent =
   let kind, fields =
     match intent with
     | Atomic intents -> ("atomic", ["intents", `List (List.map intent_json intents)])
+    | Add_comment write -> ("add-comment", [
+        "target", `String write.target; "thread", `String write.thread;
+        "uuid", `String write.uuid; "text", `String write.text; "createdAt", `Int write.created_at])
+    | Set_reaction write -> ("set-reaction", [
+        "target", `String write.target; "actor", `String write.actor; "uuid", `String write.uuid;
+        "emoji", `String write.emoji; "active", `Bool write.active; "createdAt", `Int write.created_at])
     | Set_key_value {key; value} -> ("set-key-value", ["key", `String key; "value", option_json semantic_value_json value])
     | Create_property_value value -> ("create-property-value", [
         "uuid", `String value.uuid; "ownerUuid", `String value.owner_uuid;
@@ -742,6 +755,13 @@ let rec intent_of_json input =
   let fields = object_fields input "pending intent must be an object" in
   match string_field fields "type" with
   | "atomic" -> Atomic (List.map intent_of_json (array_field fields "intents"))
+  | "add-comment" -> Add_comment {target = string_field fields "target";
+      thread = string_field fields "thread"; uuid = string_field fields "uuid";
+      text = string_field fields "text"; created_at = int_field fields "createdAt"}
+  | "set-reaction" -> Set_reaction {target = string_field fields "target";
+      actor = string_field fields "actor"; uuid = string_field fields "uuid";
+      emoji = string_field fields "emoji"; active = bool_field fields "active";
+      created_at = int_field fields "createdAt"}
   | "set-key-value" -> Set_key_value {key = string_field fields "key"; value = semantic_field fields "value"}
   | "save-title" ->
     Save_title

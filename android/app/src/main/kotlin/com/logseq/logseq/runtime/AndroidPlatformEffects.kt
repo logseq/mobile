@@ -162,6 +162,9 @@ internal class AndroidPlatformEffects(
     private val platform: AndroidPlatformServices,
     private val attachmentsImporter: suspend (String) -> List<Map<String, Any>>,
     private val syncNow: () -> Boolean = { false },
+    private val setDiscussionPush: suspend (Boolean) -> Unit = {},
+    private val revokeDiscussionPush: suspend () -> Unit = {},
+    private val persistUISession: (String) -> Unit = {},
     private val presentJournalCalendar: suspend () -> NativeEffectResolution = {
         NativeEffectResolution.Discard(succeeded = false, message = "Journal calendar is unavailable")
     },
@@ -247,7 +250,16 @@ internal class AndroidPlatformEffects(
             "sign-in" -> {
                 NativeEffectResolution.Discard(message = authentication.signIn(effect.text))
             }
+            "push-preference" -> {
+                setDiscussionPush(effect.text == "true")
+                NativeEffectResolution.Discard()
+            }
+            "persist-ui-session" -> {
+                persistUISession(effect.text)
+                NativeEffectResolution.Discard()
+            }
             "sign-out" -> {
+                revokeDiscussionPush()
                 authentication.signOut()
                 NativeEffectResolution.Discard()
             }

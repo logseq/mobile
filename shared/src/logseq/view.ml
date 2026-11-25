@@ -72,6 +72,7 @@ let with_ui_state model_source elem =
             (if model.search_navigation_path = [] then "search" else "page")
           else match model.destination with
             | GraphsDestination -> "graphs"
+            | NotificationsDestination -> "notifications"
             | FlashcardsDestination -> "flashcards"
             | TasksDestination -> if model.app_navigation_path = [] then "tasks" else "page"
             | JournalsDestination ->
@@ -426,7 +427,7 @@ let extension_registry () =
       [property "selection-active" BoolScalar true None] []);
   Lui_extension.register_component registry (let open Lui_protocol in
     let open Lui_extension in
-    component "bottom-tab-strip" [profile IOS SwiftUIHost] true []
+    component "bottom-tab-strip" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost] true []
       [property "inset" IntScalar true None; property "selected-index" IntScalar true None;
        property "items" StringScalar true None; property "cell-width" IntScalar true None]
       [event "select" [event_field "index" IntScalar true]; event "home-double-tap" []]);

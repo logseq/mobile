@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.os.Build
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.view.doOnPreDraw
@@ -27,6 +28,21 @@ class MainActivity : ComponentActivity() {
     private lateinit var runtime: LogseqRuntime
     private var entryToken = java.util.UUID.randomUUID().toString()
     private var entryHandled = false
+    private var discussionPermission: kotlinx.coroutines.CancellableContinuation<Boolean>? = null
+    private val requestDiscussionPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        result ->
+        discussionPermission?.let { continuation ->
+            discussionPermission = null
+            continuation.resumeWith(Result.success(result))
+        }
+    }
+
+    internal suspend fun requestDiscussionNotificationPermission(): Boolean =
+        kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+            check(discussionPermission == null)
+            discussionPermission = continuation
+            requestDiscussionPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
@@ -124,6 +140,14 @@ class MainActivity : ComponentActivity() {
 
     private suspend fun handleAppIntent(intent: Intent?, token: String) {
         if (intent == null) return
+        val notificationGraph = intent.getStringExtra("graphId")
+        val notificationEvent = intent.getStringExtra("eventId")
+        if (notificationGraph != null && notificationEvent != null) {
+            runtime.openDiscussionPush(notificationGraph, notificationEvent)
+            intent.removeExtra("graphId")
+            intent.removeExtra("eventId")
+            return
+        }
         if (intent.action == Intent.ACTION_VIEW) {
             AndroidAppEntryParser.deepLink(intent.dataString)?.let { publishAppEntry(it + ("captureUuid" to entryId(token, "link"))) }
             if (entryToken == token) setIntent(Intent(this, MainActivity::class.java).setAction(Intent.ACTION_MAIN))

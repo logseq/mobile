@@ -548,6 +548,8 @@ let core_projection fields =
         (selected_task_block_ids fields);
     has_older_journals = bool_member "hasOlderJournals" fields;
     is_outliner_patch = is_patch;
+    collaboration_update = List.assoc_opt "collaboration" fields;
+    is_collaboration_patch = bool_member "isCollaborationPatch" fields;
     pdf_update = (match List.assoc_opt "pdfWorkspace" fields with
       | Some (`Assoc _ as value) -> Some (Yojson.Basic.to_string value) | _ -> None);
     is_pdf_patch = bool_member "isPdfPatch" fields;

@@ -65,6 +65,8 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let selectionMember: Bool?
     let isTask: Bool?
     let menuLabels: [String: String]?
+    let discussionsAvailable: Bool?
+    let isComment: Bool?
     let editing: Bool?
     let allowsDrag: Bool?
     let trailingInset: CGFloat?
@@ -336,6 +338,13 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
                 emit("open-node", uuid: row.embedSourceUuid)
             }
         ]
+        if row.discussionsAvailable == true {
+            var collaboration = [menuAction("Add reaction", icon: "face.smiling", action: "reaction")]
+            if row.isComment != true {
+                collaboration.insert(menuAction("Comments", icon: "bubble", action: "comments"), at: 0)
+            }
+            items.append(UIMenu(options: .displayInline, children: collaboration))
+        }
         if row.isTask == true {
             var taskItems: [UIMenuElement] = [
                 menuAction("Scheduled", icon: "calendar", action: "scheduled"),

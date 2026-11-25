@@ -22,6 +22,7 @@ type navigation_route =
 type primary_destination =
   | JournalsDestination
   | TasksDestination
+  | NotificationsDestination
   | FlashcardsDestination
   | GraphsDestination
 
@@ -79,6 +80,7 @@ type ui_session =
   ; selected_page_id : string option
   ; settings_open : bool
   ; recent_graph_ids : string list
+  ; read_notifications : (string * string list) list
   ; tasks_view : tasks_view option
   }
 
@@ -296,6 +298,8 @@ type core_projection =
   ; search_has_more : bool
   ; search_results : search_hit list
   ; reference_update : (string * outline_row list) option
+  ; collaboration_update : Yojson.Basic.t option
+  ; is_collaboration_patch : bool
   ; pdf_update : string option
   ; is_pdf_patch : bool
   ; widget_block_uuid : string option
@@ -329,6 +333,8 @@ type composer_submission =
   }
 
 type logseq_effect =
+  | PushPreferenceEffect of int * bool
+  | CollaborationEffect of int * string
   | PdfAnnotationEffect of int * string
   | ResultViewEffect of int * string * string
   | NodePropertyEffect of int * string * string
@@ -543,6 +549,15 @@ type logseq_model =
   ; app_navigation_previews : node_projection list
   ; app_navigation_path : navigation_route list
   ; search_navigation_path : navigation_route list
+  ; collaboration : Yojson.Basic.t
+  ; push_enabled : bool
+  ; push_error : string option
+  ; pending_push_route : (string * string) option
+  ; discussion_target : string option
+  ; discussion_draft : string
+  ; discussion_error : string option
+  ; reaction_picker : string option
+  ; read_notifications : (string * string list) list
   ; pdf_workspace : string option
   ; asset_preview : asset_preview option
   }
@@ -649,6 +664,18 @@ type logseq_action =
   | ShowTasks
   | SetTasksView of tasks_view
   | SelectTasks
+  | ShowNotifications
+  | SetPushPreference of bool
+  | ApplyPushPreference of bool
+  | OpenPushedDiscussion of string * string
+  | OpenDiscussion of string
+  | CloseDiscussion
+  | EditDiscussionDraft of string
+  | PostDiscussionComment
+  | ShowReactionPicker of string option
+  | ToggleDiscussionReaction of string * string
+  | ReadNotification of string
+  | ReadAllNotifications
   | ShowFlashcards
   | FlashcardDeckAction of string
   | ShowGraphs
@@ -945,6 +972,13 @@ let initial () =
     attachment_picker_open = false;
     task_status_picker_open = false;
     asset_preview = None;
+    collaboration = `Null;
+    push_enabled = false; push_error = None; pending_push_route = None;
+    discussion_target = None;
+    discussion_draft = "";
+    discussion_error = None;
+    reaction_picker = None;
+    read_notifications = [];
     pdf_workspace = None;
     app_navigation_previews = [];
     app_navigation_path = [];
@@ -983,6 +1017,8 @@ let navigation_route_uuid route =
 
 let effect_id eff =
   match eff with
+  | PushPreferenceEffect (id, _)
+  | CollaborationEffect (id, _)
   | PdfAnnotationEffect (id, _)
   | LoadResultRowsEffect (id, _, _) | LoadPropertyValuesEffect (id, _, _) | ResultViewEffect (id, _, _) | NodePropertyEffect (id, _, _) | SetJournalTitleFormatEffect (id, _) -> id
   | LoadComposerTagsEffect (id, _) -> id
@@ -2180,9 +2216,11 @@ let ui_session (current : logseq_model) =
        | None -> None);
     settings_open = current.settings_open;
     tasks_view = Some current.tasks_view;
+    read_notifications = current.read_notifications;
   }
 
 let restore_ui_session (current : logseq_model) (session : ui_session) =
+  let current = {current with read_notifications = session.read_notifications} in
   let current = match session.tasks_view with
     | None -> current
     | Some preferences -> { current with tasks_view = { preferences with tab = current.tasks_view.tab } } in
@@ -2257,6 +2295,52 @@ let pdf_request current fields =
 let pdf_merge workspace fields =
   Yojson.Basic.to_string (`Assoc (fields @ List.filter
     (fun (key, _) -> not (List.mem_assoc key fields)) (pdf_fields workspace)))
+
+let collaboration_field key = function
+  | `Assoc fields -> Option.value ~default:`Null (List.assoc_opt key fields)
+  | _ -> `Null
+
+let collaboration_string key json = match collaboration_field key json with
+  | `String value -> value | _ -> ""
+
+let notification_items (current : logseq_model) = match collaboration_field "inbox" current.collaboration with
+  | `List values -> values | _ -> []
+
+let notification_scope (current : logseq_model) =
+  match collaboration_field "account" current.collaboration, current.selected_graph_id with
+  | `String actor, Some graph -> Some (actor ^ "/" ^ graph)
+  | _ -> None
+
+let notification_read (current : logseq_model) id =
+  match notification_scope current with
+  | Some scope -> List.mem id (Option.value ~default:[] (List.assoc_opt scope current.read_notifications))
+  | None -> false
+
+let notification_count current =
+  List.fold_left (fun count item ->
+    if notification_read current (collaboration_string "id" item) then count else count + 1)
+    0 (notification_items current)
+
+let mark_notifications current ids =
+  match notification_scope current with
+  | Some scope ->
+    let existing = Option.value ~default:[] (List.assoc_opt scope current.read_notifications) in
+    let values = List.fold_right (fun id tail -> if id = "" || List.mem id tail then tail else id :: tail) ids existing in
+    {current with read_notifications = (scope, List.take 300 values) :: List.take 29 (List.remove_assoc scope current.read_notifications)}
+  | None -> current
+
+let collaboration_request current target action fields =
+  match current.selected_graph_id with
+  | Some graph when target <> "" && notification_scope current <> None ->
+    let payload = Yojson.Basic.to_string (`Assoc (["graphId", `String graph;
+      "target", `String target; "action", `String action] @ fields)) in
+    enqueue_effect current (CollaborationEffect (current.next_effect_id, payload))
+  | _ -> current
+
+let posting_comment current =
+  List.exists (function
+    | CollaborationEffect (_, payload) -> pdf_string (pdf_fields payload) "action" = "comment"
+    | _ -> false) (current.pending_effects @ current.in_flight_effects)
 
 let rec update (current : logseq_model) action =
   match action with
@@ -2431,7 +2515,25 @@ let rec update (current : logseq_model) action =
           composer_expanded = false;
           composer_autofocus = false }
       | _ -> current in
-    let applied = if projection.is_pdf_patch then current else apply_core_snapshot current projection in
+    let applied = if projection.is_pdf_patch || projection.is_collaboration_patch then current
+      else apply_core_snapshot current projection in
+    let graph_changed = applied.selected_graph_id <> current.selected_graph_id in
+    let applied = if graph_changed then {applied with collaboration = `Null; discussion_target = None;
+      discussion_draft = ""; discussion_error = None; reaction_picker = None} else applied in
+    let applied = match projection.collaboration_update with
+      | Some `Null -> {applied with collaboration = `Null; discussion_target = None; reaction_picker = None}
+      | Some data when Option.map (fun graph -> `String graph) applied.selected_graph_id
+           = Some (collaboration_field "graphId" data) -> {applied with collaboration = data}
+      | _ -> applied in
+    let applied = match applied.pending_push_route with
+      | Some (graph, id) when applied.selected_graph_id = Some graph
+                             && List.exists (fun item -> collaboration_string "id" item = id)
+                               (notification_items applied) ->
+        update {applied with pending_push_route = None} (ReadNotification id)
+      | Some (graph, _) when applied.selected_graph_id <> Some graph && current.graph_loading
+                             && not applied.graph_loading ->
+        {applied with pending_push_route = None}
+      | _ -> applied in
     let editing_uuid model = Option.map (fun editing -> editing.editing_uuid) model.outliner_editing in
     let applied =
       if editing_uuid current <> editing_uuid applied
@@ -2816,6 +2918,18 @@ let rec update (current : logseq_model) action =
          else resolve_failed_effect current eff message
        in
        let resolved_current = match eff with
+         | PushPreferenceEffect (_, enabled) ->
+           if succeeded then {resolved_current with push_enabled = enabled; push_error = None}
+           else {resolved_current with push_error = Some message}
+         | CollaborationEffect (_, payload) ->
+           let fields = pdf_fields payload in
+           if current.selected_graph_id <> Some (pdf_string fields "graphId") then resolved_current
+           else if not succeeded then {resolved_current with discussion_error = Some message}
+           else if pdf_string fields "action" = "comment"
+             && current.discussion_target = Some (pdf_string fields "target")
+             && current.discussion_draft = pdf_string fields "text"
+           then {resolved_current with discussion_draft = ""; discussion_error = None}
+           else resolved_current
          | PdfAnnotationEffect (_, payload) when not succeeded ->
            (match resolved_current.pdf_workspace with
             | Some workspace when pdf_string (pdf_fields workspace) "graphId" = pdf_string (pdf_fields payload) "graphId"
@@ -3108,8 +3222,53 @@ let rec update (current : logseq_model) action =
       else current
     in
     { current with home_scroll_request = current.home_scroll_request + 1 }
-  | ShowJournals | ShowTasks ->
-    let destination = if action = ShowTasks then TasksDestination else JournalsDestination in
+  | ApplyPushPreference enabled -> {current with push_enabled = enabled; push_error = None}
+  | SetPushPreference enabled ->
+    enqueue_effect {current with push_error = None} (PushPreferenceEffect (current.next_effect_id, enabled))
+  | OpenPushedDiscussion (graph, id) ->
+    if not (Ref_text.is_uuid graph && Ref_text.is_uuid id) then current else
+    let viewing = update current ShowNotifications in
+    if viewing.selected_graph_id = Some graph && List.exists (fun item -> collaboration_string "id" item = id)
+        (notification_items viewing) then update viewing (ReadNotification id)
+    else if viewing.selected_graph_id = Some graph then
+      enqueue_effect {viewing with pending_push_route = Some (graph, id)} (SyncNowEffect viewing.next_effect_id)
+    else if List.exists (fun (candidate : graph) -> candidate.id = graph) viewing.graphs then
+      update {viewing with pending_push_route = Some (graph, id)} (RequestOpenGraph graph)
+    else {viewing with push_error = Some "This activity is unavailable"}
+  | OpenDiscussion target when notification_scope current <> None && target <> "" ->
+    let next = update current DismissComposer in
+    collaboration_request {next with discussion_target = Some target; discussion_draft = "";
+      discussion_error = None; reaction_picker = None; sidebar_open = false} target "open" []
+  | OpenDiscussion _ -> current
+  | CloseDiscussion ->
+    let next = {current with discussion_target = None; discussion_draft = ""; discussion_error = None;
+      reaction_picker = None} in
+    Option.fold ~none:next ~some:(fun target -> collaboration_request next target "close" []) current.discussion_target
+  | EditDiscussionDraft draft -> {current with discussion_draft = draft; discussion_error = None}
+  | PostDiscussionComment when String.trim current.discussion_draft = "" || posting_comment current -> current
+  | PostDiscussionComment ->
+    Option.fold ~none:current ~some:(fun target -> collaboration_request current target "comment"
+      ["text", `String current.discussion_draft]) current.discussion_target
+  | ShowReactionPicker target ->
+    if notification_scope current = None then current else
+    let next = if target <> None then update current DismissComposer else current in
+    {next with reaction_picker = target; sidebar_open = false}
+  | ToggleDiscussionReaction (target, emoji) ->
+    collaboration_request {current with reaction_picker = None; discussion_error = None}
+      target "reaction" ["emoji", `String emoji]
+  | ReadAllNotifications ->
+    update (mark_notifications current (List.map (collaboration_string "id") (notification_items current))) SaveUISession
+  | ReadNotification id ->
+    (match List.find_opt (fun item -> collaboration_string "id" item = id) (notification_items current) with
+     | None -> current
+     | Some item ->
+       let next = update (mark_notifications current [id]) SaveUISession in
+       let target = collaboration_string "target" item in
+       if collaboration_string "kind" item = "comment" then update next (OpenDiscussion target)
+       else update next (RequestAppNode target))
+  | ShowJournals | ShowTasks | ShowNotifications ->
+    let destination = match action with ShowTasks -> TasksDestination
+      | ShowNotifications -> NotificationsDestination | _ -> JournalsDestination in
     let updated =
       {
         (cancel_outliner_editing (return_to_app_root current)) with

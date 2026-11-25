@@ -1,0 +1,4 @@
+<resources>
+    <string name="discussion_notifications">讨论通知</string>
+    <string name="discussion_push_body">你有一条新的讨论动态。</string>
+</resources>

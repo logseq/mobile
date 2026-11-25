@@ -210,7 +210,7 @@ let metadata_member key row =
 
 let block_menu_labels current =
   `Assoc (List.map (fun label -> label, `String (View_base.tr current label))
-    ["Open block"; "Edit"; "Scheduled"; "Deadline"; "Status"; "Copy"; "Cut"; "Copy reference"; "Copy URL";
+    ["Open block"; "Comments"; "Add reaction"; "Edit"; "Scheduled"; "Deadline"; "Status"; "Copy"; "Cut"; "Copy reference"; "Copy URL";
      "Move"; "Move up"; "Move down"; "Outdent"; "Indent"; "Delete"; "Select"; "Unselect"])
 
 let handle_block_menu_event model_source row_source send = function
@@ -220,6 +220,10 @@ let handle_block_menu_event model_source row_source send = function
      | Some (StringValue "open") ->
        let uuid = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
        ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))
+     | Some (StringValue ("comments" | "reaction" as action)) ->
+       let uuid = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
+       if action = "comments" then ignore (send (Model.OpenDiscussion uuid))
+       else ignore (send (Model.ShowReactionPicker (Some uuid)))
      | Some (StringValue ("scheduled" | "deadline" as field)) ->
        if metadata_member "isTask" row = `Bool true then
          ignore (send (Model.OpenBlockTaskDate (row.row_uuid, field)))
@@ -270,6 +274,8 @@ let outliner_rich_block_view ?(show_code_language = true) model_source title_sou
          StringValue (Yojson.Basic.to_string (`Assoc [
            "selectionMode", `Bool (View_base.outliner_selection_active_ current);
            "isTask", `Bool is_task;
+           "discussionsAvailable", `Bool (current.collaboration <> `Null && metadata_member "discussionKind" row <> `String "thread");
+           "isComment", `Bool (metadata_member "discussionKind" row = `String "comment");
            "statuses", `List statuses;
            "labels", block_menu_labels current;
          ]))) model_source row_source);
@@ -737,6 +743,8 @@ let native_outliner_row ~allow_drag ~trailing_inset model_source retained_source
         ~some:(fun scope -> scope ^ "/" ^ row.row_uuid) retained.edit_scope);
       "embedSourceUuid", (match row.row_embed_source_uuid with Some uuid -> `String uuid | None -> `Null);
       "pdfAnnotation", metadata_member "pdfAnnotation" row;
+      "discussionsAvailable", `Bool (current.collaboration <> `Null && metadata_member "discussionKind" row <> `String "thread");
+      "isComment", `Bool (metadata_member "discussionKind" row = `String "comment");
       "listNumber", (match (if row.row_is_embed then None else row.row_list_number) with Some n -> `Int n | None -> `Null);
       "nodeIcon", (let icon = View_base.outliner_node_icon current row in
         if icon = "" then `Null else Yojson.Basic.from_string icon);
@@ -959,23 +967,30 @@ let discussion_body model_source row_source body : t =
     else body)
     (Signal.map (fun row -> match metadata_member "discussionKind" row with `String value -> value | _ -> "") row_source)
 
-let reaction_strip row_source : t =
+let reaction_strip model_source row_source send : t =
   let reactions = Signal.map (fun row -> match metadata_member "reactions" row with
     | `List values -> values | _ -> []) row_source in
   if_ ~test:(Signal.map (fun values -> values <> []) reactions)
     (row ~gap:6 ~padding_horizontal:32 ~padding_vertical:4
       [keyed ~source:reactions ~key:(fun value -> Yojson.Basic.Util.member "emoji" value) ~cmp:compare
         ~mount:(fun source ->
-          text ~value:(reactive (Signal.map (fun value ->
-            let open Yojson.Basic.Util in
-            let emoji = try value |> member "emoji" |> to_string with _ -> "" in
-            let count = try value |> member "count" |> to_int with _ -> 0 in
-            emoji ^ " " ^ string_of_int count) source))
-            ~padding_horizontal:8 ~padding_vertical:4 ~corner_radius:8
-            ~background:"muted" ~style_class:"caption" [])])
+          let value = Signal.map (fun value ->
+            let emoji = Model.collaboration_string "emoji" value in
+            let count = match Model.collaboration_field "count" value with `Int count -> count | _ -> 0 in
+            emoji ^ " " ^ string_of_int count) source in
+          let readonly = Signal.map (fun (current : Model.logseq_model) -> current.collaboration = `Null) model_source in
+          reactive (fun readonly ->
+            if readonly then text ~value:(reactive value) ~padding_horizontal:8 ~padding_vertical:4
+              ~corner_radius:8 ~background:"muted" ~style_class:"caption" []
+            else button ~text:(Signal.sample value) ~text_signal:value ~variant:`secondary
+              ~on_press:(fun _ ->
+                let row : Model.outline_row = Signal.sample row_source in
+                let uuid = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
+                let emoji = Model.collaboration_string "id" (Signal.sample source) in
+                ignore (send (Model.ToggleDiscussionReaction (uuid, emoji)))) []) readonly)])
 
 let decorate_row model_source row_source send body =
-  column ~gap:0 [discussion_body model_source row_source body; reaction_strip row_source]
+  column ~gap:0 [discussion_body model_source row_source body; reaction_strip model_source row_source send]
 
 let with_embed_children model_source edit_scope row_source send render_row render_child : t =
   reactive (fun has_embed_children ->

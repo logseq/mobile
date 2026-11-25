@@ -33,4 +33,6 @@
     <string name="widget_no_tasks">No tasks yet.</string>
     <string name="widget_no_random_blocks">No blocks with at least five characters.</string>
     <string name="record_audio">Record audio</string>
+    <string name="discussion_notifications">Discussion notifications</string>
+    <string name="discussion_push_body">New activity in a discussion.</string>
 </resources>

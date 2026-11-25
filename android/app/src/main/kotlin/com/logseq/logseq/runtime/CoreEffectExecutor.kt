@@ -71,6 +71,8 @@ internal class CoreEffectExecutor(
             "report-error",
             "present-journal-calendar",
             "persist-composer-draft",
+            "persist-ui-session",
+            "push-preference",
             "present-attachment",
             "present-asset",
             "present-page-share",

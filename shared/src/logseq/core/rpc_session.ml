@@ -293,9 +293,43 @@ let with_pdf_update session result =
   | Some _, _ -> session.pdf_workspace := None; result
   | _ -> result
 
+let collaboration_identity session =
+  Option.bind (state session).config (fun config ->
+    Option.map (fun (actor : Created_by.identity) -> config.Api.graph_id, actor.uuid)
+      (Created_by.of_token config.Api.token))
+
+let collaboration_json session =
+  match collaboration_identity session, query_db session with
+  | Some (graph_id, actor), Some db ->
+    let inbox = match !(session.Types.collaboration_inbox) with
+      | Some (previous, previous_actor, inbox) when previous == db && previous_actor = actor -> inbox
+      | _ ->
+        let inbox = Collaboration.inbox db ~actor in
+        session.collaboration_inbox := Some (db, actor, inbox);
+        inbox in
+    let discussion = match !(session.discussion) with
+      | Some (graph, target) when graph = graph_id ->
+        (match Collaboration.discussion db ~actor ~target with
+         | Some (`Assoc fields) -> `Assoc (("target", `String target) :: fields)
+         | Some _ | None -> `Assoc ["target", `String target; "error", `String "This discussion is unavailable"])
+      | _ -> `Null in
+    `Assoc ["graphId", `String graph_id; "account", `String actor; "inbox", `List inbox;
+      "discussion", discussion]
+  | _ ->
+    session.Types.collaboration_inbox := None;
+    `Null
+
+let with_collaboration session = function
+  | `Assoc fields when List.mem_assoc "selectedGraphId" fields
+                    || List.mem_assoc "isCollaborationPatch" fields
+                    || List.assoc_opt "isPendingSyncProjection" fields = Some (`Bool true)
+                    || List.assoc_opt "isPendingSyncPatch" fields = Some (`Bool true) ->
+    `Assoc (("collaboration", collaboration_json session) :: fields)
+  | result -> result
+
 let success session result =
   Rpc.success (Rpc.with_node_icons (node_icon session)
-    (with_local_assets session (with_queries session (with_pdf_update session result))))
+    (with_collaboration session (with_local_assets session (with_queries session (with_pdf_update session result)))))
 
 let take count values =
   let rec loop count result = function
@@ -2606,6 +2640,41 @@ let rec dispatch session action payload =
          | Ok value -> success session (`Assoc ["nodeProperties", value])
          | Error message -> Rpc.failure "invalid_property" message)
      | _ -> Rpc.failure "graph_unavailable" "No graph is open")
+  | "collaboration" ->
+    (match payload, collaboration_identity session, query_db session with
+     | Some payload, Some (graph, actor), Some db ->
+       (try
+          let open Yojson.Basic.Util in
+          let input = Json.from_string payload in
+          let str key = member key input |> to_string in
+          let reply () = success session (`Assoc ["isCollaborationPatch", `Bool true]) in
+          if str "graphId" <> graph then Rpc.failure "stale_graph" "The active graph changed"
+          else
+            let target = str "target" in
+            match str "action" with
+            | "open" ->
+              session.Types.discussion := Some (graph, target);
+              reply ()
+            | "close" ->
+              if !(session.Types.discussion) = Some (graph, target) then session.discussion := None;
+              reply ()
+            | ("comment" | "reaction") as action ->
+              (match editing_cursor session with
+               | Error (code, message) -> Rpc.failure code message
+               | Ok cursor ->
+                 let uuid = fresh_squuid () and created_at = now_ms () in
+                 let intent = if action = "comment" then
+                   Ops.Add_comment {target; thread = fresh_squuid (); uuid;
+                     text = String.trim (str "text"); created_at}
+                 else
+                   let emoji = str "emoji" in
+                   let active = Collaboration.own_reactions db ~target ~actor ~emoji = [] in
+                   Ops.Set_reaction {target; actor; uuid; emoji; active; created_at} in
+                 stage_result session (fresh_squuid ()) cursor intent)
+            | _ -> Rpc.failure "invalid_collaboration" "Unknown discussion action"
+        with Yojson.Json_error _ | Yojson.Basic.Util.Type_error _ ->
+          Rpc.failure "invalid_collaboration" "Invalid discussion request")
+     | _ -> Rpc.failure "graph_unavailable" "Open a signed-in graph to use discussions")
   | "pdfAnnotation" ->
     (match payload, query_db session, (state session).config with
      | Some payload, Some db, Some config ->

@@ -207,11 +207,13 @@ let confirmed_operation confirmed server_t _authoritative
      | _ -> false
 
 let stored_transaction runtime database (operation : Ops.pending_operation) =
+  let recompile = operation.base_t <> (state runtime).server_t &&
+    match operation.intent with Ops.Add_comment _ | Ops.Set_reaction _ -> true | _ -> false in
   match Graph_sqlite.pending_tx runtime.path operation.operation_id with
-  | Some (tx, _) -> Ok tx
-  | None ->
-    (* Migrate the previous intent-only queue once. New entries always persist
-       the resolved datoms alongside the intent before publishing the overlay. *)
+  | Some (tx, _) when not recompile -> Ok tx
+  | _ ->
+    (* Discussion writes depend on the current thread and actor's reactions.
+       Other operations retain their resolved transaction during reconciliation. *)
     let ( let* ) = Result.bind in
     let* () =
       if operation.base_t <> (state runtime).server_t && not (Ops.safe_to_rebase operation.intent) then

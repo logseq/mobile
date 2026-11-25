@@ -84,6 +84,16 @@ android {
         buildConfigField("String", "GIT_REVISION", "\"${buildRevision.get()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "SENTRY_DEBUG", sentryDebug.get().toString())
+        val firebaseResources = mapOf(
+            "google_app_id" to "LOGSEQ_ANDROID_FIREBASE_APP_ID",
+            "google_api_key" to "LOGSEQ_ANDROID_FIREBASE_API_KEY",
+            "gcm_defaultSenderId" to "LOGSEQ_ANDROID_FIREBASE_SENDER_ID",
+            "project_id" to "LOGSEQ_ANDROID_FIREBASE_PROJECT_ID",
+        ).mapValues { (_, variable) -> providers.environmentVariable(variable).getOrElse("") }
+        if (firebaseResources.values.any(String::isNotEmpty)) {
+            check(firebaseResources.values.all(String::isNotEmpty)) { "Provide all four Firebase app configuration values" }
+            firebaseResources.forEach { (key, value) -> resValue("string", key, value) }
+        }
         // The JNI shim and prebuilt OCaml core must use the same ABI. Shipping
         // a shim for an unbuilt ABI lets installation succeed but startup fail.
         ndk {
@@ -175,6 +185,7 @@ dependencies {
     implementation("androidx.pdf:pdf-compose:1.0.0-beta01")
     implementation("androidx.pdf:pdf-document-service:1.0.0-beta01")
     implementation("com.google.mlkit:genai-speech-recognition:1.0.0-alpha1")
+    implementation("com.google.firebase:firebase-messaging:25.0.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("ru.noties:jlatexmath-android:0.2.0")

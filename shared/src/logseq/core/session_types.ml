@@ -185,6 +185,8 @@ type session =
   ; reference_cache : (string, Model.block list) Hashtbl.t
   ; reference_collapsed : (string option * string, bool) Hashtbl.t
   ; result_view_cache : Result_view.cache
+  ; discussion : (string * string) option ref
+  ; collaboration_inbox : (Datascript.db * string * Yojson.Basic.t list) option ref
   ; pdf_workspace : (string * string * Datascript.db) option ref
   ; widget_snapshot : (string * Datascript.db * string) option ref
   ; widget_random_sample : (string * int * int list) option ref
@@ -314,6 +316,8 @@ let create_session ?(journal_tasks = Journal_task_dates.create_cache ()) options
     result_view_cache = Result_view.create_cache ();
     journal_tasks;
     reference_generation = ref None;
+    discussion = ref None;
+    collaboration_inbox = ref None;
     pdf_workspace = ref None;
     widget_snapshot = ref None;
     widget_random_sample = ref None;

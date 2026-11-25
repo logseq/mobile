@@ -149,6 +149,8 @@ type pending_property_value =
 
 type pending_intent =
   | Atomic of pending_intent list
+  | Add_comment of Collaboration.comment_write
+  | Set_reaction of Collaboration.reaction_write
   | Set_key_value of { key : string; value : semantic_value option }
   | Create_property_value of pending_property_value
   | Save_title of pending_title
