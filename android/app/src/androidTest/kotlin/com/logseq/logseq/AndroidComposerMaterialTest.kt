@@ -22,9 +22,6 @@ import androidx.compose.ui.test.assertTouchHeightIsEqualTo
 import androidx.compose.ui.test.assertTouchWidthIsEqualTo
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.click
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -119,37 +116,15 @@ class AndroidComposerMaterialTest {
         ui.onNodeWithTag("spacer.composer.controls").assertHasNoClickAction()
     }
 
-    @Test fun collapsedCameraUsesTheNativeIconContainerAndTouchTarget() {
+    @Test fun collapsedCaptureUsesACircleButtonBesideSearch() {
         composer(expanded = false)
-        val camera = ui.onNodeWithTag("button.composer.camera")
-        camera.assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
-            .assertTouchHeightIsEqualTo(48.dp).assertTouchWidthIsEqualTo(48.dp)
-        val pixels = camera.captureToImage().toPixelMap()
-        var tonalPixels = 0
-        for (y in 0 until pixels.height) for (x in 0 until pixels.width) {
-            if (pixels[x, y] == secondaryContainer) tonalPixels++
-        }
-        assertTrue("Camera uses the host Material tonal container", tonalPixels > pixels.width * pixels.height / 4)
-    }
-
-    @Test fun collapsedCaptureFillsTheSpaceBesideTheCamera() {
-        composer(expanded = false)
-        val surface = ui.onNodeWithTag("surface.composer.root").getUnclippedBoundsInRoot()
-        val capture = ui.onNodeWithTag("button.composer.expand").getUnclippedBoundsInRoot()
-        assertTrue("Capture reaches the trailing edge of its surface", surface.right - capture.right <= 8.dp)
-    }
-
-    @Test fun collapsedCaptureBlankSpaceOpensTheComposer() {
-        composer(expanded = false)
-        ui.onNodeWithTag("surface.composer.root").performTouchInput { click(Offset(width * .75f, height / 2f)) }
+        val search = ui.onNodeWithTag("button.search").getUnclippedBoundsInRoot()
+        val capture = ui.onNodeWithTag("button.composer.expand")
+        capture.assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertTouchHeightIsEqualTo(50.dp).assertTouchWidthIsEqualTo(50.dp)
+        assertTrue("Capture shares the Search row", search.top == capture.getUnclippedBoundsInRoot().top)
+        capture.performClick()
         ui.onNodeWithTag("field.composer").assertIsDisplayed()
-    }
-
-    @Test fun collapsedCaptureHasAnOpaqueMaterialSurface() {
-        composer(expanded = false)
-        val pixels = ui.onNodeWithTag("surface.composer.root").captureToImage().toPixelMap()
-        assertTrue("The capture surface uses its Material container instead of the red journal underneath",
-            pixels[(pixels.width * .75f).toInt(), pixels.height / 2] == surfaceContainerLow)
     }
 
     @Test fun unicodeMultilineDraftAndStatusSurviveCollapseAndReopen() {

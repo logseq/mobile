@@ -12,6 +12,10 @@ val task_status_row :
   Model.logseq_model Signal.signal ->
   Model.task_status Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.dropdown_menu_item_el
+val comment_input :
+  Model.logseq_model Signal.signal ->
+  autofocus:bool -> text_signal:string Signal.signal -> disabled_signal:bool Signal.signal ->
+  on_input:(string -> unit) -> on_submit:(unit -> unit) -> Lui_elements.t
 val composer_view :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->

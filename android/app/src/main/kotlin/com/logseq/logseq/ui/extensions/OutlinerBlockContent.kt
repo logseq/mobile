@@ -410,12 +410,23 @@ private fun AndroidBlockActionMenu(
 ) {
     val labels = actions.optJSONObject("labels")
     val statuses = actions.optJSONArray("statuses") ?: JSONArray()
+    val reactions = actions.optJSONArray("reactionChoices") ?: JSONArray()
     var submenu by remember(expanded) { mutableStateOf<String?>(null) }
     fun label(key: String) = labels?.optString(key, key) ?: key
     fun perform(action: String) { onDismiss(); onAction(action) }
 
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, modifier = Modifier.testTag("outliner.block.menu")) {
         when (submenu) {
+            "Reaction" -> for (index in 0 until reactions.length()) {
+                val choice = reactions.getJSONObject(index)
+                DropdownMenuItem(
+                    text = { Text(choice.getString("emoji")) },
+                    onClick = { perform("reaction:" + choice.getString("id")) },
+                    trailingIcon = if (choice.optBoolean("selected")) {
+                        { logseqIconResolver.icon("selection-done")?.let { Icon(it, contentDescription = null) } }
+                    } else null,
+                )
+            }
             "Move" -> {
                 BlockActionItem(label("Move up"), "toolbar-move-up") { perform("moveUp") }
                 BlockActionItem(label("Move down"), "toolbar-move-down") { perform("moveDown") }
@@ -441,7 +452,9 @@ private fun AndroidBlockActionMenu(
                     if (!actions.optBoolean("isComment")) {
                         BlockActionItem(label("Add comment"), "discussion-comment") { perform("comments") }
                     }
-                    BlockActionItem(label("Add reaction"), "reaction-add") { perform("reaction") }
+                    if (reactions.length() > 0) {
+                        BlockActionItem(label("Add reaction"), "reaction-add") { submenu = "Reaction" }
+                    }
                 }
                 if (actions.optBoolean("isTask")) {
                     BlockActionItem(label("Scheduled"), "calendar") { perform("scheduled") }

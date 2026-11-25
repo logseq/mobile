@@ -543,8 +543,8 @@ type logseq_model =
   ; discussion_composition : (string list * string option) option
   ; expanded_discussions : string list
   ; discussion_draft : string
+  ; saved_discussion_drafts : ((string list * string option) * string) list
   ; discussion_error : string option
-  ; reaction_picker : string option
   ; read_notifications : (string * string list) list
   ; pdf_workspace : string option
   ; asset_preview : asset_preview option
@@ -662,7 +662,6 @@ type logseq_action =
   | CloseDiscussion
   | EditDiscussionDraft of string
   | PostDiscussionComment
-  | ShowReactionPicker of string option
   | ToggleDiscussionReaction of string * string
   | ReadNotification of string
   | ReadAllNotifications

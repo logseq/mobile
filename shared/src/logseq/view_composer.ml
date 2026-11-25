@@ -187,18 +187,19 @@ let with_press handler (elem : t) : t =
   register_press context node handler;
   node)
 
-let composer_send_button model_source context ?send_icon send_disabled on_send : t =
+let composer_send_button model_source context ?send_icon
+    ~identifier ~label send_disabled on_send : t =
+  let label = View_base.tr (Signal.sample model_source) label in
   let android_icon = Option.value send_icon ~default:(`send : icon) in
   let apple_icon = Option.value send_icon ~default:(`arrow_up : icon) in
   if Lui_ui.platform context = Lui_protocol.AndroidOS then
     icon_button ~icon:android_icon ~variant:`primary ~size:`icon ~width:48 ~height:48
-      ~label:(View_base.tr (Signal.sample model_source) "Send")
-      ~accessibility_identifier:"button.send" ?disabled_signal:send_disabled
+      ~label ~accessibility_identifier:identifier ?disabled_signal:send_disabled
       ~on_press:on_send []
   else
     icon_button ~icon:apple_icon ~variant:`ghost ~width:36 ~height:36
-      ~background:"black" ~foreground:"white" ~corner_radius:18 ~label:(View_base.tr (Signal.sample model_source) "Send")
-      ~accessibility_identifier:"button.send" ?disabled_signal:send_disabled
+      ~background:"black" ~foreground:"white" ~corner_radius:18 ~label
+      ~accessibility_identifier:identifier ?disabled_signal:send_disabled
       ~on_press:on_send []
 
 let composer_tag_chips model_source send : t =
@@ -250,7 +251,9 @@ let composer_tag_picker model_source send : t =
 let composer_surface model_source ?key ?accessibility_identifier ?attachments ?tag_strip
     ?attachments_visible_signal ?(actions = []) ~placeholder ?label ?text
     ?text_signal ?(autofocus = false) ?autofocus_signal ?submit_on_enter
-    ?send_icon ?send_disabled_signal ?on_input ?on_submit ?on_send ?on_press ()
+    ?send_icon ?send_disabled_signal ?on_input ?on_submit ?on_send ?on_press
+    ?(field_identifier = "field.composer") ?(send_identifier = "button.send")
+    ?(send_label = "Send") ?(compact = false) ()
     : t =
  custom (fun context parent ->
   (* A tap gesture around the whole capsule competes with its native menus.
@@ -278,7 +281,7 @@ let composer_surface model_source ?key ?accessibility_identifier ?attachments ?t
     textarea ~min_height:36 ~style_class:"composer-input" ~placeholder
       ~label:(match label with Some value -> value | None -> placeholder)
       ?text ?text_signal ~autofocus ?submit_on_enter
-      ~accessibility_identifier:"field.composer" ?on_input ?on_submit []
+      ~accessibility_identifier:field_identifier ?on_input ?on_submit []
   in
   let field =
     match autofocus_signal with
@@ -286,15 +289,15 @@ let composer_surface model_source ?key ?accessibility_identifier ?attachments ?t
     | Some signal_ -> View_base.with_bool_prop_signal Lui_protocol.Autofocus signal_ field
   in
   let field = match tag_strip with None -> field | Some tags -> column ~gap:0 [field; tags] in
-  let send_button =
-    match on_send with
+  let send_button = match on_send with
     | None -> []
     | Some on_send ->
-      [ composer_send_button model_source context ?send_icon send_disabled_signal on_send ]
-  in
+      [composer_send_button model_source context ?send_icon ~identifier:send_identifier
+        ~label:send_label send_disabled_signal on_send] in
+  let grow = if compact then None else Some 1.0 in
   let surface =
     if Lui_ui.host context = KotlinHost then
-      column ?key ?accessibility_identifier ~grow:1.0 ~gap:4 ~padding:8
+      column ?key ?accessibility_identifier ?grow ~gap:4 ~padding:8
         ~background:"surface-container-highest" ~corner_radius:28
         (attachment_strip
          @ [ field;
@@ -306,7 +309,7 @@ let composer_surface model_source ?key ?accessibility_identifier ?attachments ?t
                 @ send_button) ])
     else
     (* Keep the established Apple capsule and its unused-space focus targets. *)
-    column ?key ?accessibility_identifier ~grow:1.0 ~min_height:58 ~main:`end_
+    column ?key ?accessibility_identifier ?grow ~min_height:58 ~main:`end_
       ~gap:0
       ~padding_horizontal:16
       ~padding_vertical:8
@@ -322,13 +325,23 @@ let composer_surface model_source ?key ?accessibility_identifier ?attachments ?t
              ~accessibility_identifier:"row.composer.controls"
              (actions
               @ [
-                  focus_target ~height:44
-                    ~accessibility_identifier:"spacer.composer.controls";
+                  (match on_press with
+                   | None -> spacer ~grow:1.0 ~accessibility_identifier:"spacer.composer.controls" []
+                   | Some _ -> focus_target ~height:44
+                       ~accessibility_identifier:"spacer.composer.controls");
                 ]
               @ send_button);
          ])
   in
   mount context ?parent surface)
+
+let comment_input model_source ~autofocus ~text_signal ~disabled_signal ~on_input ~on_submit =
+  let placeholder = View_base.tr (Signal.sample model_source) "Write a comment" in
+  composer_surface model_source ~placeholder ~autofocus ~text_signal ~on_input
+    ~field_identifier:"field.comment" ~accessibility_identifier:"surface.comment.composer"
+    ~send_identifier:"button.comment.post" ~send_label:"Post comment"
+    ~send_disabled_signal:disabled_signal ~on_send:(fun _ -> on_submit ())
+    ~on_submit:(fun _ -> on_submit ()) ~compact:true ()
 
 let collapsed_composer model_source (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then
