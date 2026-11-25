@@ -397,6 +397,7 @@ private struct AddAssetPayload: Encodable {
     let assetChecksum: String
     let localPath: String
     let targetBlockId: String?
+    let imageDimensions: LogseqImageDimensions?
 }
 
 private struct ImportSnapshotPayload: Encodable {
@@ -1033,7 +1034,8 @@ private struct CreateSyncGraphPayload: Encodable {
         assetType: String,
         assetSize: Int,
         assetChecksum: String,
-        localPath: String
+        localPath: String,
+        imageDimensions: LogseqImageDimensions? = nil
     ) async -> Bool {
         lastError = nil
         await dispatchEncodedAndWait(
@@ -1046,7 +1048,8 @@ private struct CreateSyncGraphPayload: Encodable {
                 assetSize: assetSize,
                 assetChecksum: assetChecksum,
                 localPath: localPath,
-                targetBlockId: nil
+                targetBlockId: nil,
+                imageDimensions: imageDimensions
             )
         )
         guard lastError == nil else { return false }

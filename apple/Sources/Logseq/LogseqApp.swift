@@ -945,13 +945,17 @@ public struct LogseqRootView : View {
                         sharedDirectory: SharedCaptureStorage.sharedDirectory,
                         documentsDirectory: graphDirectory
                     ) else { return false }
+                    let file = graphDirectory.appendingPathComponent(imported.localPath)
+                    let dimensions = AssetPresentationPolicy.kind(assetType: imported.assetType, localPath: file.path) == .image
+                        ? LGImageDimensions.read(at: file) : nil
                     return await self.store.captureSharedAsset(
                         id: item.id,
                         title: imported.title,
                         assetType: imported.assetType,
                         assetSize: imported.size,
                         assetChecksum: imported.checksum,
-                        localPath: imported.localPath
+                        localPath: imported.localPath,
+                        imageDimensions: dimensions
                     )
                 }
             }
