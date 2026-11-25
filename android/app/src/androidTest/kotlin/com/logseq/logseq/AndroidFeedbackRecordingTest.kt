@@ -584,6 +584,24 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                     ui.onNodeWithTag("reaction.block.${uuid(19)}.heart").assertIsDisplayed()
                 }
             }
+            "tasks-empty" -> {
+                mount(1, dark = true)
+                ui.onNodeWithTag("tab.bottom.tasks").performClick()
+                pause()
+                val empty = ui.onNodeWithTag("tasks.empty", useUnmergedTree = true)
+                fun assertCentered(message: String) {
+                    val bounds = empty.assertIsDisplayed().assertTextEquals(message).getUnclippedBoundsInRoot()
+                    val viewport = ui.onRoot().getUnclippedBoundsInRoot()
+                    assertEquals("Empty task state is vertically centered",
+                        (viewport.top.value + viewport.bottom.value) / 2,
+                        (bounds.top.value + bounds.bottom.value) / 2,
+                        (viewport.bottom.value - viewport.top.value) * 0.08f)
+                }
+                assertCentered("No tasks to show")
+                ui.onNodeWithTag("tasks.tab.upcoming").performClick()
+                pause()
+                assertCentered("No upcoming tasks")
+            }
             "notifications" -> {
                 mount(7, dark = true)
                 val notifications = ui.onNodeWithTag("tab.bottom.notifications")
