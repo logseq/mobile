@@ -48,6 +48,7 @@ public struct LogseqRootView : View {
 
     private let runtime = LogseqLogseqRuntime.shared
     @State private var errorFeedback = LogseqErrorFeedback.shared
+    @State private var accountProfile = AccountProfilePresentation.shared
 
     public init() {
     }
@@ -66,6 +67,14 @@ public struct LogseqRootView : View {
         // dictionary — the shell keeps its palette for chrome below.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(themePalette.background.ignoresSafeArea())
+        .sheet(isPresented: $accountProfile.isPresented, onDismiss: {
+            try? runtime.lgRuntime.applyHostUpdate(kind: "open-settings", payload: "null")
+        }) {
+            LGAccountProfile(readProfile: runtime.authentication.readProfile) { name, photo in
+                try await runtime.authentication.updateProfile(fullName: name, photo: photo)
+                if let token = try? await runtime.authentication.apiToken() { await runtime.store.updateAccessToken(token) }
+            }
+        }
         .alert("Error", isPresented: Binding(
             get: { runtime.widgetTaskError != nil || errorFeedback.message != nil },
             set: { presented in

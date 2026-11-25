@@ -35,4 +35,8 @@
     <string name="record_audio">Record audio</string>
     <string name="discussion_notifications">Discussion notifications</string>
     <string name="discussion_push_body">New activity in a discussion.</string>
+    <string name="discussion_push_comment">Left a new comment.</string>
+    <string name="discussion_push_reaction">Reacted to your content.</string>
+    <string name="discussion_push_you">You</string>
+    <string name="discussion_push_reaction_emoji">Reacted with %s.</string>
 </resources>

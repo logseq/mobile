@@ -1,6 +1,6 @@
 module Ds = Datascript
 
-type identity = { uuid : string; username : string; email : string }
+type identity = { uuid : string; username : string; email : string; full_name : string; avatar : string }
 
 let property = "logseq.property/created-by-ref"
 
@@ -35,7 +35,8 @@ let of_token token =
         | `String value -> value | _ -> "" in
       let uuid = String.lowercase_ascii (string "sub") in
       let valid = Ref_text.is_uuid uuid in
-      if valid then Some { uuid; username = string "cognito:username"; email = string "email" }
+      if valid then Some { uuid; username = string "cognito:username"; email = string "email";
+        full_name = String.trim (string "name"); avatar = string "picture" }
       else None
     | _ -> None
   with Yojson.Json_error _ | Yojson.Basic.Util.Type_error _ | Invalid_argument _ -> None
@@ -60,17 +61,26 @@ let additions identity (report : Ds.tx_report) =
     end) report.tx_data;
   if Hashtbl.length targets = 0 then [] else
   let actor, create = match Ds.entid report.db_after "block/uuid" (Ds.Uuid identity.uuid) with
-    | Some eid -> Ds.Entity_id eid, []
+    | Some eid ->
+      let actor = Ds.Entity_id eid in
+      let changed attr contents =
+        if contents = "" || value report.db_after eid attr = Some (Ds.String contents) then None
+        else Some (Ds.Add (actor, attr, Ds.String contents)) in
+      actor, List.filter_map (fun (attr, contents) -> changed attr contents)
+        ["logseq.property.user/name", identity.full_name; "logseq.property.user/avatar", identity.avatar]
     | None ->
       let actor = Ds.Temp_id "created-by" in
       let now = Int64.of_float (Unix.gettimeofday () *. 1000.) in
+      let name = if identity.full_name = "" then identity.username else identity.full_name in
       let attributes = ["block/uuid", Ds.One_value (Ds.Uuid identity.uuid);
         "block/name", Ds.One_value (Ds.String identity.username);
-        "block/title", Ds.One_value (Ds.String identity.username);
+        "block/title", Ds.One_value (Ds.String name);
         "block/created-at", Ds.One_value (Ds.Int64 now);
         "block/updated-at", Ds.One_value (Ds.Int64 now);
-        "logseq.property.user/name", Ds.One_value (Ds.String identity.username);
+        "logseq.property.user/name", Ds.One_value (Ds.String name);
         "logseq.property.user/email", Ds.One_value (Ds.String identity.email)] in
+      let attributes = if identity.avatar = "" then attributes
+        else ("logseq.property.user/avatar", Ds.One_value (Ds.String identity.avatar)) :: attributes in
       let attributes = match Ds.entid report.db_after "db/ident" (Ds.Keyword "logseq.class/Page") with
         | Some page -> ("block/tags", Ds.Many_values [Ds.Ref page]) :: attributes
         | None -> attributes in

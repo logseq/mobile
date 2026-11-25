@@ -720,6 +720,10 @@ let settings_account_row context model_source send : t =
       (list_item ~accessibility_identifier:"button.sign-in"
          ~disabled_signal:(Signal.map View_base.authentication_signing_in_ model_source)
          ~on_press:(press send Model.SignIn) [sign_in_label model_source]);
+    if_ ~test:(Signal.map not signed_out)
+      (list_item ~padding:0 ~accessibility_identifier:"button.settings.account-profile"
+        ~on_press:(press send Model.OpenAccountProfile)
+        ~text:(View_base.tr (Signal.sample model_source) "Edit Profile") []);
     if_ ~test:(Signal.map not signed_out) (settings_sign_out_row model_source context send);
 
   ]

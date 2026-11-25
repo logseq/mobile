@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="account_profile_edit">编辑个人资料</string>
+    <string name="account_profile_full_name">全名</string>
+    <string name="account_profile_change_photo">更换头像</string>
+    <string name="account_profile_save">保存</string>
+    <string name="account_profile_retry">重试</string>
+    <string name="account_profile_load_failed">无法加载个人资料。</string>
+    <string name="account_profile_save_failed">无法保存个人资料。</string>
+    <string name="account_profile_photo_failed">无法处理这张照片。</string>
+</resources>

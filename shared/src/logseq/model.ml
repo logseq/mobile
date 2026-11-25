@@ -336,6 +336,7 @@ type composer_submission =
   }
 
 type logseq_effect =
+  | PresentAccountProfileEffect of int
   | PushPreferenceEffect of int * push_preferences
   | CollaborationEffect of int * string
   | PdfAnnotationEffect of int * string
@@ -757,6 +758,7 @@ type logseq_action =
   | ApplyRuntimeLog of runtime_log_record list * runtime_log_record option
   | RefreshRuntimeLog
   | CopyRuntimeLog
+  | OpenAccountProfile
   | RequestSignOut
   | CancelSignOut
   | SignOut
@@ -1036,6 +1038,7 @@ let navigation_route_uuid route =
 
 let effect_id eff =
   match eff with
+  | PresentAccountProfileEffect id
   | PushPreferenceEffect (id, _)
   | CollaborationEffect (id, _)
   | PdfAnnotationEffect (id, _)
@@ -3831,6 +3834,8 @@ let rec update (current : logseq_model) action =
         | Some error when not (List.exists (fun (record : runtime_log_record) -> record.id = error.id && record.source = error.source) current.runtime_log_records) ->
           error :: current.runtime_log_records
         | _ -> current.runtime_log_records))
+  | OpenAccountProfile ->
+    enqueue_effect {current with settings_open = false} (PresentAccountProfileEffect current.next_effect_id)
   | RequestSignOut ->
     { current with pending_sign_out = true; settings_open = false }
   | CancelSignOut ->

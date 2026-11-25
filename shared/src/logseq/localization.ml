@@ -5301,6 +5301,7 @@ let dictionaries = [
   ]);
   (* Simplified Chinese has one catalog. Locale ids such as zh-cn and zh-Hans resolve to zh-CN. *)
   ("zh-CN", [
+    ("Edit Profile", "编辑个人资料");
     ("Home", "首页");
     ("Tasks", "任务");
     ("No tasks to show", "暂无任务");

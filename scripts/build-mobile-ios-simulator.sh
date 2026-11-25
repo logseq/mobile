@@ -127,13 +127,15 @@ echo "[ios-build] Swift app: $((SECONDS - build_phase_started))s" >&2
 build_phase_started=$SECONDS
 if [[ ${LOGSEQ_IOS_REUSE_EXTENSIONS:-0} == 1 \
       && -s $extension_build_dir/LogseqShareExtension.appex/LogseqShareExtension \
-      && -s $extension_build_dir/LogseqWidgets.appex/LogseqWidgets ]]; then
+      && -s $extension_build_dir/LogseqWidgets.appex/LogseqWidgets \
+      && -s $extension_build_dir/LogseqDiscussionNotificationService.appex/LogseqDiscussionNotificationService ]]; then
   echo "[ios-build] Reusing cached Xcode extensions" >&2
 else
   xcodebuild \
     -project "$repo_root/apple/App/Logseq.xcodeproj" \
     -target LogseqShareExtension \
     -target LogseqWidgets \
+    -target LogseqDiscussionNotificationService \
     -configuration "$configuration_name" \
     -sdk iphonesimulator \
     -arch arm64 \
@@ -159,11 +161,8 @@ else
 fi
 cp "$swift_build_dir/LogseqShell" "$app_dir/Logseq"
 # APNs resolves localization keys against the app bundle, outside SwiftPM bundles.
-for localization in "$repo_root"/apple/App/PushLocalization/*.lproj; do
-  destination="$app_dir/$(basename "$localization")"
-  mkdir -p "$destination"
-  cp "$localization/Localizable.strings" "$destination/"
-done
+xcrun xcstringstool compile "$repo_root/apple/Sources/Logseq/Resources/Localizable.xcstrings" \
+  --output-directory "$app_dir" --language en --language zh-Hans
 "$repo_root/scripts/compile-ios-app-assets.sh" "$app_dir" iphonesimulator "$deployment_target"
 
 for bundle in "$swift_build_dir"/*.bundle; do
@@ -173,7 +172,7 @@ done
 
 plugins_dir="$app_dir/PlugIns"
 mkdir -p "$plugins_dir"
-for extension in LogseqShareExtension LogseqWidgets; do
+for extension in LogseqShareExtension LogseqWidgets LogseqDiscussionNotificationService; do
   extension_product="$extension_build_dir/$extension.appex"
   [[ -d $extension_product ]] || die "missing simulator extension: $extension_product"
   cp -R "$extension_product" "$plugins_dir/"
@@ -184,9 +183,11 @@ for extension in LogseqShareExtension LogseqWidgets; do
 done
 codesign --force --sign - --entitlements "$repo_root/apple/App/ShareExtension/ShareExtension.entitlements" \
   --timestamp=none --generate-entitlement-der "$plugins_dir/LogseqShareExtension.appex"
-codesign --force --sign - --entitlements "$repo_root/apple/App/Entitlements.plist" \
+codesign --force --sign - --entitlements "$repo_root/apple/App/Widgets/Widgets.entitlements" \
   --timestamp=none --generate-entitlement-der \
   "$plugins_dir/LogseqWidgets.appex"
+codesign --force --sign - --timestamp=none --generate-entitlement-der \
+  "$plugins_dir/LogseqDiscussionNotificationService.appex"
 
 python3 "$repo_root/scripts/configure-ios-resource-bundles.py" "$app_dir"
 

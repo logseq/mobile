@@ -240,6 +240,9 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
                 }
                 let response = try await signIn(effect.text)
                 return LGEffectResolution(succeeded: true, message: response, output: .discard)
+            case "present-account-profile":
+                AccountProfilePresentation.shared.isPresented = true
+                return LGEffectResolution(succeeded: true, message: "", output: .discard)
             case "push-preference":
                 guard let pushPreference else {
                     return LGEffectResolution(succeeded: false, message: "System notifications are unavailable", output: .discard)
@@ -432,7 +435,7 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
     public func execute(_ effect: LGEffect) async -> LGEffectResolution {
         switch effect.kind {
         case "report-error", "persist-ui-session", "persist-composer-draft", "sign-in", "save-settings", "refresh-runtime-log",
-             "copy-runtime-log", "sign-out", "push-preference", "export-graph-database", "open-external-url",
+             "copy-runtime-log", "sign-out", "present-account-profile", "push-preference", "export-graph-database", "open-external-url",
              "present-attachment", "present-journal-calendar", "present-asset", "present-page-share", "sync-now", "sync-pending":
             guard let platformEffect else {
                 return LGEffectResolution(succeeded: false, message: "Platform settings handling is unavailable")
