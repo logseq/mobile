@@ -695,11 +695,15 @@ let settings_runtime_log_row model_source (context : Lui_ui.ui_context) send : t
       ~text:(View_base.tr (Signal.sample model_source) "Check log") []
 
 let settings_sign_out_row model_source (context : Lui_ui.ui_context) send : t =
-  let icon = if Lui_ui.host context = KotlinHost then Some (`app "sign-out") else None in
-  list_item ?icon ~foreground:"red"
-    ~accessibility_identifier:"button.sign-out"
-    ~on_press:(press send Model.RequestSignOut)
-    ~text:(View_base.tr (Signal.sample model_source) "Sign Out") []
+  let label = View_base.tr (Signal.sample model_source) "Sign Out" in
+  let id = "button.sign-out" in
+  let on_press = press send Model.RequestSignOut in
+  if Lui_ui.host context = KotlinHost then
+    list_item ~padding:0 ~accessibility_identifier:id ~on_press
+      [icon ~name:(`app "sign-out") ~width:24 ~height:24 ~foreground:"error-foreground" [];
+       text ~value:label ~foreground:"error-foreground" []]
+  else
+    list_item ~foreground:"red" ~accessibility_identifier:id ~on_press ~text:label []
 
 let sign_in_label ?(centered = false) model_source : t =
   row ~main:(if centered then `center else `start) ~gap:8 ~cross:`center [
@@ -906,7 +910,7 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
             ~text:(View_base.tr (Signal.sample model_source) "Privacy Policy") [];
         ];
       if_ ~test:(Signal.map (fun current -> not (View_base.authentication_required_ current)) model_source)
-        (column ~background:card_bg [settings_sign_out_row model_source context send]);
+        (column ~padding_horizontal:16 ~background:card_bg [settings_sign_out_row model_source context send]);
     ]
 
 (* Native grouped-settings form: a `form`-styled content column whose
