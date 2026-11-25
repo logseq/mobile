@@ -27,7 +27,7 @@ appId: com.logseq.logseq
 - tapOn:
     id: "button.connection.cancel"
 - tapOn:
-    id: "button.sidebar"
+    id: "button.sidebar.dismiss"
 - assertNotVisible:
     id: "link.sidebar.graphs"
 - swipe:
