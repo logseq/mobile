@@ -89,9 +89,9 @@ import SwiftUI
         guard let mainNavigation = controllers(window.rootViewController!).compactMap({ $0 as? UINavigationController }).first else {
             throw failure("Missing the main navigation controller")
         }
-        guard let composerID = find("surface.composer.root") else { throw failure("Missing composer") }
-        try await wait("The floating composer must be laid out") { frames[composerID] != nil }
-        let composerBeforeSearch = frames[composerID]!
+        guard let tabsID = find("group.bottom.tabs") else { throw failure("Missing bottom tabs") }
+        try await wait("The bottom tabs must be laid out") { frames[tabsID] != nil }
+        let tabsBeforeSearch = frames[tabsID]!
 
         if #available(iOS 26.0, *) {
             let outliners = views(window).compactMap { $0 as? UIScrollView }.filter {
@@ -110,7 +110,8 @@ import SwiftUI
         guard let presentation = backend.rootIDs.flatMap(descendants).first(where: {
             backend.extensionModel(id: $0)?.identifier == "native-search-presentation"
         }) else { throw failure("Missing search presentation") }
-        try backend.performExtensionEvent(node: presentation, name: "present", values: [:])
+        guard let searchButton = find("button.search") else { throw failure("Missing Search button") }
+        try backend.performPress(node: searchButton)
         try await wait("Search must accept native input") {
             views(window).contains { ($0 as? UISearchTextField)?.isFirstResponder == true }
         }
@@ -172,8 +173,8 @@ import SwiftUI
             guard searchNavigation.view.window === window else {
                 throw failure("Cancelling search must let the system controller finish its keyboard transition without tearing down its navigation host")
             }
-            guard let composer = frames[composerID], abs(composer.minY - composerBeforeSearch.minY) < 2 else {
-                throw failure("The underlying composer must remain at the bottom while the system keyboard closes; initial=\(composerBeforeSearch), current=\(String(describing: frames[composerID]))")
+            guard let tabs = frames[tabsID], abs(tabs.minY - tabsBeforeSearch.minY) < 2 else {
+                throw failure("The bottom tabs must remain in place while the system keyboard closes; initial=\(tabsBeforeSearch), current=\(String(describing: frames[tabsID]))")
             }
             guard journal.window === window, journal.isDescendant(of: mainNavigation.view) else {
                 throw failure("System bar transitions must retain the journal content")

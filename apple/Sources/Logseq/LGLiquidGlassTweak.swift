@@ -24,8 +24,10 @@ enum LGLiquidGlassTweak {
                 }
                 let shape: LGLiquidGlassSurface.Shape
                 switch shapeName {
-                case "bottom-capture":
+                case "bottom-capture", "bottom-tabs":
                     return AnyView(content.modifier(LGBottomBarGlass(surface: .capture)))
+                case "bottom-actions":
+                    return AnyView(content.modifier(LGBottomBarActions()))
                 case "bottom-search":
                     return AnyView(content.modifier(LGBottomBarGlass(surface: .trailing)))
                 case "circle":
@@ -47,6 +49,20 @@ enum LGLiquidGlassTweak {
                 return AnyView(content.modifier(LGLiquidGlassSurface(shape: shape)))
             }
         )
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var lgUsesSideCaptureActions = false
+}
+
+private struct LGBottomBarActions: ViewModifier {
+    @Environment(\.lgUsesSideCaptureActions) private var usesSideCaptureActions
+
+    func body(content: Content) -> some View {
+        if !usesSideCaptureActions {
+            content.modifier(LGBottomBarGlass(surface: .trailing))
+        }
     }
 }
 
@@ -79,7 +95,7 @@ struct LGBottomBarGlass: ViewModifier {
         } else if surface == .capture {
             content.background(.regularMaterial, in: Capsule())
         } else {
-            content.modifier(LGLiquidGlassSurface(shape: surface == .trailing ? .circle : .capsule))
+            content.modifier(LGLiquidGlassSurface(shape: .capsule))
         }
     }
 }

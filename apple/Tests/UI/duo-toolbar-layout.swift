@@ -214,7 +214,7 @@ import LogseqModel
             }
             let actionIdentifiers = vertical
                 ? sideActions
-                : ["button.composer.attachment", "button.composer.expand", "button.search"]
+                : ["button.search", "button.composer.expand"]
             let actionFrames = actionIdentifiers.compactMap { identifier in node(identifier).flatMap { frames[$0] } }
             guard actionFrames.count == actionIdentifiers.count, actionFrames.allSatisfy({
                 bounds.contains($0) && $0.width >= 44 && $0.height >= 44

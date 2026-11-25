@@ -21,6 +21,7 @@ type navigation_route =
 
 type primary_destination =
   | JournalsDestination
+  | TasksDestination
   | FlashcardsDestination
   | GraphsDestination
 
@@ -621,6 +622,7 @@ type logseq_action =
   | SelectSidebarPage of string
   | OpenQuickAction of string
   | ShowJournals
+  | ShowTasks
   | ShowFlashcards
   | FlashcardDeckAction of string
   | ShowGraphs
@@ -1573,19 +1575,15 @@ let current_settings (current : logseq_model) =
   }
 
 let active_page (current : logseq_model) =
-  if current.destination <> JournalsDestination && not current.search_open then None
-  else begin
-    let routes = if current.search_open then
-      app_node_routes_from current current.search_navigation_path 0
-      else app_node_routes current in
-    match routes with
-    | [] -> current.selected_page
-    | _ ->
-      (match last_opt routes with
-       | Some route ->
-         Some { uuid = route.node_page_uuid; title = route.node_title; page_journal_day = route.node_journal_day }
-       | None -> None)
-  end
+  let routes = if current.search_open then
+    app_node_routes_from current current.search_navigation_path 0
+    else app_node_routes current in
+  match last_opt routes with
+  | Some route ->
+    Some { uuid = route.node_page_uuid; title = route.node_title; page_journal_day = route.node_journal_day }
+  | None when current.destination = JournalsDestination || current.search_open ->
+    current.selected_page
+  | None -> None
 
 let node_permission (current : logseq_model) uuid permission =
   let raw = match List.find_opt (fun (route : node_projection) -> route.node_uuid = uuid) current.node_routes with
@@ -3024,13 +3022,14 @@ let rec update (current : logseq_model) action =
           (PresentAttachmentEffect (cleared.next_effect_id, "audio"))
       else cleared
     end
-  | ShowJournals ->
+  | ShowJournals | ShowTasks ->
+    let destination = if action = ShowTasks then TasksDestination else JournalsDestination in
     let updated =
       {
         (cancel_outliner_editing (return_to_app_root current)) with
         sidebar_open = sidebar_after_navigation current;
         graph_menu_open = false;
-        destination = JournalsDestination;
+        destination;
       }
     in
     let id = updated.next_effect_id in

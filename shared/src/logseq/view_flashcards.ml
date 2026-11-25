@@ -32,7 +32,7 @@ let flashcard_rating_button rating title foreground background send : t =
     ~on_press:(press send (Model.ReviewFlashcard rating))
     ~text:title []
 
-let flashcard_review_content model_source send : t =
+let flashcard_review_content ~bottom_spacing model_source send : t =
   column ~accessibility_identifier:"layout.flashcards.review" ~grow:1.0
     ~gap:0 ~padding_horizontal:20
     [
@@ -144,7 +144,7 @@ let flashcard_review_content model_source send : t =
                    ];
                ]);
         ];
-      box ~height:24 ~accessibility_identifier:"spacer.flashcards.bottom"
+      box ~height:bottom_spacing ~accessibility_identifier:"spacer.flashcards.bottom"
         [];
     ]
 
@@ -312,7 +312,7 @@ let flashcard_toolbar model_source send =
 let android_flashcard_header ~render model_source send =
   flashcard_group_controls (In_android_header render) model_source send
 
-let flashcard_screen ~uses_header model_source send : t =
+let flashcard_screen ~uses_header ~bottom_spacing model_source send : t =
   let controls =
     if uses_header then []
     else [flashcard_group_controls In_body model_source send] in
@@ -358,5 +358,5 @@ let flashcard_screen ~uses_header model_source send : t =
              else content)));
       if_
         ~test:(Signal.map View_base.flashcards_present_ model_source)
-        (flashcard_review_content model_source send);
+        (flashcard_review_content ~bottom_spacing model_source send);
     ])

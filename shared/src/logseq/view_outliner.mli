@@ -1,4 +1,3 @@
-val with_journal_task_transition : Model.logseq_model Signal.signal -> Lui_elements.t -> Lui_elements.t
 val outliner_bottom_spacer : unit -> Lui_elements.t
 val composer_task_date_dialog : Model.logseq_model Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
 val composer_reference_bar : Lui_ui.ui_context -> Model.logseq_model Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
@@ -113,6 +112,10 @@ val related_section_heading : string -> Lui_elements.t
 val page_loading_view : Model.logseq_model Signal.signal -> Lui_elements.t
 
 val node_screen :
+  Lui_ui.ui_context ->
+  Model.logseq_model Signal.signal ->
+  (Model.logseq_action -> bool) -> Lui_elements.t
+val tasks_screen :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t

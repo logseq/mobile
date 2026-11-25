@@ -133,9 +133,55 @@ let search_screen model_source send : t =
         (search_result_list model_source send);
     ]
 
+let uses_ios_native_header context =
+  Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost
+
+let bottom_tab_row model_source send : t =
+  let current = Signal.sample model_source in
+  let cell = 50 and inset = 4 in
+  let tab destination title name image selected_image action =
+    let selected = Signal.map (fun (current : Model.logseq_model) -> current.destination = destination) model_source in
+    let at_root (current : Model.logseq_model) =
+      current.app_navigation_path = []
+      && (destination <> Model.JournalsDestination || current.selected_page = None) in
+    icon_button ~icon:(`app image)
+      ~icon_signal:(Signal.map (fun selected -> `app (if selected then selected_image else image)) selected)
+      ~selected_signal:selected ~variant:`ghost ~size:`icon ~width:cell ~height:cell
+      ~style_class:"system-toolbar-icon" ~corner_radius:(cell / 2)
+      ~foreground_signal:(Signal.map (fun selected -> if selected then "link" else "foreground") selected)
+      ~background_signal:(Signal.map (fun selected -> if selected then "bottom-tab-selected" else "transparent") selected)
+      ~label:(View_base.tr current title) ~accessibility_identifier:("tab.bottom." ^ name)
+      ~on_press:(fun _ ->
+        let current = Signal.sample model_source in
+        if current.destination <> destination || not (at_root current) then ignore (send action))
+      [] in
+  let action image title identifier event =
+    icon_button ~icon:(`app image) ~variant:`ghost ~size:`icon ~width:cell ~height:cell
+      ~foreground:"foreground"
+      ~label:(View_base.tr current title) ~accessibility_identifier:identifier
+      ~on_press:(press send event) [] in
+  let group shape name children =
+    View_base.with_liquid_glass shape
+      (row ~width:(List.length children * cell + 2 * inset)
+         ~padding:inset ~gap:0 ~cross:`center
+         ~accessibility_identifier:("group.bottom." ^ name) children) in
+  row ~grow:1.0 ~gap:8 ~main:`space_between ~cross:`center
+    ~accessibility_identifier:"row.bottom.capture" [
+      group "bottom-tabs" "tabs" [
+          tab Model.JournalsDestination "Home" "home" "tab-home" "tab-home-selected" Model.ShowJournals;
+          tab Model.TasksDestination "Tasks" "tasks" "tab-tasks" "tab-tasks-selected" Model.ShowTasks;
+          tab Model.FlashcardsDestination "Flashcards" "flashcards" "tab-flashcards" "tab-flashcards-selected" Model.ShowFlashcards;
+        ];
+      group "bottom-actions" "actions" [
+          action "bottom-search" "Search" "button.search" Model.OpenSearch;
+          action "capture-circle" "Capture" "button.composer.expand" Model.ExpandComposer;
+        ];
+    ]
+
 let capture_and_search_row (context : Lui_ui.ui_context) model_source send
     : t =
-  if Lui_ui.host context = KotlinHost then
+  if uses_ios_native_header context then bottom_tab_row model_source send
+  else if Lui_ui.host context = KotlinHost then
     row ~grow:1.0 ~gap:10 ~cross:`center
       ~accessibility_identifier:"row.bottom.capture"
       [
@@ -162,6 +208,7 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send
 
 let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) model_source send : t
     =
+  let primary_tabs = uses_ios_native_header context in
   let selection_chrome : t =
     column ~gap:0 ~padding_horizontal:16
       [
@@ -191,7 +238,7 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
              ]);
         if_
           ~test:
-            (Signal.map View_base.bottom_chrome_expanded_composer_
+            (Signal.map (View_base.bottom_chrome_expanded_composer_ ~primary_tabs)
                model_source)
           (column ~gap:0 ~padding_horizontal:16
              [
@@ -205,7 +252,7 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
              ]);
         if_
           ~test:
-            (Signal.map View_base.bottom_chrome_capture_and_search_
+            (Signal.map (View_base.bottom_chrome_capture_and_search_ ~primary_tabs)
                model_source)
           (column ~gap:0 ~padding_horizontal:16
              [
@@ -244,7 +291,7 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
                 ]));
         if_
           ~test:
-            (Signal.map View_base.bottom_chrome_expanded_composer_
+            (Signal.map (View_base.bottom_chrome_expanded_composer_ ~primary_tabs)
                model_source)
           (column ~container_relative_frame:`horizontal ~cross:`stretch
              ~gap:0 ~padding_horizontal:16
@@ -259,7 +306,7 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
                box ~height:21 [];
              ]);
         if_
-          ~test:(reactive View_base.bottom_chrome_capture_and_search_ model_source)
+          ~test:(reactive (View_base.bottom_chrome_capture_and_search_ ~primary_tabs) model_source)
           (column ~container_relative_frame:`horizontal ~cross:`stretch
              ~gap:0 ~padding_horizontal:16
              [
@@ -288,7 +335,6 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
           [Option.value ~default:"local" current.selected_graph_id]) model_source)
         ~key:Fun.id ~cmp:String.compare
         ~mount:(fun _ -> View_outliner.with_result_page ~root:true context model_source send
-        (View_outliner.with_journal_task_transition model_source
         (View_base.with_selected_signal visible_source
         (View_base.with_string_prop_signal StyleClass list_style
         (virtual_list ~grow:1.0
@@ -340,7 +386,7 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
             ];
           View_outliner.page_loading_view model_source;
           View_outliner.outliner_bottom_spacer ();
-          ])))));
+          ]))));
     ])
 
 let retained_journal_pane (context : Lui_ui.ui_context) model_source send
@@ -416,9 +462,6 @@ let graph_loading_feedback (context : Lui_ui.ui_context) model_source : t
       ~accessibility_identifier:"journals.loading"
       [ spinner ~accessibility_identifier:"spinner.graph-loading" [] ]
 
-let uses_ios_native_header context =
-  Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost
-
 let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
     =
   stack ~grow:1.0
@@ -427,9 +470,13 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
         ~test:(reactive View_base.journal_tree_retained_ model_source)
         (journal_tree_panes context model_source send);
       if_
+        ~test:(reactive View_base.tasks_destination_ model_source)
+        (View_outliner.tasks_screen context model_source send);
+      if_
         ~test:(Signal.map View_base.flashcards_destination_ model_source)
         (View_flashcards.flashcard_screen
            ~uses_header:(uses_ios_native_header context || Lui_ui.host context = KotlinHost)
+           ~bottom_spacing:(if uses_ios_native_header context then 64 else 24)
            model_source send);
       if_
         ~test:(Signal.map View_base.graphs_destination_ model_source)
@@ -712,7 +759,11 @@ let main_header_connection model_source send : t = custom @@ fun context parent 
                       ~accessibility_identifier:"button.graph-add" ~on_press:(press send Model.OpenCreateGraph) [])
                 else if_ ~test:(Signal.map View_base.connection_settings_visible_ model_source)
                   (journal_calendar_control model_source send));
-               if_ ~test:(Signal.map (ios_journal_header context) model_source) (journal_overflow_menu model_source send);
+               if_ ~test:(Signal.map (fun current ->
+                 ios_journal_header context current
+                 || (uses_ios_native_header context && View_base.tasks_destination_ current
+                     && View_base.node_navigation_inactive_ current)) model_source)
+                 (journal_overflow_menu model_source send);
                if_ ~test:(Signal.map View_base.active_page_actions_visible_ model_source)
                  (active_overflow_menu model_source send)]));
     ] in
@@ -897,13 +948,13 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
        model_source
    in
    let composer_dismissal_source =
-     Signal.map View_base.bottom_chrome_expanded_composer_ model_source
+     Signal.map (View_base.bottom_chrome_expanded_composer_ ~primary_tabs:(uses_ios_native_header context)) model_source
    in
    let title_source =
      Signal.map
        (fun current ->
          let current = main_header_model context current in
-         if View_base.selected_page_content_title_visible_ current then ""
+         if View_base.journals_destination_ current && View_base.selected_page_content_title_visible_ current then ""
          else View_base.main_title current)
        model_source
    in
@@ -1017,7 +1068,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
                  ~label:(View_base.tr (Signal.sample model_source) "Search")
                  ~accessibility_identifier:"button.navigation.search"
                  ~on_press:(press send Model.OpenSearch) [];
-               icon_button ~icon:(`app "composer-add") ~variant:`ghost ~size:`icon
+               icon_button ~icon:(`app "capture-circle") ~variant:`ghost ~size:`icon
                  ~style_class:"system-toolbar-icon"
                  ~width:44 ~height:44 ~foreground:"foreground"
                  ~label:(View_base.tr (Signal.sample model_source) "Capture")

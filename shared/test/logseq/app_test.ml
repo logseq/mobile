@@ -3951,9 +3951,9 @@ let flashcards_render_the_main_branch_reveal_and_rating_contract () =
   check_eq ~msg:"review content keeps main's top inset"
     (property_int renderer top_spacer Lui_protocol.HeightValue)
     18;
-  check_eq ~msg:"review content keeps main's bottom inset"
+  check_eq ~msg:"review controls clear the bottom navigation"
     (property_int renderer bottom_spacer Lui_protocol.HeightValue)
-    24;
+    64;
   check_eq ~msg:"due count is one native status row"
     (node renderer status)
     (Some Lui_protocol.Row);
@@ -4983,9 +4983,6 @@ let composer_matches_the_main_branch_expand_draft_and_send_contract () =
   let renderer = Lui_app.runtime application in
   let navigation = extension_node application "native-navigation-stack" in
   let chrome = native_bottom_chrome renderer application in
-  let composer =
-    descendant_with_identifier renderer chrome "surface.composer.root"
-  in
   let placement =
     descendant_with_identifier renderer chrome "row.bottom.capture"
   in
@@ -4995,10 +4992,6 @@ let composer_matches_the_main_branch_expand_draft_and_send_contract () =
   let collapsed =
     descendant_with_identifier renderer chrome "button.composer.expand"
   in
-  check_eq
-    ~msg:"the composer keeps intrinsic height inside a bottom overlay"
-    (node renderer composer)
-    (Some Lui_protocol.Box);
   check_eq ~msg:"Capture floats above the Outliner like main"
     (extension_property application navigation
        "bottom-occupies-layout-space")
@@ -5010,14 +5003,14 @@ let composer_matches_the_main_branch_expand_draft_and_send_contract () =
     1.0;
   check_eq ~msg:"collapsed search uses the main branch icon control"
     (property_string renderer search Lui_protocol.InlineIconName)
-    "app:search";
+    "app:bottom-search";
   check_eq ~msg:"search keeps semantic ghost styling"
     (property_string renderer search Lui_protocol.VariantValue)
     "ghost";
   check_eq ~msg:"collapsed capture keeps its automation identifier"
     (property_string renderer collapsed Lui_protocol.AccessibilityIdentifier)
     "button.composer.expand";
-  send application Model.ExpandComposer;
+  dispatch application (Lui_protocol.Press collapsed);
   flush application;
   check ~msg:"capture expands from LG-owned state"
     (App.model application).composer_expanded;
@@ -5168,7 +5161,7 @@ let composer_matches_the_main_branch_expand_draft_and_send_contract () =
   check ~msg:"the native outside-tap layer dismisses through LG state"
     (not (App.model application).composer_expanded)
 
-let ios_capture_and_search_match_main_native_metrics () =
+let ios_bottom_tabs_and_actions_use_separate_groups () =
   let application = App.create (ios_backend ()) in
   start application;
   send application (Model.SelectGraph "Work");
@@ -5188,31 +5181,40 @@ let ios_capture_and_search_match_main_native_metrics () =
     descendant_with_identifier renderer (Lui_app.root_node application)
       "spacer.outliner.top"
   in
-  let capture_glass =
-    descendant_with_extension renderer application chrome "liquid-glass"
-  in
-  check_eq ~msg:"Capture and Search keep main's ten-point separation"
-    (property_int renderer row Lui_protocol.Gap)
-    10;
-  check_eq ~msg:"Search keeps main's native 58-point hit target"
-    (property_int renderer search Lui_protocol.WidthValue)
-    58;
-  check_eq ~msg:"Search keeps main's native 58-point hit target"
-    (property_int renderer search Lui_protocol.HeightValue)
-    58;
-  check_eq ~msg:"Search uses the native 24-point icon size policy"
-    (property_string renderer search Lui_protocol.SizeValue)
-    "icon";
+  let tabs = descendant_with_identifier renderer row "group.bottom.tabs" in
+  let actions = descendant_with_identifier renderer row "group.bottom.actions" in
+  let tab name = descendant_with_identifier renderer tabs ("tab.bottom." ^ name) in
+  let selected id = property_bool renderer id Lui_protocol.Selected in
+  check_eq (children renderer tabs) (List.map tab ["home"; "tasks"; "flashcards"]);
+  check_eq (children renderer actions) [search; capture];
+  List.iter (fun id ->
+    check_eq (property_int renderer id Lui_protocol.WidthValue) 50;
+    check_eq (property_int renderer id Lui_protocol.HeightValue) 50)
+    (children renderer tabs @ children renderer actions);
+  check_eq (property_string renderer capture Lui_protocol.InlineIconName) "app:capture-circle";
+  check_eq (selected (tab "home")) true;
+  dispatch application (Lui_protocol.Press (tab "tasks"));
+  flush application;
+  check_eq (selected (tab "tasks")) true;
+  check_eq (selected (tab "home")) false;
+  check (descendant_with_identifier renderer (Lui_app.root_node application) "tasks.empty" <> -1);
+  dispatch application (Lui_protocol.Press (tab "flashcards"));
+  flush application;
+  check_eq (App.model application).destination Model.FlashcardsDestination;
+  check_eq (selected (tab "flashcards")) true;
+  dispatch application (Lui_protocol.Press capture);
+  flush application;
+  check (App.model application).composer_expanded;
+  send application Model.DismissComposer;
+  flush application;
+  let chrome = native_bottom_chrome renderer application in
+  dispatch application (Lui_protocol.Press (descendant_with_identifier renderer chrome "tab.bottom.home"));
+  flush application;
+  check_eq (App.model application).destination Model.JournalsDestination;
   check_eq ~msg:"iOS keeps main's compact native-navigation inset"
     (property_int renderer top_inset Lui_protocol.HeightValue)
     16;
-  check_eq ~msg:"Capture sits directly after the camera hit target"
-    (property_int renderer capture Lui_protocol.PaddingHorizontal)
-    0;
-  check_eq
-    ~msg:"Liquid Glass remains independent from app content spacing"
-    (extension_property application capture_glass "leading-inset")
-    None
+  ()
 
 let composer_dismissal_preserves_an_unsent_draft () =
   let expanded = Model.update (Model.initial ()) Model.ExpandComposer in
@@ -5919,7 +5921,7 @@ let composer_attachment_picker_owns_each_presented_action () =
       (App.model application).pending_effects
       [Model.PresentAttachmentEffect (1, service)] in
   List.iter (fun surface -> List.iter (check_surface surface) ["files"; "camera"; "photos"; "audio"])
-    [false, "button.composer.attachment"; true, "button.attachment"]
+    [true, "button.attachment"]
 
 let composer_attachment_menu_preserves_main_actions () =
   let application = App.create (ios_backend ()) in
@@ -6760,7 +6762,7 @@ let ios_node_navigation_is_owned_by_the_native_stack () =
     (descendant_with_identifier renderer screen "surface.composer.root")
     (-1);
   check ~msg:"the global bottom slot keeps Capture on node pages like main"
-    (descendant_with_identifier renderer chrome "surface.composer.root"
+    (descendant_with_identifier renderer chrome "button.composer.expand"
     <> -1);
   dispatch application
     (Lui_protocol.ExtensionEvent
@@ -7822,12 +7824,18 @@ let journal_agenda_is_retained_across_navigation () =
     start app;
     snapshot work;
     apply (Model.ApplyLocalGraphIds graph_ids);
-    let pane = find (Lui_app.root_node app) "pane.journals" in
-    let heading () = find pane "journal-tasks.planned" in
-    let doing_heading () = find pane "journal-tasks.doing" in
-    let doing_row () = find pane "journal-task.work-doing" in
-    let overdue () = find pane "journal-task.work-overdue" in
-    let planned () = find pane "journal-task.work-planned" in
+    let root = Lui_app.root_node app in
+    if ios then begin
+      check_eq ~msg:"the agenda is absent from Home" (find root "journal-tasks.planned") (-1);
+      dispatch app (Lui_protocol.Press (find root "tab.bottom.tasks"));
+      flush app
+    end;
+    let pane () = find root (if ios then "screen.tasks" else "pane.journals") in
+    let heading () = find (pane ()) "journal-tasks.planned" in
+    let doing_heading () = find (pane ()) "journal-tasks.doing" in
+    let doing_row () = find (pane ()) "journal-task.work-doing" in
+    let overdue () = find (pane ()) "journal-task.work-overdue" in
+    let planned () = find (pane ()) "journal-task.work-planned" in
     let original_heading = heading () and original_overdue = overdue () in
     check ~msg:"all three sections initially mount"
       (original_heading <> -1 && original_overdue <> -1 && planned () <> -1 && doing_row () <> -1);
@@ -7855,7 +7863,7 @@ let journal_agenda_is_retained_across_navigation () =
           (14, 14)
       | _ -> fail "Expected task section label followed by a chevron" in
     let check_date id expected =
-      let control = find pane ("journal-task." ^ id) in
+      let control = find (pane ()) ("journal-task." ^ id) in
       check_eq (color control) expected;
       check_eq (List.map color (contents control)) [expected; expected] in
     check_chevron "down";
@@ -7875,13 +7883,22 @@ let journal_agenda_is_retained_across_navigation () =
       sidebar = {(empty_sidebar_projection ()) with selected_page = Some page};
       outliner_rows = [outline_row "project-block" "Project"];
       journal_tasks = `Null};
-    check_eq ~msg:"the hidden journal keeps the same task heading" (heading ()) original_heading;
-    check_eq ~msg:"the hidden journal keeps the same task row" (overdue ()) original_overdue;
+    check_eq ~msg:"the agenda keeps the same task heading" (heading ()) original_heading;
+    check_eq ~msg:"the agenda keeps the same task row" (overdue ()) original_overdue;
     check ~msg:"retry is unavailable on other pages"
       (not (Model.journal_task_retry_available_ (App.model app)));
     snapshot work;
     check_eq ~msg:"returning to the journal keeps the task row mounted" (overdue ()) original_overdue;
     check_eq ~msg:"returning does not expand a collapsed section" (planned ()) (-1);
+    if ios then begin
+      dispatch app (Lui_protocol.Press (find root "tab.bottom.home"));
+      flush app;
+      check_eq ~msg:"Home keeps agenda rows out of the outliner" (find root "journal-task.work-overdue") (-1);
+      dispatch app (Lui_protocol.Press (find root "tab.bottom.tasks"));
+      flush app;
+      check (overdue () <> -1);
+      check_eq ~msg:"Tasks remembers collapsed sections when reopened" (planned ()) (-1)
+    end;
     apply (Model.ApplyGraphLoading true);
     let notes = journal "notes" in
     snapshot {notes with journal_tasks = agenda "work"};
@@ -7898,7 +7915,7 @@ let journal_agenda_is_retained_across_navigation () =
     let failure = `Assoc (["error", `Bool true; "retained", `Bool true] @
       Yojson.Basic.Util.to_assoc work.journal_tasks) in
     snapshot {work with journal_tasks = failure};
-    let retry () = find pane "journal-tasks.retry" in
+    let retry () = find (pane ()) "journal-tasks.retry" in
     check ~msg:"the query error exposes Retry without removing the agenda"
       (retry () <> -1 && overdue () <> -1);
     dispatch app (Lui_protocol.Press (retry ()));
@@ -7940,6 +7957,10 @@ let journal_task_results_edit_and_select_the_source_block () =
     let editing_node parent = descendant_with_extension runtime app parent "outliner-editor" in
     start app;
     apply projection;
+    if ios then begin
+      dispatch app (Lui_protocol.Press (find "tab.bottom.tasks"));
+      flush app
+    end;
     trigger "edit";
     check ~msg:"tapping an agenda task sends an edit request for the original UUID"
       (List.exists (function Model.TapOutlinerBlockEffect (_, id) -> id = uuid | _ -> false)
@@ -11673,9 +11694,10 @@ let composer_attachment_previews_remove_only_the_selected_draft () =
   check_eq ~msg:"preview has room to recognize the attachment"
     (property_int renderer preview Lui_protocol.HeightValue)
     128;
-  check_eq ~msg:"the add symbol uses the same 18-point size as the send arrow"
-    (property renderer attachment Lui_protocol.SizeValue)
-    None;
+  check_eq ~msg:"the attachment action uses a quiet symbol in the composer"
+    (property_string renderer attachment Lui_protocol.SizeValue,
+     property_string renderer attachment Lui_protocol.ForegroundValue)
+    ("sm", "muted-foreground");
   check_eq ~msg:"the add symbol keeps a regular stroke weight"
     (property renderer attachment Lui_protocol.StyleClass)
     None;
@@ -11923,7 +11945,7 @@ let cases =
     case "ios-navigation-capture-controls-preserve-drafts-and-actions" ios_navigation_capture_controls_preserve_drafts_and_actions;
     case "quick-capture-confirms-only-successful-local-saves" quick_capture_confirms_only_successful_local_saves;
     case "quick-capture-restarts-confirmation-for-each-save" quick_capture_restarts_confirmation_for_each_save;
-    case "ios-capture-and-search-match-main-native-metrics" ios_capture_and_search_match_main_native_metrics;
+    case "ios-bottom-tabs-and-actions-use-separate-groups" ios_bottom_tabs_and_actions_use_separate_groups;
     case "composer-dismissal-preserves-an-unsent-draft" composer_dismissal_preserves_an_unsent_draft;
     case "pending-outliner-text-keeps-the-latest-optimistic-edit" pending_outliner_text_keeps_the_latest_optimistic_edit;
     case "outliner-typing-retains-reference-candidates" outliner_typing_retains_reference_candidates;

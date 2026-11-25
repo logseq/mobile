@@ -616,6 +616,9 @@ let node_navigation_inactive_ (current : Model.logseq_model) =
 let journals_destination_ (current : Model.logseq_model) =
   current.destination = JournalsDestination
 
+let tasks_destination_ (current : Model.logseq_model) =
+  current.destination = TasksDestination
+
 let flashcards_destination_ (current : Model.logseq_model) =
   current.destination = FlashcardsDestination
 
@@ -716,7 +719,7 @@ let outliner_journal_button_identifier current row =
   "button.journal." ^ outliner_journal_page_id current row
 
 let node_screen_visible_ (current : Model.logseq_model) =
-  journals_destination_ current && node_navigation_active_ current
+  node_navigation_active_ current
 
 let authentication_required_ (current : Model.logseq_model) =
   current.authentication_state = "signedOut"
@@ -751,12 +754,14 @@ let connection_control_visible_ (current : Model.logseq_model) =
 let search_query_present_ (current : Model.logseq_model) =
   current.search_query <> ""
 
-let bottom_chrome_presentation (current : Model.logseq_model) =
+let bottom_chrome_presentation ?(primary_tabs = false) (current : Model.logseq_model) =
   if current.search_open && current.search_navigation_path = [] then "hidden"
   else if outliner_selection_active_ current then "outliner-selection"
   else if outliner_editor_active_ current then "outliner-editor"
   else if
-    journals_destination_ current
+    (journals_destination_ current
+     || (primary_tabs && graph_selected_ current
+         && (tasks_destination_ current || flashcards_destination_ current)))
     && (not current.search_open)
     && (not (graph_loading_visible_ current))
     && not (graph_picker_visible_ current)
@@ -778,11 +783,11 @@ let bottom_chrome_editor_ (current : Model.logseq_model) =
 let composer_reference_active_ (current : Model.logseq_model) =
   current.composer_reference_query <> None
 
-let bottom_chrome_expanded_composer_ (current : Model.logseq_model) =
-  bottom_chrome_presentation current = "expanded-composer"
+let bottom_chrome_expanded_composer_ ?primary_tabs (current : Model.logseq_model) =
+  bottom_chrome_presentation ?primary_tabs current = "expanded-composer"
 
-let bottom_chrome_capture_and_search_ (current : Model.logseq_model) =
-  bottom_chrome_presentation current = "capture-and-search"
+let bottom_chrome_capture_and_search_ ?primary_tabs (current : Model.logseq_model) =
+  bottom_chrome_presentation ?primary_tabs current = "capture-and-search"
 
 let bottom_chrome_occupies_layout_space_ (current : Model.logseq_model) =
   bottom_chrome_editor_ current
@@ -845,7 +850,8 @@ let outliner_scroll_identity (current : Model.logseq_model) =
   graph ^ ":" ^ destination
 
 let main_title (current : Model.logseq_model) =
-  if current.destination = FlashcardsDestination then tr current "Flashcards"
+  if tasks_destination_ current then tr current "Tasks"
+  else if current.destination = FlashcardsDestination then tr current "Flashcards"
   else if current.destination = GraphsDestination then tr current "Graphs"
   else match Model.active_page current with
     | Some page when current.selected_page = Some page -> selected_page_title current
@@ -1515,7 +1521,9 @@ let without_outliner_interaction (current : Model.logseq_model) =
 let navigation_root_model (current : Model.logseq_model) =
   (* Decide ownership before projecting away the active navigation path. *)
   let current =
-    if journal_root_visible_ current then current
+    if journal_root_visible_ current
+       || (tasks_destination_ current && node_navigation_inactive_ current && not current.search_open)
+    then current
     else without_outliner_interaction current
   in
   { current with

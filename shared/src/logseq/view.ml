@@ -32,6 +32,7 @@ let logseq_theme_tokens ui_context dark_theme : (string * Lui_ui.theme_token_val
     "task-" ^ name, color) in
   surfaces @ text_colors @ task_colors @ [
     ("link", Adaptive { light = "#1B6898"; dark = View_base.dark_accent });
+    ("bottom-tab-selected", Adaptive { light = "#14243314"; dark = "#00000055" });
     ("deadline-overdue", Adaptive { light = "#B42318"; dark = "#FF6961" });
     ( "autocomplete-row-background",
       Adaptive { light = "#6F6F6F1A"; dark = "#9BD3D41A" } );
@@ -68,6 +69,7 @@ let with_ui_state model_source elem =
           else match model.destination with
             | GraphsDestination -> "graphs"
             | FlashcardsDestination -> "flashcards"
+            | TasksDestination -> if model.app_navigation_path = [] then "tasks" else "page"
             | JournalsDestination ->
               if model.app_navigation_path <> [] || model.selected_page <> None then "page" else "journals"
         in

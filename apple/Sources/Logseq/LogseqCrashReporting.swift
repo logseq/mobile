@@ -90,7 +90,7 @@ enum LogseqCrashReporting {
     }
 
     enum Screen: String {
-        case unknown, authentication, journals, page, search, settings, pdf, graphs, flashcards
+        case unknown, authentication, journals, tasks, page, search, settings, pdf, graphs, flashcards
     }
 
     enum PresentationSource: Hashable { case core, platform }
