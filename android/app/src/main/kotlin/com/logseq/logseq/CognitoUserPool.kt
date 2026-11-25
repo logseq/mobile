@@ -14,7 +14,7 @@ internal class CognitoUserPool(
 ) {
     suspend fun post(operation: String, body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
         val payload = JSONObject(body.toString())
-        if (operation != "AssociateSoftwareToken" && operation != "VerifySoftwareToken") {
+        if (operation !in setOf("AssociateSoftwareToken", "VerifySoftwareToken", "GetUser", "UpdateUserAttributes")) {
             payload.put("ClientId", clientId)
         }
         val connection = URL(endpoint).openConnection() as HttpURLConnection

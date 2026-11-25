@@ -95,21 +95,68 @@ struct CognitoTokenStore: Sendable {
         self.endpoint = endpoint ?? URL(string: "https://cognito-idp.\(region).amazonaws.com/")!
     }
 
-    func apiToken() async throws -> String? {
+    func apiToken() async throws -> String? { try await sessionTokens()?.idToken }
+
+    private func sessionTokens(refresh: Bool = false, needsAccess: Bool = false) async throws -> CognitoStoredTokens? {
         guard let tokens = try tokenStore.load() else { return nil }
         guard !tokens.refreshToken.isEmpty else { try tokenStore.clear(); return nil }
-        guard tokens.requiresRefresh(at: Date()) else { return tokens.idToken }
+        guard refresh || tokens.requiresRefresh(at: Date()) || (needsAccess && tokens.accessToken == nil) else { return tokens }
         do {
             let response = try await post("GetTokensFromRefreshToken", ["RefreshToken": tokens.refreshToken])
             try checkServiceError(response)
             let refreshed = try storedTokens(response, previousRefreshToken: tokens.refreshToken)
             try tokenStore.save(refreshed)
-            return refreshed.idToken
+            return refreshed
         } catch CognitoAuthProviderError.service(let code)
             where code == "NotAuthorizedException" || code == "RefreshTokenReuseException" {
             try tokenStore.clear()
             return nil
         }
+    }
+
+    func readProfile() async throws -> LogseqAccountProfile {
+        guard let access = try await sessionTokens(needsAccess: true)?.accessToken else { throw LogseqAuthenticationError.notSignedIn }
+        let response = try await post("GetUser", ["AccessToken": access])
+        try checkServiceError(response)
+        let attributes = response["UserAttributes"] as? [[String: String]] ?? []
+        func attribute(_ name: String) -> String? { attributes.first { $0["Name"] == name }?["Value"] }
+        return LogseqAccountProfile(fullName: attribute("name") ?? "", photo: attribute("picture").flatMap(URL.init(string:)))
+    }
+
+    func updateProfile(fullName: String, photo: Data?) async throws -> String? {
+        guard let tokens = try await sessionTokens(needsAccess: true), let id = tokens.idToken,
+              let access = tokens.accessToken else { throw LogseqAuthenticationError.notSignedIn }
+        var attributes = [["Name": "name", "Value": fullName]]
+        if let photo {
+            let url = try await uploadProfilePhoto(photo, idToken: id)
+            attributes.append(["Name": "picture", "Value": url.absoluteString])
+        }
+        let response = try await post("UpdateUserAttributes", ["AccessToken": access, "UserAttributes": attributes])
+        try checkServiceError(response)
+        return try await sessionTokens(refresh: true)?.idToken
+    }
+
+    private func uploadProfilePhoto(_ photo: Data, idToken: String) async throws -> URL {
+        guard !photo.isEmpty, photo.count <= 128 * 1024 else { throw CognitoAuthProviderError.invalidResponse }
+        let endpoint = URL(string: "https://api.logseq.com/logseq/get_presigned_user_avatar_put_url")!
+        var authorize = URLRequest(url: endpoint)
+        authorize.httpMethod = "POST"
+        authorize.setValue("Bearer " + idToken, forHTTPHeaderField: "Authorization")
+        let (body, response) = try await urlSession.data(for: authorize)
+        let payload = try JSONSerialization.jsonObject(with: body) as? [String: String]
+        guard (response as? HTTPURLResponse)?.statusCode == 200,
+              let signed = payload?["presigned-url"].flatMap(URL.init(string:)),
+              signed.scheme == "https", signed.host == "logseq-user-public-metadata-bucket-prod.s3.amazonaws.com",
+              var publicURL = URLComponents(url: signed, resolvingAgainstBaseURL: false) else { throw CognitoAuthProviderError.invalidResponse }
+        var upload = URLRequest(url: signed)
+        upload.httpMethod = "PUT"
+        upload.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        upload.setValue("public, max-age=0", forHTTPHeaderField: "Cache-Control")
+        let (_, stored) = try await urlSession.upload(for: upload, from: photo)
+        guard (stored as? HTTPURLResponse)?.statusCode == 200 else { throw CognitoAuthProviderError.invalidResponse }
+        publicURL.query = nil
+        guard let url = publicURL.url else { throw CognitoAuthProviderError.invalidResponse }
+        return url
     }
 
     // OCaml owns form state and the Cognito challenge protocol. The adapter only
@@ -152,7 +199,7 @@ struct CognitoTokenStore: Sendable {
     private func post(_ operation: String, _ body: [String: Any]) async throws -> [String: Any] {
         guard !clientID.isEmpty else { throw CognitoAuthProviderError.invalidConfiguration }
         var body = body
-        if operation != "AssociateSoftwareToken" && operation != "VerifySoftwareToken" {
+        if !["AssociateSoftwareToken", "VerifySoftwareToken", "GetUser", "UpdateUserAttributes"].contains(operation) {
             body["ClientId"] = clientID
         }
         var request = URLRequest(url: endpoint)
@@ -188,7 +235,7 @@ struct CognitoTokenStore: Sendable {
         guard let expiresIn = result["ExpiresIn"] as? Double, expiresIn > 0 else {
             throw CognitoAuthProviderError.invalidResponse
         }
-        return CognitoStoredTokens(idToken: idToken, refreshToken: refreshToken,
+        return CognitoStoredTokens(idToken: idToken, accessToken: result["AccessToken"] as? String, refreshToken: refreshToken,
                                   expiresAt: Date().addingTimeInterval(expiresIn))
     }
 }

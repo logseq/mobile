@@ -1,4 +1,8 @@
 <resources>
     <string name="discussion_notifications">讨论通知</string>
     <string name="discussion_push_body">你有一条新的讨论动态。</string>
+    <string name="discussion_push_comment">留了一条新评论。</string>
+    <string name="discussion_push_reaction">回应了你的内容。</string>
+    <string name="discussion_push_you">你</string>
+    <string name="discussion_push_reaction_emoji">用 %s 回应了你的内容。</string>
 </resources>

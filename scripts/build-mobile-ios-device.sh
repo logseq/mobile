@@ -189,11 +189,8 @@ cp "$profile" "$app_dir/embedded.mobileprovision"
 "$repo_root/scripts/configure-ios-info-plist.sh" "$app_dir/Info.plist" "$bundle_id" "$deployment_target" "iPhoneOS"
 cp "$swift_build_dir/LogseqShell" "$app_dir/Logseq"
 # APNs resolves localization keys against the app bundle, outside SwiftPM bundles.
-for localization in "$repo_root"/apple/App/PushLocalization/*.lproj; do
-  destination="$app_dir/$(basename "$localization")"
-  mkdir -p "$destination"
-  cp "$localization/Localizable.strings" "$destination/"
-done
+xcrun xcstringstool compile "$repo_root/apple/Sources/Logseq/Resources/Localizable.xcstrings" \
+  --output-directory "$app_dir" --language en --language zh-Hans
 "$repo_root/scripts/compile-ios-app-assets.sh" "$app_dir" iphoneos "$deployment_target"
 
 for bundle in "$swift_build_dir"/*.bundle; do
@@ -238,7 +235,7 @@ for key in CFBundleShortVersionString CFBundleVersion; do
 done
 cp "$widget_profile" "$widget_dir/embedded.mobileprovision"
 security cms -D -i "$widget_profile" > "$widget_profile_plist"
-write_development_entitlements "$repo_root/apple/App/Entitlements.plist" \
+write_development_entitlements "$repo_root/apple/App/Widgets/Widgets.entitlements" \
   "$widget_profile_plist" "$widget_bundle_id" "$widget_entitlements"
 codesign "${codesign_keychain_args[@]}" --force --sign "$signing_identity" --timestamp=none \
   --entitlements "$widget_entitlements" "$widget_dir"
@@ -269,6 +266,34 @@ codesign "${codesign_keychain_args[@]}" --force --sign "$signing_identity" --tim
 
 write_development_entitlements "$repo_root/apple/App/Entitlements.plist" \
   "$profile_plist" "$bundle_id" "$entitlements"
+communication_enabled=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.usernotifications.communication' "$profile_plist" 2>/dev/null || true)
+if [[ $communication_enabled == true ]]; then
+  notification_bundle_id="$bundle_id.DiscussionNotificationService"
+  notification_profile=$(python3 "$repo_root/scripts/select-widget-profile.py" \
+    "$profile_plist" "$notification_bundle_id" "${LOGSEQ_IOS_NOTIFICATION_PROFILE:-}")
+  notification_dir="$app_dir/PlugIns/LogseqDiscussionNotificationService.appex"
+  notification_profile_plist="$core_build_dir/notification-profile.plist"
+  notification_entitlements="$core_build_dir/notification-entitlements.plist"
+  xcodebuild -project "$repo_root/apple/App/Logseq.xcodeproj" \
+    -target LogseqDiscussionNotificationService -configuration "$configuration_name" \
+    -sdk iphoneos -arch arm64 ONLY_ACTIVE_ARCH=YES \
+    IPHONEOS_DEPLOYMENT_TARGET="$deployment_target" \
+    PRODUCT_BUNDLE_IDENTIFIER="$notification_bundle_id" \
+    CONFIGURATION_BUILD_DIR="$widget_build_dir" CODE_SIGNING_ALLOWED=NO -quiet build
+  cp -R "$widget_build_dir/LogseqDiscussionNotificationService.appex" "$notification_dir"
+  for key in CFBundleShortVersionString CFBundleVersion; do
+    value=$(/usr/libexec/PlistBuddy -c "Print :$key" "$app_dir/Info.plist")
+    /usr/libexec/PlistBuddy -c "Set :$key $value" "$notification_dir/Info.plist"
+  done
+  cp "$notification_profile" "$notification_dir/embedded.mobileprovision"
+  security cms -D -i "$notification_profile" > "$notification_profile_plist"
+  write_development_entitlements "$repo_root/apple/App/DiscussionNotificationService/Entitlements.plist" \
+    "$notification_profile_plist" "$notification_bundle_id" "$notification_entitlements"
+  codesign "${codesign_keychain_args[@]}" --force --sign "$signing_identity" --timestamp=none \
+    --entitlements "$notification_entitlements" "$notification_dir"
+else
+  /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.usernotifications.communication' "$entitlements"
+fi
 # Use the APNs environment granted by the app profile. Builds with a profile
 # that lacks the capability continue to support the in-app inbox.
 apns_environment=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' "$profile_plist" 2>/dev/null || true)

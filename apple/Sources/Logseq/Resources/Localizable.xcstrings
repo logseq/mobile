@@ -1,6 +1,17 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Change Photo" : {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"更换头像"}}}},
+    "Could not load your profile." : {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"无法加载个人资料。"}}}},
+    "Could not prepare the photo." : {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"无法处理这张照片。"}}}},
+    "Could not save your profile." : {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"无法保存个人资料。"}}}},
+    "Edit Profile" : {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"编辑个人资料"}}}},
+    "Full Name" : {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"全名"}}}},
+    "Try Again" : {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"重试"}}}},
+    "discussion_push_body" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"New activity in a discussion."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"你有一条新的讨论动态。"}}}},
+    "discussion_push_comment" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Left a new comment."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"留了一条新评论。"}}}},
+    "discussion_push_reaction" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reacted to your content."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"回应了你的内容。"}}}},
+    "discussion_push_reaction_emoji" : {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reacted with %@."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"用 %@ 回应了你的内容。"}}}},
     "About" : {"localizations":{"es":{"stringUnit":{"state":"translated","value":"Acerca de"}},"fr":{"stringUnit":{"state":"translated","value":"À propos"}},"ja":{"stringUnit":{"state":"translated","value":"情報"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"关于"}}}},
     "Advanced" : {"localizations":{"es":{"stringUnit":{"state":"translated","value":"Avanzado"}},"fr":{"stringUnit":{"state":"translated","value":"Avancé"}},"ja":{"stringUnit":{"state":"translated","value":"詳細"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"高级"}}}},
     "All" : {"localizations":{"es":{"stringUnit":{"state":"translated","value":"Todo"}},"fr":{"stringUnit":{"state":"translated","value":"Tout"}},"ja":{"stringUnit":{"state":"translated","value":"すべて"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"全部"}}}},

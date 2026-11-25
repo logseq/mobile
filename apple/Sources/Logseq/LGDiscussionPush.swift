@@ -80,7 +80,7 @@ import UserNotifications
         if value.enabled {
             guard let sessionToken else { throw PushError.unavailable }
             if !preferences.enabled {
-                let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
+                let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
                 guard granted else { throw PushError.denied }
             }
             let token = try await deviceToken()
@@ -98,7 +98,7 @@ import UserNotifications
         updating = true
         defer { updating = false }
         let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
-        if status == .denied {
+        if status == .denied || status == .notDetermined {
             value.enabled = false
             try await sendRegistration(token: nil, preferences: value, sessionToken: sessionToken)
             save(value)

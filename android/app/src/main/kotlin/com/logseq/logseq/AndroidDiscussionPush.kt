@@ -53,7 +53,7 @@ internal class AndroidDiscussionPush(private val context: Context) {
             check(FirebaseApp.getApps(context).isNotEmpty() && sessionToken != null) { "System notifications are unavailable" }
             createChannel()
             val activity = context as? MainActivity
-            if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
+            if (!preferences.enabled && Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
                     context, Manifest.permission.POST_NOTIFICATIONS,
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
@@ -94,10 +94,10 @@ internal class AndroidDiscussionPush(private val context: Context) {
         }
     }
 
-    private fun createChannel() {
+    fun createChannel() {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(
-            "discussions", context.getString(R.string.discussion_notifications), NotificationManager.IMPORTANCE_DEFAULT,
+            CHANNEL, context.getString(R.string.discussion_notifications), NotificationManager.IMPORTANCE_DEFAULT,
         ))
     }
 
@@ -133,6 +133,7 @@ internal class AndroidDiscussionPush(private val context: Context) {
     }
 
     companion object {
+        const val CHANNEL = "discussions"
         private val http = OkHttpClient.Builder().callTimeout(12, TimeUnit.SECONDS).build()
     }
 }

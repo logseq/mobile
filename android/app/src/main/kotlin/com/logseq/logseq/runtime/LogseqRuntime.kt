@@ -615,7 +615,25 @@ internal class LogseqRuntime(
         }
     }
 
+    var accountProfileOpen by androidx.compose.runtime.mutableStateOf(false)
+        private set
+
+    fun closeAccountProfile() {
+        accountProfileOpen = false
+        scope.launch { applyPatch(bridge.applyHostUpdate("open-settings", "null")) }
+    }
+
+    suspend fun refreshAccountProfileToken() {
+        try { restoreCoreAccessToken() }
+        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { logRuntime("warn", "sync", "Profile saved. Sync authentication will refresh on retry.") }
+    }
+
     private suspend fun executeEffect(effect: NativeEffect): NativeEffectResolution {
+        if (effect.kind == "present-account-profile") {
+            accountProfileOpen = true
+            return NativeEffectResolution.Discard()
+        }
         if (effect.kind == "present-attachment") {
             return try {
                 if (effect.text == "audio") {
