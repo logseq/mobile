@@ -305,12 +305,13 @@ let collaboration_json session =
     let inbox = match !(session.Types.collaboration_inbox) with
       | Some (previous, previous_actor, inbox) when previous == db && previous_actor = actor -> inbox
       | _ ->
-        let inbox = Collaboration.inbox db ~actor in
+        let since = Collaboration.inbox_cutoff (Session_types.now_ms ()) in
+        let inbox = Collaboration.inbox db ~actor ~since ~preview:(Node_presentation.preview db) in
         session.collaboration_inbox := Some (db, actor, inbox);
         inbox in
     let discussion = match !(session.discussion) with
       | Some (graph, target) when graph = graph_id ->
-        (match Collaboration.discussion db ~actor ~target with
+        (match Collaboration.discussion db ~actor ~target ~preview:(Node_presentation.preview db) with
          | Some (`Assoc fields) -> `Assoc (("target", `String target) :: fields)
          | Some _ | None -> `Assoc ["target", `String target; "error", `String "This discussion is unavailable"])
       | _ -> `Null in
@@ -330,7 +331,7 @@ let with_collaboration session = function
 
 let success session result =
   Rpc.success (Rpc.with_node_icons (node_icon session)
-    (with_collaboration session (with_local_assets session (with_queries session (with_pdf_update session result)))))
+    (with_local_assets session (with_collaboration session (with_queries session (with_pdf_update session result)))))
 
 let take count values =
   let rec loop count result = function

@@ -2323,7 +2323,11 @@ let recent_reaction_ids (current : logseq_model) =
   Option.value ~default:[] (List.assoc_opt account current.recent_reactions)
 
 let notification_items (current : logseq_model) = match collaboration_field "inbox" current.collaboration with
-  | `List values -> values | _ -> []
+  | `List values ->
+    let since = Collaboration.inbox_cutoff (Session_types.now_ms ()) in
+    List.filter (fun item -> match collaboration_field "createdAt" item with
+      | `Int time -> time >= since | _ -> false) values
+  | _ -> []
 
 let notification_scope (current : logseq_model) =
   match collaboration_field "account" current.collaboration, current.selected_graph_id with
@@ -2335,17 +2339,25 @@ let notification_read (current : logseq_model) id =
   | Some scope -> List.mem id (Option.value ~default:[] (List.assoc_opt scope current.read_notifications))
   | None -> false
 
+module Notification_ids = Set.Make (String)
+
 let notification_count current =
+  let read = match notification_scope current with
+    | Some scope -> Option.value ~default:[] (List.assoc_opt scope current.read_notifications)
+    | None -> [] in
+  let read = Notification_ids.of_list read in
   List.fold_left (fun count item ->
-    if notification_read current (collaboration_string "id" item) then count else count + 1)
+    if Notification_ids.mem (collaboration_string "id" item) read then count else count + 1)
     0 (notification_items current)
 
 let mark_notifications current ids =
   match notification_scope current with
   | Some scope ->
     let existing = Option.value ~default:[] (List.assoc_opt scope current.read_notifications) in
-    let values = List.fold_right (fun id tail -> if id = "" || List.mem id tail then tail else id :: tail) ids existing in
-    {current with read_notifications = (scope, List.take 300 values) :: List.take 29 (List.remove_assoc scope current.read_notifications)}
+    let live = Notification_ids.of_list (List.map (collaboration_string "id") (notification_items current)) in
+    let values = Notification_ids.inter live (Notification_ids.of_list (ids @ existing))
+      |> Notification_ids.elements in
+    {current with read_notifications = (scope, values) :: List.take 29 (List.remove_assoc scope current.read_notifications)}
   | None -> current
 
 let collaboration_request current target action fields =
@@ -3348,13 +3360,12 @@ let rec update (current : logseq_model) action =
      | Some item ->
        let next = update (mark_notifications current [id]) SaveUISession in
        let target = collaboration_string "target" item in
-       if collaboration_field "opensDiscussion" item = `Bool true
-          || collaboration_string "kind" item = "comment" then
-         if collaboration_field "isPage" item = `Bool true then update next (OpenDiscussion target)
-         else
-           let expanded_discussions = target :: List.filter ((<>) target) next.expanded_discussions in
-           update {next with expanded_discussions} (RequestAppNode target)
-       else update next (RequestAppNode target))
+       let next = if (collaboration_field "opensDiscussion" item = `Bool true
+          || collaboration_string "kind" item = "comment")
+          && collaboration_field "isPage" item <> `Bool true then
+         {next with expanded_discussions = target :: List.filter ((<>) target) next.expanded_discussions}
+       else next in
+       update next (RequestAppNode target))
   | ShowJournals | ShowTasks | ShowNotifications ->
     let destination = match action with ShowTasks -> TasksDestination
       | ShowNotifications -> NotificationsDestination | _ -> JournalsDestination in

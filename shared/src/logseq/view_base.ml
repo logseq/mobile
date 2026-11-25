@@ -1727,6 +1727,28 @@ let with_liquid_glass shape (elem : Lui_elements.t) : Lui_elements.t =
      tweak
    | _ -> Lui_elements.mount context ?parent elem)
 
+let rich_block_content ?(show_code_language = true) ?interaction ?row_actions row_source ~on_event : Lui_elements.t =
+  Lui_elements.custom (fun context parent ->
+    let node = Lui_ui.extension context "outliner-block-content" in
+    Lui_elements.attach context parent node;
+    let string name get = Lui_ui.extension_property_signal context node name
+      (Signal.map (fun row -> StringValue (get row)) row_source) in
+    let flag name get = Lui_ui.extension_property_signal context node name
+      (Signal.map (fun row -> BoolValue (get row)) row_source) in
+    string "block-id" outliner_row_uuid;
+    string "title" outliner_row_title;
+    string "markup-json" (fun (row : Model.outline_row) -> row.markup_json);
+    string "youtube-target-url" outliner_row_youtube_target;
+    string "asset-type" outliner_row_asset_type;
+    string "local-path" outliner_row_local_path;
+    flag "is-asset" (fun (row : Model.outline_row) -> row.is_asset);
+    flag "is-completed" outliner_row_completed_;
+    Lui_ui.extension_property context node "show-code-language" (BoolValue show_code_language);
+    Option.iter (fun value -> Lui_ui.extension_property context node "interaction" (StringValue value)) interaction;
+    Option.iter (Lui_ui.extension_property_signal context node "row-actions") row_actions;
+    Lui_ui.on_event context node on_event;
+    node)
+
 let with_reading_insets (elem : Lui_elements.t) : Lui_elements.t =
  Lui_elements.custom (fun context parent ->
    match Lui_ui.profile context with

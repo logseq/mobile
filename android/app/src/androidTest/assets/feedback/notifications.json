@@ -1,0 +1,61 @@
+[
+  {
+    "id": "feed-asset",
+    "target": "f0000000-0000-4000-8000-000000000013",
+    "kind": "reaction",
+    "actor": "Robin",
+    "emoji": "eyes",
+    "ageDays": 0,
+    "preview": {
+      "uuid": "f0000000-0000-4000-8000-000000000013",
+      "title": "Release diagram",
+      "displayTitle": "Release diagram",
+      "markup": [],
+      "isAsset": true,
+      "assetType": "image/png"
+    }
+  },
+  {
+    "id": "feed-comment",
+    "target": "f0000000-0000-4000-8000-000000000017",
+    "kind": "comment",
+    "actor": "Robin",
+    "ageDays": 1,
+    "opensDiscussion": true,
+    "preview": {
+      "uuid": "f0000000-0000-4000-8000-000000000017",
+      "title": "[[f0000000-0000-4000-8000-000000000001]] export",
+      "displayTitle": "Release plan export",
+      "markup": [
+        {"type": "nodeReference", "title": "Release plan", "uuid": "f0000000-0000-4000-8000-000000000001"},
+        {"type": "text", "text": " export"}
+      ]
+    },
+    "commentPreview": {
+      "uuid": "f0000000-0000-4000-8000-000000000019",
+      "title": "**The checklist is ready.**",
+      "displayTitle": "The checklist is ready.",
+      "markup": [
+        {"type": "emphasis", "style": "bold", "children": [{"type": "text", "text": "The checklist is ready."}]}
+      ]
+    }
+  },
+  {
+    "id": "feed-page",
+    "target": "f0000000-0000-4000-8000-000000000007",
+    "kind": "comment",
+    "actor": "Robin",
+    "ageDays": 2,
+    "opensDiscussion": true,
+    "isPage": true,
+    "title": "Comments and reactions"
+  },
+  {
+    "id": "feed-old",
+    "target": "f0000000-0000-4000-8000-000000000017",
+    "kind": "comment",
+    "actor": "Robin",
+    "ageDays": 15,
+    "title": "Older activity"
+  }
+]

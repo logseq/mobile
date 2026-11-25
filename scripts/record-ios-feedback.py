@@ -53,6 +53,9 @@ for scenario in args.scenarios:
     fixture.mkdir(parents=True, exist_ok=True)
     if not math and not (fixture / "graphs/feedback/graph.sqlite").exists():
         shutil.copytree(root / "android/app/src/androidTest/assets/feedback", fixture / "graphs/feedback", dirs_exist_ok=True)
+    if scenario == "notifications":
+        shutil.copy2(root / "android/app/src/androidTest/assets/feedback/notifications.json",
+                     fixture / "graphs/feedback/notifications.json")
     log_path = out / f"ios-{scenario}.log"
     if not math and live_app_ready:
         subprocess.run(["xcrun", "simctl", "terminate", args.simulator, "com.logseq.logseq.PageBenchmark"], capture_output=True)

@@ -177,6 +177,7 @@ let outliner_block_content_schema () =
       Lui_extension.property "asset-type" StringScalar true None;
       Lui_extension.property "local-path" StringScalar true None;
       Lui_extension.property "row-actions" StringScalar false None;
+      Lui_extension.property "interaction" StringScalar false None;
     ]
     [
       Lui_extension.event "drag-start"

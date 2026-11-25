@@ -27,7 +27,66 @@ let reaction_emoji id =
   | Some emoji -> emoji.glyph
   | None -> id
 
+let markup db eid ~title ~references ~tags =
+  let parsed = match Read.display_type_for_eid db eid with
+    | Some "code" ->
+      let language = Read.string_value (Read.value db eid "logseq.property.code/lang") in
+      [M.Markup_code_block (language, if language = Some "calc" then calculator title else title)]
+    | Some "math" -> [M.Markup_math (title, true)]
+    | Some "quote" -> [M.Markup_quote (M.parse references tags title)]
+    | _ -> M.parse references tags title in
+  match Read.int_value (Read.value db eid "logseq.property/heading") with
+  | Some level when level >= 1 && level <= 6 ->
+    let content = List.concat_map (function
+      | M.Markup_emphasis (style, children) when String.starts_with ~prefix:"heading-" style -> children
+      | node -> [node]) parsed in
+    [M.Markup_emphasis ("heading-" ^ string_of_int level, content)]
+  | _ -> parsed
+
+let preview db =
+  let cache = Hashtbl.create 16 in
+  let decode title = Ok title in
+  let build eid =
+    let source = match Read.block ~with_breadcrumbs:false decode db eid with
+      | Some _ as block -> block
+      | None -> Read.page_block decode db eid in
+    match source with
+    | None -> `Null
+    | Some block ->
+      let resolve uuid =
+        Option.bind (Ds.entid db "block/uuid" (Ds.Uuid uuid)) (fun target ->
+          if Read.recycled db target || Read.value db target "logseq.property/deleted-at" <> None then None
+          else Read.string_value (Read.value db target "block/title")) in
+      let uuids title = Ref_text.references title |> List.filter_map (fun reference ->
+        if Ref_text.is_uuid reference.Ref_text.name then Some reference.name else None)
+        |> List.sort_uniq String.compare in
+      let hide_uuid uuid = if Ref_text.is_uuid uuid then Some "Unavailable reference" else None in
+      let reference_title uuid =
+        Option.bind (resolve uuid) (fun title ->
+          let title = Ref_text.to_text hide_uuid hide_uuid title in
+          if String_kit.is_blank title || Ref_text.is_uuid (String.trim title) then None else Some title) in
+      let extra = uuids block.title |> List.filter_map (fun uuid ->
+        Option.map (fun title -> {Cache_model.uuid; title}) (reference_title uuid)) in
+      let missing uuid = if Ref_text.is_uuid uuid && not (List.exists (fun (item : Cache_model.entity_summary) ->
+        item.uuid = uuid) extra) then hide_uuid uuid else None in
+      let title = if List.mem block.display_type [Some "code"; Some "math"] then block.title
+        else if Ref_text.is_uuid (String.trim block.title) then ""
+        else Ref_text.to_text missing missing block.title in
+      let references = extra @ block.references in
+      let tags = extra @ block.tags in
+      let nodes = markup db eid ~title ~references ~tags in
+      let display_title = if block.is_asset then title else M.plain_text nodes in
+      `Assoc (["uuid", `String block.uuid; "title", `String title;
+        "displayTitle", `String display_title; "markup", M.to_yojson nodes;
+        "isAsset", `Bool block.is_asset]
+        @ List.filter_map (fun (name, value) -> Option.map (fun value -> name, `String value) value)
+          ["assetType", block.asset_type; "assetChecksum", block.asset_checksum; "localPath", block.local_path]) in
+  fun eid -> match Hashtbl.find_opt cache eid with
+    | Some content -> content
+    | None -> let content = build eid in Hashtbl.add cache eid content; content
+
 let decorate ?actor db =
+  let preview = preview db in
   let discussions = Hashtbl.create 16 in
   let discussion eid = match Hashtbl.find_opt discussions eid with
     | Some fields -> fields
@@ -35,7 +94,7 @@ let decorate ?actor db =
       let reactions = Collaboration.reaction_summaries db ~actor eid |> List.map (fun fields ->
         let id = match List.assoc_opt "id" fields with Some (`String id) -> id | _ -> "" in
         `Assoc (("emoji", `String (reaction_emoji id)) :: fields)) in
-      let threads = Collaboration.comment_threads db ~actor eid in
+      let threads = Collaboration.comment_threads db ~actor ~preview eid in
       let fields = (if reactions = [] then [] else ["reactions", `List reactions])
         @ (if threads = [] then [] else ["commentThreads", `List threads]) in
       Hashtbl.add discussions eid fields;
@@ -76,20 +135,7 @@ let decorate ?actor db =
   let markup eid =
     let title = Option.value ~default:"" (Read.string_value (Read.value db eid "block/title")) in
     let summaries attr = Read.entity_summaries (fun x -> Ok x) db eid attr in
-    let parsed = match Read.display_type_for_eid db eid with
-        | Some "code" ->
-          let language = Read.string_value (Read.value db eid "logseq.property.code/lang") in
-          [M.Markup_code_block (language, if language = Some "calc" then calculator title else title)]
-        | Some "math" -> [M.Markup_math (title, true)]
-        | Some "quote" -> [M.Markup_quote (M.parse (summaries "block/refs") (summaries "block/tags") title)]
-        | _ -> M.parse (summaries "block/refs") (summaries "block/tags") title in
-    match Read.int_value (Read.value db eid "logseq.property/heading") with
-    | Some level when level >= 1 && level <= 6 ->
-      let content = List.concat_map (function
-        | M.Markup_emphasis (style, children) when String.starts_with ~prefix:"heading-" style -> children
-        | node -> [node]) parsed in
-      [M.Markup_emphasis ("heading-" ^ string_of_int level, content)]
-    | _ -> parsed in
+    markup db eid ~title ~references:(summaries "block/refs") ~tags:(summaries "block/tags") in
   let rec embed_source seen budget eid =
     if budget <= 0 || List.mem eid seen then None
     else match Read.ref_eids db eid "block/link" with

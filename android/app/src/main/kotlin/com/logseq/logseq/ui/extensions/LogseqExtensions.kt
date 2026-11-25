@@ -78,7 +78,7 @@ private const val RICH_FINGERPRINT =
     "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin," +
         "ios/swiftui|standard-children:0|children:|" +
         "properties:10:asset-type:string:required:none,10:local-path:string:" +
-        "required:none,11:markup-json:string:required:none,11:row-actions:string:optional:none,12:is-completed:bool:" +
+        "required:none,11:interaction:string:optional:none,11:markup-json:string:required:none,11:row-actions:string:optional:none,12:is-completed:bool:" +
         "required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:" +
         "required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|" +
         "events:10:drag-start[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],11:menu-action[7:payload:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required," +
@@ -197,6 +197,7 @@ fun logseqExtensionRegistry(
         properties = listOf(
             LuiExtensionProperty("asset-type", LuiExtensionValueKind.STRING),
             LuiExtensionProperty("local-path", LuiExtensionValueKind.STRING),
+            LuiExtensionProperty("interaction", LuiExtensionValueKind.STRING, required = false),
             LuiExtensionProperty("markup-json", LuiExtensionValueKind.STRING),
             LuiExtensionProperty("row-actions", LuiExtensionValueKind.STRING, required = false),
             LuiExtensionProperty("is-completed", LuiExtensionValueKind.BOOLEAN),
