@@ -655,7 +655,7 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
             }
         }
         .font(.body)
-        .padding(.vertical, 2)
+        .padding(.vertical, OutlinerLayoutMetrics.rowVerticalPadding)
         .background { OutlinerIndentGuides(row: row) }
     }
 
