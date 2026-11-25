@@ -26,6 +26,13 @@ enum AssetPresentationPolicy {
         return .file
     }
 
+    static func isPDF(assetType: String, path: String) -> Bool {
+        let mediaType = assetType.split(separator: ";", maxSplits: 1).first?
+            .trimmingCharacters(in: .whitespaces).lowercased()
+        return mediaType == "pdf" || mediaType == "application/pdf"
+            || pathExtension(path).lowercased() == "pdf"
+    }
+
     private static func pathExtension(_ path: String?) -> String {
         guard let fileName = path?.split(separator: "/").last else { return "" }
         let components = fileName.split(separator: ".", omittingEmptySubsequences: false)

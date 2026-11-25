@@ -487,7 +487,7 @@ struct LGAssetPreview: View {
                 }
                 try Task.checkCancellation()
                 guard allowsInteraction() else { return }
-                if assetType.lowercased() == "pdf" || assetType.lowercased() == "application/pdf" || url.pathExtension.lowercased() == "pdf",
+                if AssetPresentationPolicy.isPDF(assetType: assetType, path: url.path),
                    let openPDF {
                     openPDF(uuid, title, url)
                 } else { filePreviewURL = url }
@@ -503,8 +503,10 @@ struct LGAssetPreview: View {
 
     private var fileSummary: some View {
         HStack(spacing: 8) {
-            IconImage(name: kind == .audio ? "audio" : "paperclip")
-                .frame(width: 18, height: 18)
+            if !AssetPresentationPolicy.isPDF(assetType: assetType, path: localPath.isEmpty ? title : localPath) {
+                IconImage(name: kind == .audio ? "audio" : "paperclip")
+                    .frame(width: 18, height: 18)
+            }
             Text(verbatim: title.isEmpty ? "Untitled file" : title)
                 .font(.body)
                 .fontWeight(.medium)
