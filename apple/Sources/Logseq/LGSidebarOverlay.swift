@@ -96,6 +96,7 @@ private struct LGPhoneSidebar: View {
     @State private var dragStart: CGFloat?
     @State private var hasOpened = false
     @State private var presentation = LGSidebarPresentation()
+    @State private var panExclusions = LGSidebarPanExclusions()
 
     var body: some View {
         GeometryReader { geometry in
@@ -112,6 +113,7 @@ private struct LGPhoneSidebar: View {
                 open: open, hasOpened: hasOpened, reduceMotion: reduceMotion, dismissLabel: dismissLabel,
                 dismiss: { select(false) }
             )
+            .environment(\.lgSidebarPanExclusions, panExclusions)
             .background {
                 LGSidebarPan(
                     canStart: { velocity in
@@ -119,7 +121,8 @@ private struct LGPhoneSidebar: View {
                         return abs(velocity.x) > 2 * abs(velocity.y) &&
                             (velocity.x > 0 ? enabled && visible < 0.99 : visible > 0.01)
                     },
-                    defersToHorizontalScroll: { presentation.progress == 0 },
+                    isClosed: { presentation.progress == 0 },
+                    exclusions: panExclusions,
                     changed: { translation in
                         if dragStart == nil { dragStart = presentation.progress }
                         guard let dragStart else { return }
@@ -268,9 +271,40 @@ private struct LGSidebarLayers: View, Animatable {
     }
 }
 
+@MainActor
+private final class LGSidebarPanExclusions {
+    let views = NSHashTable<UIView>.weakObjects()
+
+    func contains(_ touch: UITouch) -> Bool {
+        views.allObjects.contains { view in
+            view.window != nil && view.window === touch.window
+                && view.bounds.contains(touch.location(in: view))
+        }
+    }
+}
+
+private extension EnvironmentValues {
+    @Entry var lgSidebarPanExclusions: LGSidebarPanExclusions?
+}
+
+struct LGSidebarPanExclusion: UIViewRepresentable {
+    @Environment(\.lgSidebarPanExclusions) private var exclusions
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        exclusions?.views.add(view)
+    }
+}
+
 private struct LGSidebarPan: UIViewRepresentable {
     let canStart: (CGPoint) -> Bool
-    let defersToHorizontalScroll: () -> Bool
+    let isClosed: () -> Bool
+    let exclusions: LGSidebarPanExclusions
     let changed: (CGFloat) -> Void
     let ended: (CGFloat, CGFloat) -> Void
     let cancelled: () -> Void
@@ -318,13 +352,17 @@ private struct LGSidebarPan: UIViewRepresentable {
             host = nil
         }
 
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            !handlers.isClosed() || !handlers.exclusions.contains(touch)
+        }
+
         override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             guard let host, handlers.canStart(pan.velocity(in: host)) else { return false }
             let location = pan.location(in: host)
             let translation = pan.translation(in: host)
             let start = CGPoint(x: location.x - translation.x, y: location.y - translation.y)
             guard bounds.contains(convert(start, from: host)) else { return false }
-            if handlers.defersToHorizontalScroll() {
+            if handlers.isClosed() {
                 var view = host.hitTest(start, with: nil)
                 while let candidate = view {
                     if let scroll = candidate as? UIScrollView, scroll.isScrollEnabled,

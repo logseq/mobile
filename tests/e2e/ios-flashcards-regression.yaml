@@ -6,16 +6,14 @@ appId: com.logseq.logseq
       id: "button.sidebar"
     timeout: 30000
 - tapOn:
-    id: "button.sidebar"
-- tapOn:
-    id: "link.sidebar.flashcards"
+    id: "tab.bottom.flashcards"
 - extendedWaitUntil:
     visible:
       id: "flashcard.question"
     timeout: 10000
-- assertNotVisible:
+- assertVisible:
     id: "button.composer.expand"
-- assertNotVisible:
+- assertVisible:
     id: "button.search"
 - assertVisible: 'The capital of France is \[…\]'
 - tapOn:
@@ -35,13 +33,9 @@ appId: com.logseq.logseq
 - assertNotVisible:
     id: "button.flashcards.practice-again"
 - tapOn:
-    id: "button.sidebar"
+    id: "tab.bottom.home"
 - tapOn:
-    id: "link.sidebar.journals"
-- tapOn:
-    id: "button.sidebar"
-- tapOn:
-    id: "link.sidebar.flashcards"
+    id: "tab.bottom.flashcards"
 - extendedWaitUntil:
     visible:
       id: "button.flashcards.practice-again"

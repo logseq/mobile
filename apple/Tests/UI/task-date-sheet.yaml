@@ -1,6 +1,8 @@
 appId: com.logseq.logseq.PageBenchmark
 ---
 - tapOn:
+    id: tab.bottom.tasks
+- tapOn:
     id: journal-task.deadline.task
 - assertVisible:
     id: task-dates.input

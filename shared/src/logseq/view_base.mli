@@ -150,6 +150,7 @@ val outliner_autocomplete_label :
 val node_navigation_active_ : Model.logseq_model -> bool
 val node_navigation_inactive_ : Model.logseq_model -> bool
 val journals_destination_ : Model.logseq_model -> bool
+val tasks_destination_ : Model.logseq_model -> bool
 val flashcards_destination_ : Model.logseq_model -> bool
 val graphs_destination_ : Model.logseq_model -> bool
 val graph_selected_ : Model.logseq_model -> bool
@@ -192,12 +193,12 @@ val sidebar_button_disabled_ :
 val sidebar_drag_disabled_ : Model.logseq_model -> bool
 val connection_control_visible_ : Model.logseq_model -> bool
 val search_query_present_ : Model.logseq_model -> bool
-val bottom_chrome_presentation : Model.logseq_model -> string
+val bottom_chrome_presentation : ?primary_tabs:bool -> Model.logseq_model -> string
 val bottom_chrome_selection_ : Model.logseq_model -> bool
 val search_editor_active_ : Model.logseq_model -> bool
 val bottom_chrome_editor_ : Model.logseq_model -> bool
-val bottom_chrome_expanded_composer_ : Model.logseq_model -> bool
-val bottom_chrome_capture_and_search_ : Model.logseq_model -> bool
+val bottom_chrome_expanded_composer_ : ?primary_tabs:bool -> Model.logseq_model -> bool
+val bottom_chrome_capture_and_search_ : ?primary_tabs:bool -> Model.logseq_model -> bool
 val bottom_chrome_occupies_layout_space_ : Model.logseq_model -> bool
 val active_node_projection : Model.logseq_model -> Model.node_projection option
 val node_projection_identifier : Model.node_projection -> string

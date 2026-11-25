@@ -11,6 +11,7 @@ type navigation_route =
 
 type primary_destination =
   | JournalsDestination
+  | TasksDestination
   | FlashcardsDestination
   | GraphsDestination
 
@@ -608,6 +609,7 @@ type logseq_action =
   | SelectSidebarPage of string
   | OpenQuickAction of string
   | ShowJournals
+  | ShowTasks
   | ShowFlashcards
   | FlashcardDeckAction of string
   | ShowGraphs

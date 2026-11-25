@@ -55,12 +55,13 @@ type page_entry = Outline_entry of retained_row | Reference_entry of reference_e
 val task_field : string -> Yojson.Basic.t -> Yojson.Basic.t
 val journal_task_scope : string -> string
 val journal_task_editing_row : Model.logseq_model -> Model.outline_row option
-val page_entries : retained_row list -> Model.logseq_model -> page_entry list
+val task_rows : Model.logseq_model -> page_entry list
+val page_entries : ?include_tasks:bool -> retained_row list -> Model.logseq_model -> page_entry list
 val page_entry_identifier : page_entry -> string
 val page_entry_outline : page_entry -> retained_row
 val page_entry_reference : page_entry -> reference_entry
 
-val first_journal_section_count : Model.logseq_model -> int
+val first_journal_section_count : ?include_tasks:bool -> Model.logseq_model -> int
 
 val unloaded_entry_id : page_entry -> string option
 

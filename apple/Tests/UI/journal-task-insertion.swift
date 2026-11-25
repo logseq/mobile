@@ -60,7 +60,7 @@ import UIKit
         for titles in [[], ["Existing block"]] {
             try await check(titles)
         }
-        print("PASS: creating a block moves the agenda by one row and typing keeps it in place")
+        print("PASS: journal insertion and the Tasks tab are independent, and the bottom controls fit")
     }
 
     @MainActor static func check(_ titles: [String]) async throws {
@@ -87,47 +87,76 @@ import UIKit
         func editor() -> UITextView? {
             views(window).compactMap { $0 as? UITextView }.first(where: \.isFirstResponder)
         }
-        var samples: [[CGFloat]] = []
-        var headingIDs: [Int] = []
+        var frames: [Int: CGRect] = [:]
         backend.frameReportingEnabled = true
-        backend.onFramesReport = { frames in
-            let positions = headingIDs.compactMap { frames[$0]?.minY }
-            if positions.count == 3 { samples.append(positions) }
-        }
-        try await Task.sleep(for: .milliseconds(650))
-        headingIDs = effects.sections.compactMap { node("journal-tasks.\($0)") }
-        guard headingIDs.count == 3, let placeholder = node("button.outliner.placeholder.today") else {
-            throw failure("Missing journal headings or placeholder")
-        }
-        func measure(_ title: String, movement: CGFloat, _ change: () throws -> Void) async throws {
-            samples.removeAll()
-            backend.emitFramesSnapshot()
-            try change()
+        backend.onFramesReport = { frames = $0 }
+        func settle() async throws {
             await runtime.drainEffectsForTesting()
             try await Task.sleep(for: .milliseconds(450))
             backend.emitFramesSnapshot()
-            var changes: [[CGFloat]] = []
-            for sample in samples where changes.last != sample { changes.append(sample) }
-            guard let before = changes.first, let after = changes.last else {
-                throw failure("The task headings must stay visible while testing \(title)")
-            }
-            for (index, start) in before.enumerated() {
-                let destination = start + movement
-                guard abs(after[index] - destination) <= 1,
-                      changes.allSatisfy({ (start - 1...destination + 1).contains($0[index]) }) else {
-                    throw failure("Task headings moved unexpectedly while testing \(title) with \(titles.count) existing rows: \(changes)")
+        }
+        func press(_ identifier: String) throws {
+            guard let id = node(identifier) else { throw failure("Missing " + identifier) }
+            try backend.performPress(node: id)
+        }
+        func checkAgenda(visible: Bool) throws {
+            for section in effects.sections {
+                guard (node("journal-tasks.\(section)") != nil) == visible else {
+                    throw failure("Unexpected visibility for task section " + section)
                 }
             }
         }
-        try await measure("Add block", movement: 28) { try backend.performPress(node: placeholder) }
-        guard effects.inserts == 1, let field = editor() else { throw failure("Add block did not open an editor") }
-        try await measure("Type", movement: 0) { field.insertText("New block") }
-        try await measure("Return", movement: 28) {
-            if field.delegate?.textView?(field, shouldChangeTextIn: field.selectedRange, replacementText: "\n") ?? true {
-                field.insertText("\n")
+        func capture(_ name: String) throws {
+            guard titles.isEmpty else { return }
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
             }
+            try image.pngData()?.write(to: URL.documentsDirectory.appendingPathComponent(name + ".png"))
         }
+        try await Task.sleep(for: .milliseconds(650))
+        backend.emitFramesSnapshot()
+        try checkAgenda(visible: false)
+        let identifiers = ["tab.bottom.home", "tab.bottom.tasks", "tab.bottom.flashcards",
+                           "button.search", "button.composer.expand"]
+        let controls = identifiers.compactMap { node($0).flatMap { frames[$0] } }
+        guard controls.count == identifiers.count,
+              zip(controls, controls.dropFirst()).allSatisfy({ $0.maxX <= $1.minX }),
+              controls.allSatisfy({ $0.width >= 44 && $0.height >= 44 && window.bounds.contains($0) }),
+              controls[3].minX - controls[2].maxX > 8 else {
+            throw failure("Expected two separate bottom groups with full touch targets: \(controls)")
+        }
+        try capture("bottom-navigation")
+        try press("tab.bottom.tasks")
+        try await settle()
+        try checkAgenda(visible: true)
+        guard let screen = node("list.tasks"), let agenda = frames[screen],
+              !agenda.isEmpty, window.bounds.intersects(agenda) else {
+            throw failure("The Tasks list must be visible after switching tabs")
+        }
+        try capture("tasks")
+        try press("button.composer.expand")
+        try await settle()
+        guard editor() != nil else { throw failure("Plus did not focus the composer on Tasks") }
+        try capture("composer")
+        guard let navigation = backend.rootIDs.flatMap(nodes).first(where: {
+            backend.extensionModel(id: $0)?.identifier == "native-navigation-stack"
+        }) else { throw failure("Missing native navigation") }
+        try backend.performExtensionEvent(node: navigation, name: "dismiss-composer", values: [:])
+        try await settle()
+        try press("tab.bottom.home")
+        try await settle()
+        try checkAgenda(visible: false)
+        try press("button.outliner.placeholder.today")
+        try await settle()
+        guard effects.inserts == 1, let field = editor() else { throw failure("Add block did not open an editor") }
+        field.insertText("New block")
+        try await settle()
+        if field.delegate?.textView?(field, shouldChangeTextIn: field.selectedRange, replacementText: "\n") ?? true {
+            field.insertText("\n")
+        }
+        try await settle()
         guard effects.inserts == 2 else { throw failure("Return did not add the next block") }
+        try checkAgenda(visible: false)
     }
 
     static func failure(_ message: String) -> NSError {

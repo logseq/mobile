@@ -137,6 +137,7 @@ let host_action (update : Host_update.host_update) =
       { Model.graph_id = session.graph_id;
         destination =
           (match session.destination with
+           | "tasks" -> Model.TasksDestination
            | "flashcards" -> Model.FlashcardsDestination
            | "graphs" -> Model.GraphsDestination
            | _ -> Model.JournalsDestination);
@@ -195,6 +196,7 @@ let encode_ui_session (session : Model.ui_session) =
   ^ ",\"destination\":"
   ^ Lui_wire.quoted
       (match session.destination with
+       | Model.TasksDestination -> "tasks"
        | Model.FlashcardsDestination -> "flashcards"
        | Model.GraphsDestination -> "graphs"
        | Model.JournalsDestination -> "journals")
@@ -603,6 +605,7 @@ let extension_event node identifier name text value =
   let open Lui_protocol in
   let values =
     match identifier, name with
+    | "bottom-tab-strip", "select" -> ["index", IntValue value]
     | "native-pdf-workspace", "event" -> ["payload", StringValue text]
     | "outliner-block-row", "set-priority" -> ["priority", StringValue text]
     | ("outliner-block-row" | "outliner-block-content"), "set-status" -> ["uuid", StringValue text; "count", IntValue value]

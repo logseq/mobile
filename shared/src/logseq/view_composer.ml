@@ -34,10 +34,10 @@ let composer_default_action_foreground = "border"
 let composer_action_foreground context =
   match Lui_ui.host context with
   | KotlinHost -> "muted-foreground"
-  | SwiftUIHost when Lui_ui.platform context = IOS -> "foreground"
+  | SwiftUIHost when Lui_ui.platform context = IOS -> "muted-foreground"
   | _ -> composer_default_action_foreground
 
-let composer_attachment_control ?(width = 32) ?(height = 44)
+let composer_attachment_control ?(width = 32) ?(height = 44) ?size
     ?(foreground = composer_default_action_foreground) ?(identifier = "button.attachment")
     model_source (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then
@@ -51,11 +51,13 @@ let composer_attachment_control ?(width = 32) ?(height = 44)
     let item ~icon ~accessibility_identifier ~text ~on_press _ =
       context_menu_item ~icon ~accessibility_identifier ~text ~on_press () in
     icon_button ~icon:(`app "composer-add") ~variant:`ghost ~width ~height ~foreground
+      ?size
       ~label:(View_base.tr (Signal.sample model_source) "Add attachment") ~accessibility_identifier:identifier
       [context_menu (attachment_picker_items item model_source context send)]
 
 let composer_attachment_button model_source context send =
-  composer_attachment_control ~foreground:(composer_action_foreground context) model_source context send
+  composer_attachment_control ~foreground:(composer_action_foreground context)
+    ?size:(if Lui_ui.platform context = IOS then Some `sm else None) model_source context send
 
 let composer_asset_preview (context : Lui_ui.ui_context) asset_source : t =
   let asset = Signal.sample asset_source in
@@ -148,6 +150,7 @@ let composer_task_status_button (context : Lui_ui.ui_context) model_source send 
       | Some status -> View_base.task_status_foreground status
       | None -> composer_action_foreground context in
     icon_button ~icon:(`app "toolbar-task") ~variant:`ghost ~width:32 ~height:44
+      ?size:(if Lui_ui.platform context = IOS then Some `sm else None)
       ~foreground:(reactive foreground model_source) ~selected_signal:selected ~label
       ~accessibility_identifier:"button.task-status"
       ~on_press:(press send Model.ToggleComposerTodo) []
@@ -156,9 +159,9 @@ let composer_task_date_button (context : Lui_ui.ui_context) model_source send fi
   let icon, label = if field = "scheduled" then "calendar", "Scheduled" else "deadline", "Deadline" in
   let foreground (current : Model.logseq_model) =
     if List.mem_assoc field current.composer_task_dates then "foreground"
-    else if Lui_ui.host context = KotlinHost then composer_action_foreground context
-    else composer_default_action_foreground in
+    else composer_action_foreground context in
   icon_button ~icon:(`app icon) ~variant:`ghost
+    ?size:(if Lui_ui.platform context = IOS then Some `sm else None)
     ~width:(if Lui_ui.host context = KotlinHost then 48 else 32) ~height:44
     ~foreground:(reactive foreground model_source)
     ~label:(View_base.tr (Signal.sample model_source) label)
@@ -382,6 +385,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                stack [composer_task_status_button context model_source send];
                composer_task_date_buttons context model_source send;
                stack [icon_button ~icon:(`app "toolbar-tag") ~variant:`ghost
+                 ?size:(if Lui_ui.platform context = IOS then Some `sm else None)
                  ~foreground:(composer_action_foreground context)
                  ~width:(if Lui_ui.host context = KotlinHost then 48 else 32) ~height:44
                  ~label:(View_base.tr (Signal.sample model_source) "Add tags") ~accessibility_identifier:"button.composer.tags"

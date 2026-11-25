@@ -14,7 +14,9 @@ Pushed pages use the native Back control with its own circular Liquid Glass and 
 
 Each journal page owns its Add block placeholder. A regular inline editor hides the Add block control on its own page. Other dates keep their controls available, including empty journal pages. Editing a math or code block keeps the Add block control available on that page.
 
-Adding a block above the Overdue, Doing, and Planned sections moves them by the height of the new row. Typing the first character keeps their position stable.
+On iOS, Overdue, Doing, and Planned appear in the Tasks tab.
+
+On Android, adding a block above those sections moves them by the height of the new row. Typing the first character keeps their position stable.
 
 ## iOS journal keyboard
 

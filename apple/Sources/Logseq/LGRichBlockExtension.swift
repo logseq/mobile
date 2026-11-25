@@ -15,6 +15,7 @@ enum LGExtensionRegistry {
         let registry = LUIAppleExtensionRegistry()
         try LGUIStateTweak.register(in: registry)
         try LGLiquidGlassTweak.register(in: registry)
+        try LGBottomTabStrip.register(in: registry)
         try LGNavigationExtension.register(in: registry)
         try LGPDFWorkspaceExtension.register(in: registry)
         try LGPropertyExtension.register(in: registry)

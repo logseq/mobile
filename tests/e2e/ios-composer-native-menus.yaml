@@ -2,18 +2,6 @@ appId: com.logseq.logseq
 ---
 - assertVisible:
     id: button.composer.expand
-- tapOn:
-    retryTapIfNoChange: false
-    id: button.composer.attachment
-- assertVisible: File
-- assertVisible: Camera
-- assertVisible: Photo
-- assertVisible: Audio recording
-- tapOn:
-    point: "3%,50%"
-- assertNotVisible: Camera
-- assertVisible:
-    id: button.composer.expand
 - assertVisible:
     id: button.graph-switch
 - takeScreenshot: native-graph-header
@@ -30,7 +18,6 @@ appId: com.logseq.logseq
 - tapOn:
     retryTapIfNoChange: false
     id: button.composer.expand
-    point: 20%,50%
 - tapOn:
     retryTapIfNoChange: false
     id: button.attachment

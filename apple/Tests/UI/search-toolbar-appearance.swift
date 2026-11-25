@@ -29,21 +29,25 @@ import UIKit
         window.rootViewController = UIHostingController(rootView: LGRendererRoot(renderer: runtime.renderer))
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
-        let composerID = try node("surface.composer.root")
+        let tabsID = try node("group.bottom.tabs")
+        let actionsID = try node("group.bottom.actions")
         let searchID = try node("button.search")
+        let captureID = try node("button.composer.expand")
         for _ in 0..<100 {
-            if frames[composerID] != nil && frames[searchID] != nil { break }
+            if [tabsID, actionsID, searchID, captureID].allSatisfy({ frames[$0] != nil }) { break }
             try await Task.sleep(for: .milliseconds(20))
         }
-        guard let composer = frames[composerID], let search = frames[searchID] else {
+        guard let tabs = frames[tabsID], let actions = frames[actionsID],
+              let search = frames[searchID], let capture = frames[captureID] else {
             throw failure("Missing rendered bottom controls")
         }
-        print("BOTTOM_CHROME composer=\(composer) search=\(search)")
-        guard abs(composer.height - 58) <= 1, abs(search.height - 58) <= 1,
-              abs(search.width - 58) <= 1, abs(composer.midY - search.midY) <= 1,
-              abs(composer.minX - 16) <= 1, abs(window.bounds.width - search.maxX - 16) <= 1,
-              abs(search.minX - composer.maxX - 10) <= 1 else {
-            throw failure("Capture and search must retain matching 58-point controls, symmetric 16-point insets, and their 10-point gap")
+        print("BOTTOM_CHROME tabs=\(tabs) actions=\(actions) search=\(search) capture=\(capture)")
+        guard abs(tabs.height - 58) <= 1, abs(actions.height - 58) <= 1,
+              abs(search.midY - capture.midY) <= 1, abs(tabs.midY - actions.midY) <= 1,
+              abs(tabs.minX - 16) <= 1, abs(window.bounds.width - actions.maxX - 16) <= 1,
+              tabs.maxX < actions.minX, actions.contains(search), actions.contains(capture),
+              search.maxX <= capture.minX else {
+            throw failure("The tab and action groups must be aligned at opposite edges with Search before Capture")
         }
         func controllers(_ c: UIViewController) -> [UIViewController] { [c] + c.children.flatMap(controllers) }
         guard let navigation = controllers(window.rootViewController!).compactMap({ $0 as? UINavigationController }).first,
@@ -54,7 +58,7 @@ import UIKit
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
         try image.pngData()!.write(to: URL.documentsDirectory.appending(path: "search-toolbar-appearance.png"))
-        print("PASS: floating composer/search controls retain their size, spacing, and transparent surrounding area")
+        print("PASS: the floating tab and action groups keep their alignment and transparent surrounding area")
     }
 
     static func failure(_ message: String) -> NSError {

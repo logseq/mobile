@@ -347,12 +347,13 @@ let task_rows current =
       (if List.mem name collapsed then [] else
         List.map (fun task -> Journal_task_row (task, journal_task_editing current task)) rows)
     | _ -> [] in
-  let entries =
-    (if task_field "error" current.journal_tasks = `Bool true then [Journal_task_error] else [])
-    @ section "overdue" @ section "doing" @ section "planned" in
-  match entries with [] -> [] | _ -> Journal_task_gap :: entries
+  (if task_field "error" current.journal_tasks = `Bool true then [Journal_task_error] else [])
+  @ section "overdue" @ section "doing" @ section "planned"
 
-let journal_entries rows (current : Model.logseq_model) =
+let embedded_task_rows current =
+  match task_rows current with [] -> [] | entries -> Journal_task_gap :: entries
+
+let journal_entries ~include_tasks rows (current : Model.logseq_model) =
   let groups = Hashtbl.create 16 and sequence = ref [] in
   List.iter (fun row ->
     let page = row.value.Model.page_id in
@@ -373,7 +374,7 @@ let journal_entries rows (current : Model.logseq_model) =
     else insert_empty (page.uuid, Some page.title, Some day, []) sections) sections current.empty_journals in
   let entries = List.mapi (fun index (page, title, day, rows) ->
     let tasks = match day with
-      | Some day when task_field "day" current.journal_tasks = `Int day -> task_rows current
+      | Some day when include_tasks && task_field "day" current.journal_tasks = `Int day -> embedded_task_rows current
       | _ -> [] in
     let needs_button = needs_placeholder rows in
     let outline = outline_entries rows in
@@ -388,10 +389,10 @@ let journal_entries rows (current : Model.logseq_model) =
     outline @ tasks) sections in
   List.rev (List.fold_left (fun acc section -> List.rev_append section acc) [] entries)
 
-let page_entries rows current =
+let page_entries ?(include_tasks = true) rows current =
   let journal_home = View_base.journal_home_visible_ current in
   let outline =
-    if journal_home then journal_entries rows current
+    if journal_home then journal_entries ~include_tasks rows current
     else if View_base.current_content_is_tag_ current || View_base.current_content_is_property_ current then []
     else
       let outline = outline_entries rows in
@@ -401,7 +402,9 @@ let page_entries rows current =
         && View_base.page_content_ready_ current && parent <> ""
         && (match Model.active_page current with
           | Some page -> String.lowercase_ascii page.title <> "library" | None -> true) in
-      let tasks = if task_field "page" current.journal_tasks = `String parent then task_rows current else [] in
+      let tasks =
+        if include_tasks && task_field "page" current.journal_tasks = `String parent
+        then embedded_task_rows current else [] in
       let outline = if not allowed then outline else
         let needs_button = needs_placeholder rows in
         if needs_button || tasks <> [] then
@@ -447,7 +450,7 @@ let page_entry_reference = function
   | Reference_entry row -> row
   | _ -> invalid_arg "page_entry_reference requires a reference entry"
 
-let first_journal_section_count current =
+let first_journal_section_count ?include_tasks current =
   if not (View_base.journal_home_visible_ current) then 0 else
   let section_page = function
     | Outline_entry row when row.value.journal_title <> None -> Some row.value.page_id
@@ -460,7 +463,7 @@ let first_journal_section_count current =
       | Some first, Some page when first <> page -> index
       | None, (Some _ as page) -> count (index + 1) page rest
       | _ -> count (index + 1) first_page rest in
-  count 0 None (page_entries (retained_outliner_rows current) current)
+  count 0 None (page_entries ?include_tasks (retained_outliner_rows current) current)
 
 let unloaded_entry_id = function
   | Outline_entry row when not row.value.Model.row_loaded -> Some row.value.row_uuid

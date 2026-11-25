@@ -32,6 +32,7 @@ let logseq_theme_tokens ui_context dark_theme : (string * Lui_ui.theme_token_val
     "task-" ^ name, color) in
   surfaces @ text_colors @ task_colors @ [
     ("link", Adaptive { light = "#1B6898"; dark = View_base.dark_accent });
+    ("bottom-tab-selected", Adaptive { light = "#14243314"; dark = "#00000055" });
     ("deadline-overdue", Adaptive { light = "#B42318"; dark = "#FF6961" });
     ( "autocomplete-row-background",
       Adaptive { light = "#6F6F6F1A"; dark = "#9BD3D41A" } );
@@ -68,6 +69,7 @@ let with_ui_state model_source elem =
           else match model.destination with
             | GraphsDestination -> "graphs"
             | FlashcardsDestination -> "flashcards"
+            | TasksDestination -> if model.app_navigation_path = [] then "tasks" else "page"
             | JournalsDestination ->
               if model.app_navigation_path <> [] || model.selected_page <> None then "page" else "journals"
         in
@@ -414,6 +416,11 @@ let extension_registry () =
       [event "toggle-selection" [event_field "uuid" StringScalar true]]);
   Lui_extension.register_component registry
     (native_navigation_stack_schema ());
+  Lui_extension.register_component registry (let open Lui_protocol in
+    let open Lui_extension in
+    component "bottom-tab-strip" [profile IOS SwiftUIHost] true []
+      [property "inset" IntScalar true None; property "selected-index" IntScalar true None]
+      [event "select" [event_field "index" IntScalar true]]);
   Lui_extension.register_component registry
     (Lui_extension.component "native-flashcards-toolbar"
        [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]

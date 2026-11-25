@@ -4,10 +4,12 @@ val flashcard_rating_button :
   string ->
   string -> string -> string -> (Model.logseq_action -> bool) -> Lui_elements.t
 val flashcard_review_content :
+  bottom_spacing:int ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val flashcard_screen :
   uses_header:bool ->
+  bottom_spacing:int ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val flashcard_toolbar :

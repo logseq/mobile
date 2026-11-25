@@ -8,7 +8,7 @@ import UIKit
 enum LGNavigationSurfacePolicy {
     static let androidContentTopPadding = CGFloat(0)
     static let androidDestinationContentTopPadding = CGFloat(56)
-    // The collapsed composer is 58 points tall and sits 21 points from the bottom.
+    // The bottom navigation is 58 points tall and sits 21 points from the bottom.
     static let collapsedComposerCenterFromBottom: CGFloat = 21 + 58 / 2
 
     static func usesSystemGroupedBackground(contentPreference: Bool) -> Bool {
@@ -903,7 +903,7 @@ private struct LGNavigationContent: View {
             }
             .overlay(alignment: .bottom) {
                 ZStack(alignment: .bottom) {
-                    if active && showsBottomChrome && !usesSideCaptureActions {
+                    if active && showsBottomChrome {
                         if bottomOccupiesLayoutSpace {
                             // The measured toolbar guides caret avoidance without resizing the scroller.
                             sizedBottomChrome
@@ -1441,6 +1441,7 @@ private struct LGNavigationContent: View {
 
     private var floatingBottomChrome: some View {
         sizedBottomChrome
+            .environment(\.lgUsesSideCaptureActions, usesSideCaptureActions)
             .modifier(LGBottomBarGlassLayer(animation: selectionAnimation))
             .fixedSize(horizontal: false, vertical: true)
     }

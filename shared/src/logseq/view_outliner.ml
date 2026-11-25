@@ -1910,6 +1910,13 @@ let with_journal_task_transition model_source content =
       node
     | _ -> mount context ?parent content
 
+let mount_journal_task_entry context model_source send entry_source =
+  match Signal.sample entry_source with
+  | View_rows.Journal_task_row (initial, _) ->
+    journal_task_row context model_source (Signal.map (function
+      | View_rows.Journal_task_row (task, _) -> task | _ -> initial) entry_source) send
+  | entry -> journal_task_entry context model_source send entry
+
 let outliner_bottom_spacer () =
   let height = 120 in
   custom @@ fun context parent ->
@@ -1921,12 +1928,31 @@ let outliner_bottom_spacer () =
       node
     | _ -> mount context ?parent (box ~height [])
 
+let tasks_screen context model_source send : t = custom @@ fun mount_context parent ->
+  let entries = Signal.own_signal mount_context.ui_scope (Signal.map View_rows.task_rows model_source) in
+  mount mount_context ?parent (View_base.with_reading_insets
+    (column ~grow:1.0 ~accessibility_identifier:"screen.tasks" [
+      if_ ~test:(Signal.map ((=) []) entries)
+        (column ~grow:1.0 ~main:`center ~cross:`center
+          [text ~value:(reactive (fun current -> View_base.tr current "No tasks to show") model_source)
+             ~foreground:"muted-foreground" ~accessibility_identifier:"tasks.empty" []]);
+      if_ ~test:(Signal.map ((<>) []) entries)
+        (with_journal_task_transition model_source
+           (virtual_list ~grow:1.0 ~gap:0 ~accessibility_identifier:"list.tasks" [
+             box ~height:16 [];
+             View_rows.windowed_keyed ~identifier:"tasks.window" ~source:entries ~key:View_rows.page_entry_identifier ~cmp:compare
+               ~is_pinned:View_rows.page_entry_pinned_
+               ~mount:(fun entry -> box [mount_journal_task_entry context model_source send entry]) ();
+             outliner_bottom_spacer ();
+           ]));
+    ]))
+
 let outliner_entries ?prefetch_history context model_source ~source send : t =
  custom @@ fun mount_context parent ->
   let previous_pin = ref None in
   let ios = Lui_ui.platform mount_context = IOS && Lui_ui.host mount_context = SwiftUIHost in
   let project_entries rows current =
-    let entries = View_rows.page_entries rows current in
+    let entries = View_rows.page_entries ~include_tasks:(not ios) rows current in
     if ios && View_base.journal_home_visible_ current then begin
       (* Keep the last edited row in its native slot as the editor becomes a
          read-only row. Swapping both identities makes the lazy list remeasure. *)
@@ -1940,7 +1966,7 @@ let outliner_entries ?prefetch_history context model_source ~source send : t =
   let entries = Signal.own_signal mount_context.Lui_ui.ui_scope
     (Signal.map2 project_entries source model_source) in
   let first_section = Signal.own_signal mount_context.ui_scope
-    (Signal.map View_rows.first_journal_section_count model_source) in
+    (Signal.map (View_rows.first_journal_section_count ~include_tasks:(not ios)) model_source) in
   let ensure_content () =
     let requested = ref [] in
     fun entries ->
@@ -1981,11 +2007,9 @@ let outliner_entries ?prefetch_history context model_source ~source send : t =
         | View_rows.Reference_entry _ ->
           reference_entry context model_source
             (Signal.map View_rows.page_entry_reference entry_source) send
-        | (View_rows.Journal_task_gap | View_rows.Journal_task_heading _ | View_rows.Journal_task_error) as entry ->
-          journal_task_entry context model_source send entry
-        | View_rows.Journal_task_row (initial, _) ->
-          journal_task_row context model_source (Signal.map (function
-            | View_rows.Journal_task_row (task, _) -> task | _ -> initial) entry_source) send in
+        | View_rows.Journal_task_gap | View_rows.Journal_task_heading _
+        | View_rows.Journal_task_error | View_rows.Journal_task_row _ ->
+          mount_journal_task_entry context model_source send entry_source in
         box ~padding:0
           [ reactive (fun ready -> if ready then render ()
               else box ~height:32 ~padding_horizontal:16
@@ -2003,7 +2027,6 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
     ~grow:(if Lui_ui.host context = KotlinHost then 1.0 else 0.0)
     [
       with_result_page context model_source send
-      (with_journal_task_transition model_source
       (View_base.with_selected_signal (Signal.constant context.Lui_ui.ui_scheduler true)
       (View_base.with_string_prop_signal StyleClass list_style
       (virtual_list ~grow:1.0 ~gap:0 ~accessibility_identifier:"list.outliner"
@@ -2032,5 +2055,5 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
           outliner_entries context model_source
             ~source:(reactive View_rows.retained_outliner_rows model_source) send;
           outliner_bottom_spacer ();
-        ]))));
+        ])));
     ])
