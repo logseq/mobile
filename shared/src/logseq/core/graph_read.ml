@@ -814,6 +814,9 @@ let compare_journal_blocks left right =
 
 let outline_metadata_chain db =
   let cached = Hashtbl.create 64 in
+  let discussion_classes =
+    List.filter_map (fun ident -> Ds.entid db "db/ident" (Ds.Keyword ident))
+      ["logseq.class/Comments"; "logseq.class/Comment"] in
   fun root ->
     let seen = Hashtbl.create 8 in
     let finish trail result =
@@ -827,7 +830,8 @@ let outline_metadata_chain db =
         Hashtbl.add seen eid ();
         let trail = eid :: trail in
         if value db eid "logseq.property/created-from-property" <> None
-           || value db eid "block/closed-value-property" <> None then finish trail true
+           || value db eid "block/closed-value-property" <> None
+           || List.exists (has_ref db eid "block/tags") discussion_classes then finish trail true
         else match Ds_value.optional_ref_eid db "block/parent" (value db eid "block/parent") with
           | Some parent -> loop trail parent
           | None -> finish trail false in
