@@ -9,7 +9,7 @@ press prop:accessibility-identifier=link.sidebar.page.fav-1
 wait prop:accessibility-identifier=title.selected-page
 press kind:menu-item&text:"Share"
 expect prop:accessibility-identifier=title.selected-page
-press prop:accessibility-identifier=link.sidebar.journals
+press prop:accessibility-identifier=tab.bottom.home
 expect-absent prop:accessibility-identifier=title.selected-page
 press prop:accessibility-identifier=button.sidebar.settings
 wait prop:accessibility-identifier=sheet.settings

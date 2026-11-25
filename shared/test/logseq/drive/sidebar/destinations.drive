@@ -1,14 +1,14 @@
-# The sidebar destinations move between journals, flashcards, and graphs.
+# Navigate between Home, Flashcards, and Graphs using the bottom tabs and sidebar.
 expect prop:accessibility-identifier=button.graph-add
 press prop:accessibility-identifier=button.graph-add
 type prop:accessibility-identifier=field.graph-name "Drive Graph"
 press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
-press prop:accessibility-identifier=link.sidebar.flashcards
+press prop:accessibility-identifier=tab.bottom.flashcards
 wait prop:accessibility-identifier=screen.flashcards
 press prop:accessibility-identifier=link.sidebar.graphs
 wait prop:accessibility-identifier=screen.graphs
-press prop:accessibility-identifier=link.sidebar.journals
+press prop:accessibility-identifier=tab.bottom.home
 wait prop:accessibility-identifier=pane.journals
 expect-absent prop:accessibility-identifier=screen.flashcards
 expect-absent prop:accessibility-identifier=screen.graphs

@@ -13,7 +13,7 @@ press kind:menu-item&text:"Unfavorite"
 expect-absent prop:accessibility-identifier=link.sidebar.page.fav-1
 press kind:menu-item&text:"Favorite"
 wait prop:accessibility-identifier=link.sidebar.page.fav-1
-press prop:accessibility-identifier=link.sidebar.journals
+press prop:accessibility-identifier=tab.bottom.home
 expect-absent prop:accessibility-identifier=title.selected-page
 press prop:accessibility-identifier=link.sidebar.page.recent-1
 wait text:"Recent Doc"
