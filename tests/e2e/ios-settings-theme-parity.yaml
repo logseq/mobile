@@ -30,6 +30,11 @@ appId: com.logseq.logseq
     direction: UP
 - tapOn: "System"
 - assertVisible: "Editor"
+- scrollUntilVisible:
+    element:
+      id: "field.base-url"
+    direction: DOWN
+    centerElement: true
 - assertVisible: "Sync server"
 - scrollUntilVisible:
     element:
