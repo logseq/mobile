@@ -116,7 +116,7 @@ import UIKit
         try await Task.sleep(for: .milliseconds(650))
         backend.emitFramesSnapshot()
         try checkAgenda(visible: false)
-        let identifiers = ["tab.bottom.home", "tab.bottom.tasks", "tab.bottom.flashcards",
+        let identifiers = ["tab.bottom.home", "tab.bottom.tasks", "tab.bottom.notifications",
                            "button.search", "button.composer.expand"]
         let controls = identifiers.compactMap { node($0).flatMap { frames[$0] } }
         guard controls.count == identifiers.count,

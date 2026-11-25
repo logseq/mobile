@@ -265,7 +265,6 @@ struct OutlinerTextRow: UIViewRepresentable {
                 button.menu = nil
             }
         }
-        backgroundColor = row.selected ? tintColor.withAlphaComponent(0.12) : .clear
         invalidateIntrinsicContentSize()
         setNeedsLayout()
     }

@@ -31,13 +31,9 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "button.composer.expand"
 - tapOn:
-    point: "41%,93%"
-- assertNotVisible:
-    id: "screen.flashcards"
-- assertNotVisible:
-    id: "tab.bottom.flashcards"
-- tapOn:
     id: "button.sidebar"
+- assertNotVisible:
+    id: "link.sidebar.flashcards"
 - tapOn:
     id: "button.sidebar.settings"
 - tapOn:
@@ -52,8 +48,9 @@ appId: com.logseq.logseq
 - waitForAnimationToEnd
 - assertVisible:
     id: "button.composer.expand"
-# XCTest can cache the UITabBar elements from before the modal closed.
 - tapOn:
-    point: "41%,93%"
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.flashcards"
 - assertVisible:
     id: "menu.flashcards.deck"

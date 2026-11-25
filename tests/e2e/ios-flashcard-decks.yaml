@@ -3,7 +3,9 @@ appId: com.logseq.logseq
 ---
 - launchApp
 - tapOn:
-    id: tab.bottom.flashcards
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.flashcards"
 - assertVisible:
     id: menu.flashcards.deck
 - assertNotVisible:
@@ -61,7 +63,9 @@ appId: com.logseq.logseq
 - stopApp
 - launchApp
 - tapOn:
-    id: tab.bottom.flashcards
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.flashcards"
 - tapOn:
     id: menu.flashcards.deck
 - assertVisible: Project reference cards

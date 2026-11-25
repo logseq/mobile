@@ -132,7 +132,7 @@ import LogseqModel
             let relevant = views(window).compactMap { view -> String? in
                 let name = String(describing: type(of: view))
                 let identifier = view.accessibilityIdentifier ?? ""
-                guard name.contains("Bar") || ["button.journals.more", "button.journal-calendar"].contains(identifier) else { return nil }
+                guard name.contains("Bar") || identifier == "button.journals.more" else { return nil }
                 return "\(name) id=\(identifier) frame=\(view.convert(view.bounds, to: window)) hidden=\(view.isHidden) alpha=\(view.alpha)"
             }
             let sceneDetails = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.map { current in
@@ -140,17 +140,15 @@ import LogseqModel
             }.joined(separator: "\n")
             return "window=\(window.bounds) screen=\(scene.screen.bounds) host=\(host.view.frame) scene=\(scene.activationState.rawValue) scenes=\n\(sceneDetails)\nnativeViews=\n" + relevant.joined(separator: "\n")
         }
-        func nativeControlFrames(vertical: Bool) -> (CGRect, CGRect)? {
+        func nativeControlFrame(vertical: Bool) -> CGRect? {
             // Hoisted toolbar nodes can lose their shared frame-cache entries
             // when an outgoing SwiftUI copy disappears. Read UIKit's live pair.
-            guard let pair = views(window).first(where: { view in
+            let hosts = views(window).filter { view in
                 guard String(describing: type(of: view)).hasPrefix("UIKitBarItemHost"), !view.isHidden else { return false }
-                return abs(view.bounds.width - (vertical ? 44 : 88)) < 1
-                    && abs(view.bounds.height - (vertical ? 88 : 44)) < 1
-            }) else { return nil }
-            let first = CGRect(origin: .zero, size: CGSize(width: 44, height: 44))
-            let second = first.offsetBy(dx: vertical ? 0 : 44, dy: vertical ? 44 : 0)
-            return (pair.convert(first, to: window), pair.convert(second, to: window))
+                return abs(view.bounds.width - 44) < 1 && abs(view.bounds.height - 44) < 1
+            }.map { $0.convert($0.bounds, to: window) }
+                .filter { window.bounds.contains($0) }
+            return hosts.max { vertical ? $0.midY < $1.midY : $0.midX < $1.midX }
         }
 
         let seconds = Double(ProcessInfo.processInfo.environment["LOGSEQ_DUO_CHECK_SECONDS"] ?? "40") ?? 40
@@ -170,16 +168,12 @@ import LogseqModel
             if #available(iOS 27.1, *) {
                 vertical = host.view.traitCollection.verticalBarEdge != .unspecified
             } else { vertical = false }
-            let reported = node("button.journal-calendar").flatMap { calendar in
-                node("button.journals.more").flatMap { more in
-                    frames[calendar].flatMap { first in frames[more].map { (first, $0) } }
-                }
-            }
-            guard let (first, second) = nativeControlFrames(vertical: vertical) ?? reported,
-                  first.width > 0, first.height > 0, second.width > 0, second.height > 0 else {
+            let reported = node("button.journals.more").flatMap { frames[$0] }
+            guard let more = reported ?? nativeControlFrame(vertical: vertical),
+                  more.width > 0, more.height > 0 else {
                 let relevant = backend.rootIDs.flatMap(descendants).compactMap { id -> String? in
                     guard let identifier = backend.model(id: id)?.property(.accessibilityIdentifier)?.stringValue,
-                          ["button.journals.more", "button.journal-calendar"].contains(identifier) else { return nil }
+                          identifier == "button.journals.more" else { return nil }
                     return "\(identifier)[\(id)]=\(String(describing: frames[id]))"
                 }.joined(separator: " ")
                 let availability = "nodes=\(relevant) totalFrames=\(frames.count) bounds=\(window.bounds)"
@@ -195,7 +189,7 @@ import LogseqModel
                 continue
             }
             let axis = vertical ? "vertical" : "horizontal"
-            let signature = "\(Int(window.bounds.width))x\(Int(window.bounds.height))-\(axis)-\(Int(first.minX)),\(Int(first.minY))-\(Int(second.minX)),\(Int(second.minY))"
+            let signature = "\(Int(window.bounds.width))x\(Int(window.bounds.height))-\(axis)-\(Int(more.minX)),\(Int(more.minY))"
             if previous != signature {
                 previous = signature
                 changedAt = Date()
@@ -203,14 +197,8 @@ import LogseqModel
             }
             guard Date().timeIntervalSince(changedAt) > 0.6, !captured.contains(signature) else { continue }
             let bounds = window.bounds.insetBy(dx: -1, dy: -1)
-            guard bounds.contains(first), bounds.contains(second), !first.insetBy(dx: 1, dy: 1).intersects(second.insetBy(dx: 1, dy: 1)) else {
-                throw failure("Toolbar targets must be inside the window and separate: bounds=\(window.bounds) sync=\(first) calendar=\(second)")
-            }
-            let aligned = vertical
-                ? abs(first.midX - second.midX) < 2 && abs(first.midY - second.midY) >= 40
-                : abs(first.midY - second.midY) < 2 && abs(first.midX - second.midX) >= 40
-            guard aligned else {
-                throw failure("Toolbar controls must follow the actual \(axis) bar: sync=\(first) calendar=\(second)")
+            guard bounds.contains(more), more.width >= 44, more.height >= 44 else {
+                throw failure("The overflow needs a full tap target within the window: \(more)")
             }
             let actionIdentifiers = vertical
                 ? sideActions
@@ -229,9 +217,9 @@ import LogseqModel
                 }
             }
             if vertical {
-                guard actionFrames.allSatisfy({ abs($0.midX - first.midX) < 2 }) else {
+                guard actionFrames.allSatisfy({ abs($0.midX - more.midX) < 2 }) else {
                     try saveScreenshot("duo-rail-misaligned.png")
-                    throw failure("Capture rail must align with the native side controls: sync=\(first), actions=\(actionFrames), safeArea=\(host.view.safeAreaInsets)")
+                    throw failure("Capture rail must align with the native overflow: more=\(more), actions=\(actionFrames), safeArea=\(host.view.safeAreaInsets)")
                 }
                 guard let last = actionFrames.last,
                       window.bounds.maxY - last.maxY <= max(44, window.safeAreaInsets.bottom + 10) else {
@@ -252,7 +240,7 @@ import LogseqModel
             captured.insert(signature)
             axes.insert(axis)
             try saveScreenshot("duo-toolbar-\(captured.count)-\(axis).png")
-            print("DUO_LAYOUT axis=\(axis) bounds=\(window.bounds) safeArea=\(host.view.safeAreaInsets) sync=\(first) calendar=\(second) captureActions=\(actionFrames)")
+            print("DUO_LAYOUT axis=\(axis) bounds=\(window.bounds) safeArea=\(host.view.safeAreaInsets) more=\(more) captureActions=\(actionFrames)")
             if vertical && checkInteractions && !interactionsChecked {
                 try await verifySideInteractions()
                 interactionsChecked = true

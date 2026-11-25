@@ -325,6 +325,18 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
         row.hasCustomContent ?? !context.childIDs.isEmpty
     }
 
+    private var selectionBackground: some View {
+        let accent = semanticColors["link"] ?? LogseqThemePolicy.linkColor(isDark: colorScheme == .dark)
+        #if os(iOS)
+        let highlighted = row.selected || blockActionsOpen
+        #else
+        let highlighted = row.selected
+        #endif
+        return RoundedRectangle(cornerRadius: 10)
+            .fill(accent.opacity(highlighted ? 0.24 : 0))
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: highlighted)
+    }
+
     @ViewBuilder var body: some View {
         #if os(iOS)
         if !(row.editing ?? !context.childIDs.isEmpty) {
@@ -382,12 +394,14 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
         }
         .tint(semanticColors["link"] ?? LogseqThemePolicy.linkColor(isDark: colorScheme == .dark))
         .padding(.trailing, row.hasChildren ? 0 : row.trailingInset ?? 0)
+        .background { selectionBackground }
     }
     #else
     private func content() -> some View {
         swiftUIContent
             .tint(semanticColors["link"] ?? LogseqThemePolicy.linkColor(isDark: colorScheme == .dark))
             .padding(.trailing, row.hasChildren ? 0 : row.trailingInset ?? 0)
+            .background { selectionBackground }
     }
     #endif
 
@@ -643,11 +657,6 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
         .font(.body)
         .padding(.vertical, 2)
         .background { OutlinerIndentGuides(row: row) }
-        .background {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.accentColor.opacity(row.selected ? 0.12 : 0))
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: row.selected)
-        }
     }
 
     private var title: some View {

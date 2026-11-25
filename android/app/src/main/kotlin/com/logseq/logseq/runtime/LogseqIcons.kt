@@ -99,13 +99,13 @@ private val circledEllipsis: ImageVector = ImageVector.Builder(
 }.build()
 
 // Same stacked card silhouette as the Apple flashcards asset.
-private val flashcardStack = ImageVector.Builder(
-    name = "FlashcardStack",
+private fun flashcardStack(name: String, scale: Float) = ImageVector.Builder(
+    name = name,
     defaultWidth = 24.dp,
     defaultHeight = 24.dp,
     viewportWidth = 24f,
     viewportHeight = 24f,
-).path(
+).addGroup(scaleX = scale, scaleY = scale, pivotX = 12f, pivotY = 12f).path(
     fill = null,
     stroke = SolidColor(Color.Black),
     strokeLineWidth = 1.8f,
@@ -128,7 +128,7 @@ private val flashcardStack = ImageVector.Builder(
     lineTo(15f, 11f)
     moveTo(9f, 14f)
     lineTo(13f, 14f)
-}.build()
+}.clearGroup().build()
 
 // Copy-block-reference glyph: a rounded-square frame with a diagonal
 // reference arrow, matching the iOS r.square asset silhouette.
@@ -224,7 +224,8 @@ internal val logseqAppIcons: Map<String, ImageVector> = mapOf(
     "discussion-comment" to Icons.Outlined.ChatBubbleOutline,
     "reaction-add" to Icons.Outlined.AddReaction,
     "comment-send" to Icons.AutoMirrored.Filled.Send,
-    "flashcards" to flashcardStack,
+    "flashcards" to flashcardStack("FlashcardStack", 1f),
+    "sidebar-flashcards" to flashcardStack("SidebarFlashcardStack", 1.30f),
     "folder" to Icons.Outlined.Folder,
     "graph-local" to Icons.Outlined.Storage,
     "graph-locked" to Icons.Outlined.Lock,

@@ -271,26 +271,11 @@ let date current item =
 let notification_root (current : Model.logseq_model) =
   current.destination = Model.NotificationsDestination && current.app_navigation_path = []
 
-let notification_button source send =
-  let label current =
-    let title = copy current "Notifications" in
-    if Model.notification_count current > 0
-    then title ^ ", " ^ copy current "Unread notifications"
-    else title in
-  let unread = Signal.map (fun current -> Model.notification_count current > 0) source in
-  View_base.with_label_signal (Signal.map label source)
-    (button ~text:"" ~label:(label (Signal.sample source)) ~variant:`ghost ~size:`sm
-      ~width:44 ~height:44 ~foreground:"foreground" ~padding:0
-      ~accessibility_identifier:"button.notifications"
-      ~on_press:(send_event send Model.ShowNotifications) [
-        overlay ~width:24 ~height:24 [
-          icon ~name:(`app "tab-notifications") ~width:22 ~height:22 ~point_size:22
-            ~foreground:"foreground" [];
-          if_ ~test:unread
-            (align `top_trailing (box ~width:6 ~height:6 ~margin_top:2 ~margin_right:1
-              ~corner_radius:3 ~background:"link" ~accessibility_identifier:"notifications.unread-dot" []));
-        ];
-      ])
+let notification_label current =
+  let title = copy current "Notifications" in
+  if Model.notification_count current > 0
+  then title ^ ", " ^ copy current "Unread notifications"
+  else title
 
 let notification_menu ~android source send =
   let current = Signal.sample source in

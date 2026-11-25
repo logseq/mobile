@@ -284,9 +284,16 @@ fun logseqExtensionRegistry(
                             .semantics { contentDescription = title },
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (symbol != null) Icon(symbol, contentDescription = null,
-                            modifier = Modifier.size(if (name == "flashcards") 32.dp else 26.dp),
-                            tint = if (active) accent else foreground)
+                        if (symbol != null) {
+                            Box(Modifier.size(26.dp)) {
+                                Icon(symbol, contentDescription = null, modifier = Modifier.fillMaxSize(),
+                                    tint = if (active) accent else foreground)
+                                if (item.optBoolean("unread")) {
+                                    Box(Modifier.align(Alignment.TopCenter).padding(top = 9.dp).size(4.dp)
+                                        .background(accent, CircleShape).testTag("notifications.unread-dot"))
+                                }
+                            }
+                        }
                     }
                 }
             }
