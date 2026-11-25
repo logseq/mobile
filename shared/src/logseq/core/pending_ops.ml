@@ -107,6 +107,7 @@ type pending_asset =
   ; asset_type : string
   ; asset_size : int
   ; asset_checksum : string
+  ; image_dimensions : (int * int) option
   ; transcript : pending_insert option
   }
 
@@ -534,6 +535,13 @@ let field fields key =
     (fun (name, value) -> if name = key then Some value else None)
     fields
 
+let image_dimensions_of_json = function
+  | `Assoc fields ->
+    (match field fields "width", field fields "height" with
+     | Some (`Int width), Some (`Int height) when width > 0 && height > 0 -> Some (width, height)
+     | _ -> None)
+  | _ -> None
+
 let required_field fields key =
   match field fields key with
   | Some value -> value
@@ -663,7 +671,9 @@ let rec intent_json intent =
           ("assetType", `String value.asset_type);
           ("assetSize", `Int value.asset_size);
           ("assetChecksum", `String value.asset_checksum);
-        ] @ (match value.transcript with None -> [] | Some child -> ["transcript", json_object (insert_fields child)]) )
+        ] @ Option.fold ~none:[] ~some:(fun (width, height) ->
+          ["imageDimensions", json_object ["width", `Int width; "height", `Int height]]) value.image_dimensions
+          @ (match value.transcript with None -> [] | Some child -> ["transcript", json_object (insert_fields child)]) )
     | Move_block value ->
       ( "move-block"
       , [
@@ -820,6 +830,7 @@ let rec intent_of_json input =
         asset_type = string_field fields "assetType";
         asset_size = int_field fields "assetSize";
         asset_checksum = string_field fields "assetChecksum";
+        image_dimensions = Option.bind (field fields "imageDimensions") image_dimensions_of_json;
         transcript = (match field fields "transcript" with
           | None | Some `Null -> None
           | Some input ->

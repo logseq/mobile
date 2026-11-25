@@ -727,6 +727,7 @@ let native_outliner_row ~allow_drag ~trailing_inset model_source retained_source
       "depth", `Int row.depth; "hasChildren", `Bool row.has_children;
       "collapsed", `Bool row.is_collapsed; "isAsset", `Bool row.is_asset;
       "assetType", `String (View_base.outliner_row_asset_type row);
+      "imageDimensions", metadata_member "imageDimensions" row;
       "localPath", `String (View_base.outliner_row_local_path row);
       "youtubeURL", `String (View_base.outliner_row_youtube_target row);
       "completed", `Bool (View_base.outliner_row_completed_ row);
@@ -1824,7 +1825,7 @@ let placeholder_block context model_source (value : View_rows.placeholder) show_
     Lui_ui.bool_property mount_context node PressEnabled true;
     register_press mount_context node (fun _ -> ignore (send (Model.AddRootBlock value.parent_uuid)));
     node in
-  let placeholder = box ?height:(if android then None else Some 28) ~min_height:28
+  let placeholder = box ?height:(if android then None else Some height) ~min_height:height
     [if_ ~test:show_button placeholder] in
   match value.journal_heading with
   | None -> box ~padding_horizontal:8 [placeholder]

@@ -253,7 +253,7 @@ let rec outline_row_from_block youtube_target_url opens_as_page depth
     Some
       { Model.row_uuid; row_title;
         row_metadata_json = Yojson.Basic.to_string (`Assoc (List.filter (fun (key, _) ->
-          List.mem key ["discussionKind"; "reactions"; "commentThreads"; "pdfAnnotation"; "isTask"]) fields));
+          List.mem key ["discussionKind"; "reactions"; "commentThreads"; "pdfAnnotation"; "imageDimensions"; "isTask"]) fields));
         row_task_dates_json = (match List.assoc_opt "taskDates" fields with Some (`Assoc _ as value) -> Yojson.Basic.to_string value | _ -> "");
         row_list_number = int_member "listNumber" fields;
         row_is_embed = bool_member "isEmbed" fields;

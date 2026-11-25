@@ -8,6 +8,7 @@ struct LGImportedAsset: Sendable {
     let size: Int
     let checksum: String
     let path: String
+    var imageDimensions: LGImageDimensions? = nil
 }
 
 struct LGStagedAssetPayload: Encodable {
@@ -17,6 +18,7 @@ struct LGStagedAssetPayload: Encodable {
     let assetType: String
     let assetSize: Int
     let assetChecksum: String
+    let imageDimensions: LGImageDimensions?
     let localPath: String
     let targetBlockId: String?
     let transcript: String?
@@ -29,6 +31,7 @@ struct LGStagedAssetPayload: Encodable {
         assetType = asset.assetType
         assetSize = asset.size
         assetChecksum = asset.checksum
+        imageDimensions = asset.imageDimensions
         localPath = LocalAssetPath.storedPath(asset.path)
         targetBlockId = targetBlockID
         self.transcript = transcript
@@ -99,7 +102,8 @@ enum LGAssetImporter {
                 assetType: destination.pathExtension.lowercased(),
                 size: data.count,
                 checksum: checksum,
-                path: destination.path
+                path: destination.path,
+                imageDimensions: LGImageDimensions.read(at: destination)
             )
         }.value
     }

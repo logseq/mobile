@@ -187,6 +187,14 @@ let decorate ?actor db =
         | _ -> fields in
       let fields = match Pdf_annotation.reference db uuid with
         | Some reference -> ("pdfAnnotation", reference) :: fields | None -> fields in
+      let fields =
+        if List.assoc_opt "isAsset" fields <> Some (`Bool true) then fields
+        else
+          match Read.int_value (Read.value db body "logseq.property.asset/width"),
+                Read.int_value (Read.value db body "logseq.property.asset/height") with
+          | Some width, Some height when width > 0 && height > 0 ->
+            ("imageDimensions", `Assoc ["width", `Int width; "height", `Int height]) :: fields
+          | _ -> fields in
       `Assoc (("discussionKind", `String (discussion_kind db eid))
         :: ("isTask", `Bool (Read.entity_is_instance_of db eid "logseq.class/Task"))
         :: ("isEmbed", `Bool embedded) :: ("taskDates", task_dates uuid eid) :: (match list_number eid with Some n -> ["listNumber", `Int n] | None -> [])

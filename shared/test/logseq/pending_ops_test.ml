@@ -72,6 +72,7 @@ let intents : Ops.pending_intent list =
         asset_type = "png";
         asset_size = 2048;
         asset_checksum = "abc123";
+        image_dimensions = None;
         transcript = None;
       };
     move "block";

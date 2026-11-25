@@ -2,6 +2,29 @@ import ImageIO
 import LogseqModel
 import SwiftUI
 
+struct LGImageDimensions: Codable, Equatable, Sendable {
+    let width: Int
+    let height: Int
+
+    var previewSize: CGSize? {
+        guard width > 0, height > 0 else { return nil }
+        let width = CGFloat(width)
+        let height = CGFloat(height)
+        let scale = min(326 / width, 280 / height, 1)
+        return CGSize(width: ceil(width * scale), height: ceil(height * scale))
+    }
+
+    static func read(at url: URL) -> Self? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0 else { return nil }
+        let orientation = properties[kCGImagePropertyOrientation] as? Int ?? 1
+        return (5...8).contains(orientation) ? Self(width: height, height: width) : Self(width: width, height: height)
+    }
+}
+
 #if os(iOS)
 @MainActor enum LGGraphAssetLoader {
     private struct Response: Decodable {
@@ -79,9 +102,11 @@ private final class LGInlineImageThumbnailCache: @unchecked Sendable {
     static let shared = LGInlineImageThumbnailCache()
 
     private let cache = NSCache<NSURL, LGInlineImageThumbnailBox>()
+    private let sizes = NSCache<NSURL, NSValue>()
 
     private init() {
         cache.countLimit = 80
+        sizes.countLimit = 256
     }
 
     func image(for url: URL) -> CGImage? {
@@ -91,32 +116,41 @@ private final class LGInlineImageThumbnailCache: @unchecked Sendable {
     func store(_ image: CGImage, for url: URL) {
         cache.setObject(LGInlineImageThumbnailBox(image), forKey: url as NSURL)
     }
+
+    func previewSize(for url: URL) -> CGSize? {
+        if let cached = sizes.object(forKey: url as NSURL) { return cached.cgSizeValue }
+        guard let size = LGImageDimensions.read(at: url)?.previewSize else { return nil }
+        sizes.setObject(NSValue(cgSize: size), forKey: url as NSURL)
+        return size
+    }
 }
 
 struct LGInlineImage: View {
-    private static let maximumPreviewSize = CGSize(width: 326, height: 280)
-
     let url: URL
+    let dimensions: LGImageDimensions?
     @State private var thumbnail: CGImage?
 
-    init(url: URL) {
+    init(url: URL, dimensions: LGImageDimensions? = nil) {
         self.url = url
+        self.dimensions = dimensions
         _thumbnail = State(
             initialValue: LGInlineImageThumbnailCache.shared.image(for: url)
         )
     }
 
     var body: some View {
+        let size = dimensions?.previewSize ?? LGInlineImageThumbnailCache.shared.previewSize(for: url)
         Group {
             if let thumbnail {
-                let displaySize = Self.displaySize(for: thumbnail)
+                let displaySize = size ?? LGImageDimensions(width: thumbnail.width, height: thumbnail.height).previewSize
                 Image(decorative: thumbnail, scale: 1)
                     .resizable()
-                    .frame(width: displaySize.width, height: displaySize.height)
+                    .scaledToFit()
+                    .frame(width: displaySize?.width, height: displaySize?.height)
                     .clipShape(.rect(cornerRadius: 8))
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                ProgressView().frame(height: 120)
+                Self.placeholder(size: size) { ProgressView() }
             }
         }
         .accessibilityIdentifier("asset.preview.image")
@@ -144,15 +178,15 @@ struct LGInlineImage: View {
         }
     }
 
-    private static func displaySize(for image: CGImage) -> CGSize {
-        let width = max(CGFloat(image.width), 1)
-        let height = max(CGFloat(image.height), 1)
-        let scale = min(
-            maximumPreviewSize.width / width,
-            maximumPreviewSize.height / height,
-            1
-        )
-        return CGSize(width: ceil(width * scale), height: ceil(height * scale))
+    static func placeholder<Content: View>(size: CGSize?, @ViewBuilder content: () -> Content) -> some View {
+        content()
+            .frame(width: size?.width, height: size?.height ?? 120)
+            .background {
+                if size != nil {
+                    RoundedRectangle(cornerRadius: 8).fill(.secondary.opacity(0.08))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 #endif

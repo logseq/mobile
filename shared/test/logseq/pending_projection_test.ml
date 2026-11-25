@@ -449,9 +449,11 @@ let asset_projection_keeps_upload_metadata_and_built_in_class () =
         asset_type = "png";
         asset_size = 2048;
         asset_checksum = "abc123";
+        image_dimensions = Some (1200, 800);
         transcript = None;
       }
   in
+  check_eq (Ops.intent_of_json (Ops.intent_json intent)) intent;
   let db = apply_intent (base_db ()) intent in
   check (Projection.satisfied db intent);
   check_eq (title db "asset") "photo.png";
@@ -468,6 +470,9 @@ let asset_projection_keeps_upload_metadata_and_built_in_class () =
   check_eq
     (value db "asset" "logseq.property.asset/checksum")
     (Some (Ds.String "abc123"));
+  let image = Node_presentation.decorate db "asset" (`Assoc ["isAsset", `Bool true]) in
+  check_eq (Yojson.Basic.Util.member "imageDimensions" image)
+    (`Assoc ["width", `Int 1200; "height", `Int 800]);
   check
     (match value db "asset" "logseq.property.asset/remote-metadata" with
      | Some (Ds.Map entries) ->
