@@ -88,7 +88,7 @@ import Testing
     @Test func blockTitleAndBulletShareOneStableFirstLineHeight() {
         #expect(OutlinerLayoutMetrics.titleLineHeight == OutlinerLayoutMetrics.bulletHitSize)
         #expect(OutlinerLayoutMetrics.depthSpacerHeight == 0)
-        #expect(OutlinerLayoutMetrics.rowVerticalPadding == 5)
+        #expect(OutlinerLayoutMetrics.rowVerticalPadding == 4)
         #expect(OutlinerLayoutMetrics.bulletContentSpacing == 2)
     }
 
