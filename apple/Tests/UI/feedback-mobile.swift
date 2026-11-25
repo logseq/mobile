@@ -361,7 +361,7 @@ import LogseqModel
                 observations["filtered-empty"] = find("notifications.empty") != nil
                 try press(recentOnly)
                 await pause()
-                observations["three-month-window"] = !checked() && find("notification.feed-old") != nil
+                observations["one-year-window"] = !checked() && find("notification.feed-old") != nil
                     && find("notification.feed-archive") == nil && find("notifications.empty") == nil
                 try press(recentOnly)
                 await pause()

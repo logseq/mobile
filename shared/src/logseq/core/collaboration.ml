@@ -126,7 +126,7 @@ let comment_threads ?(preview = fun _ -> `Null) db ~actor target =
     | Some uuid, _ :: _ -> Some (`Assoc ["id", `String uuid; "comments", `List rows])
     | _ -> None)
 
-let inbox_max_months = 3
+let inbox_max_months = 12
 
 let inbox_cutoff months =
   let open Dev_query.Date_time_util in

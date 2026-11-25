@@ -42,7 +42,7 @@ can read and update the same discussions, including in encrypted graphs.
   activity newest first. A block comment notification opens the block and expands its inline
   discussion. Page comments open the page. The header menu contains mark-all-as-read, a persisted
   one-month filter, and the system notification preference. The filter is enabled by default.
-  Disabling it shows the last three months.
+  Disabling it shows the last year.
   A missing target leaves the inbox usable and shows that the activity is unavailable.
 - Scope unread state to the signed-in account and graph. Persist read markers locally and support
   marking individual items or all visible items as read. Display the active graph’s notifications
