@@ -9,6 +9,22 @@ appId: com.logseq.logseq
     id: "link.sidebar.journals"
 - assertVisible:
     id: "button.sidebar"
+- swipe:
+    from:
+      id: "tab.bottom.home"
+    direction: RIGHT
+    duration: 600
+- assertVisible:
+    id: "screen.flashcards"
+- assertNotVisible:
+    id: "button.sidebar.dismiss"
+- swipe:
+    from:
+      id: "tab.bottom.flashcards"
+    direction: LEFT
+    duration: 600
+- assertVisible:
+    id: "button.journal-calendar"
 - repeat:
     times: 8
     commands:

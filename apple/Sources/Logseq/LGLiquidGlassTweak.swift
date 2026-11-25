@@ -24,7 +24,7 @@ enum LGLiquidGlassTweak {
                 }
                 let shape: LGLiquidGlassSurface.Shape
                 switch shapeName {
-                case "bottom-capture", "bottom-tabs":
+                case "bottom-capture":
                     return AnyView(content.modifier(LGBottomBarGlass(surface: .capture)))
                 case "bottom-actions":
                     return AnyView(content.modifier(LGBottomBarActions()))

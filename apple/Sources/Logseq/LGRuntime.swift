@@ -351,6 +351,7 @@ public final class LGRuntime {
                 ?? Self.extensionInt(values, name: "selection-length")
                 ?? Self.extensionInt(values, name: "count")
                 ?? Self.extensionInt(values, name: "width")
+                ?? Self.extensionInt(values, name: "index")
                 ?? Self.extensionPlacement(values)
                 ?? (identifier == "outliner-block-row" && name == "edit" ? -1 : 0)
             operation = .extensionEvent(event.nodeID, identifier, name, text, value)

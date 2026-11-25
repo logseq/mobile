@@ -416,6 +416,11 @@ let extension_registry () =
       [event "toggle-selection" [event_field "uuid" StringScalar true]]);
   Lui_extension.register_component registry
     (native_navigation_stack_schema ());
+  Lui_extension.register_component registry (let open Lui_protocol in
+    let open Lui_extension in
+    component "bottom-tab-strip" [profile IOS SwiftUIHost] true []
+      [property "inset" IntScalar true None; property "selected-index" IntScalar true None]
+      [event "select" [event_field "index" IntScalar true]]);
   Lui_extension.register_component registry
     (Lui_extension.component "native-flashcards-toolbar"
        [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]

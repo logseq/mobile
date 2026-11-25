@@ -139,43 +139,60 @@ let uses_ios_native_header context =
 let bottom_tab_row model_source send : t =
   let current = Signal.sample model_source in
   let cell = 50 and inset = 4 in
-  let tab destination title name image selected_image action =
+  let destinations = [
+    Model.JournalsDestination, "Home", "home", "tab-home", "tab-home-selected", Model.ShowJournals;
+    Model.TasksDestination, "Tasks", "tasks", "tab-tasks", "tab-tasks-selected", Model.ShowTasks;
+    Model.FlashcardsDestination, "Flashcards", "flashcards", "tab-flashcards", "tab-flashcards-selected", Model.ShowFlashcards;
+  ] in
+  let navigate destination action =
+    let current : Model.logseq_model = Signal.sample model_source in
+    if current.destination <> destination || current.app_navigation_path <> []
+       || (destination = Model.JournalsDestination && current.selected_page <> None)
+    then ignore (send action) in
+  let tab (destination, title, name, image, selected_image, action) =
     let selected = Signal.map (fun (current : Model.logseq_model) -> current.destination = destination) model_source in
-    let at_root (current : Model.logseq_model) =
-      current.app_navigation_path = []
-      && (destination <> Model.JournalsDestination || current.selected_page = None) in
     icon_button ~icon:(`app image)
       ~icon_signal:(Signal.map (fun selected -> `app (if selected then selected_image else image)) selected)
       ~selected_signal:selected ~variant:`ghost ~size:`icon ~width:cell ~height:cell
-      ~style_class:"system-toolbar-icon" ~corner_radius:(cell / 2)
+      ~style_class:"system-toolbar-icon"
       ~foreground_signal:(Signal.map (fun selected -> if selected then "link" else "foreground") selected)
-      ~background_signal:(Signal.map (fun selected -> if selected then "bottom-tab-selected" else "transparent") selected)
       ~label:(View_base.tr current title) ~accessibility_identifier:("tab.bottom." ^ name)
-      ~on_press:(fun _ ->
-        let current = Signal.sample model_source in
-        if current.destination <> destination || not (at_root current) then ignore (send action))
+      ~on_press:(fun _ -> navigate destination action)
       [] in
   let action image title identifier event =
     icon_button ~icon:(`app image) ~variant:`ghost ~size:`icon ~width:cell ~height:cell
       ~foreground:"foreground"
       ~label:(View_base.tr current title) ~accessibility_identifier:identifier
       ~on_press:(press send event) [] in
-  let group shape name children =
-    View_base.with_liquid_glass shape
-      (row ~width:(List.length children * cell + 2 * inset)
+  let group name children =
+    row ~width:(List.length children * cell + 2 * inset)
          ~padding:inset ~gap:0 ~cross:`center
-         ~accessibility_identifier:("group.bottom." ^ name) children) in
+         ~accessibility_identifier:("group.bottom." ^ name) children in
+  let tabs = custom (fun context parent ->
+    let node = Lui_ui.extension context "bottom-tab-strip" in
+    let selected = Signal.map (fun (current : Model.logseq_model) ->
+      List.find_index (fun (destination, _, _, _, _, _) -> current.destination = destination)
+        destinations |> Option.value ~default:(-1)) model_source in
+    Lui_ui.extension_property context node "inset" (IntValue inset);
+    Lui_ui.extension_property_signal context node "selected-index" (Signal.map View_base.int_wire_value selected);
+    Lui_ui.on_event context node (function
+      | ExtensionEvent (_, _, "select", values) ->
+        (match String_map.find_opt "index" values with
+         | Some (IntValue index) when index >= 0 ->
+           Option.iter (fun (destination, _, _, _, _, action) -> navigate destination action)
+             (List.nth_opt destinations index)
+         | _ -> ())
+      | _ -> ());
+    ignore (mount context ~parent:node (group "tabs" (List.map tab destinations)));
+    attach context parent node;
+    node) in
   row ~grow:1.0 ~gap:8 ~main:`space_between ~cross:`center
     ~accessibility_identifier:"row.bottom.capture" [
-      group "bottom-tabs" "tabs" [
-          tab Model.JournalsDestination "Home" "home" "tab-home" "tab-home-selected" Model.ShowJournals;
-          tab Model.TasksDestination "Tasks" "tasks" "tab-tasks" "tab-tasks-selected" Model.ShowTasks;
-          tab Model.FlashcardsDestination "Flashcards" "flashcards" "tab-flashcards" "tab-flashcards-selected" Model.ShowFlashcards;
-        ];
-      group "bottom-actions" "actions" [
+      tabs;
+      View_base.with_liquid_glass "bottom-actions" (group "actions" [
           action "bottom-search" "Search" "button.search" Model.OpenSearch;
           action "capture-circle" "Capture" "button.composer.expand" Model.ExpandComposer;
-        ];
+        ]);
     ]
 
 let capture_and_search_row (context : Lui_ui.ui_context) model_source send

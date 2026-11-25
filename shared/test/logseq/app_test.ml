@@ -5185,6 +5185,11 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   let actions = descendant_with_identifier renderer row "group.bottom.actions" in
   let tab name = descendant_with_identifier renderer tabs ("tab.bottom." ^ name) in
   let selected id = property_bool renderer id Lui_protocol.Selected in
+  let strip = descendant_with_extension renderer application row "bottom-tab-strip" in
+  let swipe_to index =
+    dispatch application (Lui_protocol.ExtensionEvent (strip, "bottom-tab-strip", "select",
+      Lui_protocol.String_map.singleton "index" (Lui_protocol.IntValue index)));
+    flush application in
   check_eq (children renderer tabs) (List.map tab ["home"; "tasks"; "flashcards"]);
   check_eq (children renderer actions) [search; capture];
   List.iter (fun id ->
@@ -5193,11 +5198,13 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
     (children renderer tabs @ children renderer actions);
   check_eq (property_string renderer capture Lui_protocol.InlineIconName) "app:capture-circle";
   check_eq (selected (tab "home")) true;
-  dispatch application (Lui_protocol.Press (tab "tasks"));
-  flush application;
+  swipe_to 1;
   check_eq (selected (tab "tasks")) true;
+  check_eq (extension_property application strip "selected-index") (Some (Lui_protocol.IntValue 1));
   check_eq (selected (tab "home")) false;
   check (descendant_with_identifier renderer (Lui_app.root_node application) "tasks.empty" <> -1);
+  swipe_to 3;
+  check_eq (App.model application).destination Model.TasksDestination;
   dispatch application (Lui_protocol.Press (tab "flashcards"));
   flush application;
   check_eq (App.model application).destination Model.FlashcardsDestination;
