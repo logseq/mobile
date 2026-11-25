@@ -2068,6 +2068,7 @@ let tasks_screen context model_source send : t = custom @@ fun mount_context par
   let own signal = Signal.own_signal mount_context.ui_scope signal in
   let tab = own (Signal.map (fun (current : Model.logseq_model) -> current.tasks_view.tab) model_source) in
   let entries = own (Signal.map View_rows.tasks_view_rows model_source) in
+  let empty = own (Signal.map ((=) []) entries) in
   let tab_button id name image value =
     let label = View_base.tr (Signal.sample model_source) name in
     let selected = own (Signal.map ((=) value) tab) in
@@ -2083,10 +2084,10 @@ let tasks_screen context model_source send : t = custom @@ fun mount_context par
     ]) in
   mount mount_context ?parent (View_base.with_reading_insets
     (column ~grow:1.0 ~accessibility_identifier:"screen.tasks" [
-      keyed ~source:(own (Signal.map (fun tab -> [tab]) tab)) ~key:Fun.id ~cmp:compare
+      keyed ~source:(own (Signal.map2 (fun tab empty -> [tab, empty]) tab empty)) ~key:Fun.id ~cmp:compare
         ~mount:(fun source ->
-          let active_tab = Signal.sample source in
-          with_journal_task_transition model_source
+          let active_tab, is_empty = Signal.sample source in
+          let list = with_journal_task_transition model_source
             (virtual_list ~grow:1.0 ~gap:0 ~accessibility_identifier:"list.tasks" [
               column ~gap:12 ~padding_horizontal:16 ~padding_vertical:12 [
                 heading ~value:(View_base.tr (Signal.sample model_source) "Tasks")
@@ -2096,24 +2097,25 @@ let tasks_screen context model_source send : t = custom @@ fun mount_context par
                   tab_button "upcoming" "Upcoming" "calendar" Model.TasksUpcoming;
                 ];
               ];
-              if_ ~test:(Signal.map ((=) []) entries)
-                (row ~container_relative_frame:`horizontal ~main:`center ~padding_horizontal:16 [
-                  column ~height:180 ~gap:10 ~main:`center ~cross:`center [
-                    icon ~name:(`app (if active_tab = Model.TasksToday then "tasks-today" else "calendar"))
-                      ~width:25 ~height:25 ~foreground:"muted-foreground"
-                      ~accessibility_identifier:"tasks.empty.icon" [];
-                    text ~value:(View_base.tr (Signal.sample model_source)
-                      (if active_tab = Model.TasksToday then "No tasks to show" else "No upcoming tasks"))
-                      ~text_alignment:`center ~foreground:"muted-foreground"
-                      ~accessibility_identifier:"tasks.empty" [];
-                  ];
-                ]);
               box ~height:16 [];
               View_rows.windowed_keyed ~identifier:"tasks.window" ~source:entries ~key:View_rows.page_entry_identifier ~cmp:compare
                 ~is_pinned:View_rows.page_entry_pinned_
                 ~mount:(fun entry -> box [mount_journal_task_entry ~tasks_screen:true context model_source send entry]) ();
               outliner_bottom_spacer ();
-            ]));
+            ]) in
+          if not is_empty then list
+          else overlay ~grow:1.0 ~alignment:`center [
+            box ~grow:1.0 [list];
+            column ~gap:10 ~cross:`center ~padding_horizontal:16 [
+              icon ~name:(`app (if active_tab = Model.TasksToday then "tasks-today" else "calendar"))
+                ~width:25 ~height:25 ~foreground:"muted-foreground"
+                ~accessibility_identifier:"tasks.empty.icon" [];
+              text ~value:(View_base.tr (Signal.sample model_source)
+                (if active_tab = Model.TasksToday then "No tasks to show" else "No upcoming tasks"))
+                ~text_alignment:`center ~foreground:"muted-foreground"
+                ~accessibility_identifier:"tasks.empty" [];
+            ];
+          ]);
     ]))
 
 let outliner_entries ?prefetch_history ?reset_key context model_source ~source send : t =

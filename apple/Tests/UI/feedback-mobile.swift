@@ -290,6 +290,16 @@ import LogseqModel
                 try press("reaction.heart")
                 await pause()
                 observations["added-inline"] = find("reaction.block." + Self.uuid(17) + ".heart") != nil
+            case "tasks-empty":
+                try press("tab.bottom.tasks")
+                await pause()
+                func emptyMessage() -> String? {
+                    find("tasks.empty").flatMap { backend.model(id: $0)?.property(.text)?.stringValue }
+                }
+                observations["today-empty"] = emptyMessage() == "No tasks to show"
+                try press("tasks.tab.upcoming")
+                await pause()
+                observations["upcoming-empty"] = emptyMessage() == "No upcoming tasks"
             case "notifications":
                 let tab = "tab.bottom.notifications"
                 func tabLabel() -> String? {
