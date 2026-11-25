@@ -138,18 +138,18 @@ let inbox ?(since = 0) ?(preview = fun _ -> `Null) db ~actor =
   | Some actor ->
     let authored = referring db creator actor |> List.filter (live db) in
     let subscriptions = Hashtbl.create 32 in
-    let subscribe thread target since =
+    let subscribe thread target joined =
       match Hashtbl.find_opt subscriptions thread with
-      | Some (_, previous) when previous <= since -> ()
-      | _ -> Hashtbl.replace subscriptions thread (target, since) in
+      | Some (_, previous) when previous <= joined -> ()
+      | _ -> Hashtbl.replace subscriptions thread (target, joined) in
     List.iter (fun eid ->
       if not (is_thread db eid) then
         match thread_of_comment db eid with
         | Some thread ->
           List.nth_opt (targets db thread) 0
-          |> Option.iter (fun target -> subscribe thread target (created_at db eid))
+          |> Option.iter (fun target -> subscribe thread target (Some (order db eid)))
         | None when not (is_comment db eid) ->
-          List.iter (fun thread -> subscribe thread eid min_int) (threads db eid)
+          List.iter (fun thread -> subscribe thread eid None) (threads db eid)
         | None -> ()) authored;
     let events = Hashtbl.create 32 in
     let add target event kind =
@@ -176,9 +176,10 @@ let inbox ?(since = 0) ?(preview = fun _ -> `Null) db ~actor =
               "createdAt", `Int time]))
             (Read.uuid_for_eid db route)
         | _ -> () in
-    Hashtbl.iter (fun thread (target, joined_at) ->
+    Hashtbl.iter (fun thread (target, joined) ->
       if live db thread then List.iter (fun event ->
-        if created_at db event >= joined_at then add target event "comment") (comments db thread))
+        if Option.fold ~none:true ~some:(fun first -> order db event > first) joined then
+          add target event "comment") (comments db thread))
       subscriptions;
     List.iter (fun target -> List.iter (fun event -> add target event "reaction") (reactions db target)) authored;
     Hashtbl.to_seq_values events |> List.of_seq

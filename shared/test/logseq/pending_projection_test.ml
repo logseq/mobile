@@ -1447,11 +1447,11 @@ let comment_notifications_are_scoped_to_block_owners_and_prior_participants () =
       uuid; thread = "thread"; text = uuid; created_at}) in
     with_tx db [add (Option.get (C.entity db uuid)) C.creator (Ds.Ref actor)] in
   let db = post db 24 "before" 100 in
-  let db = post db 23 "joined" 200 in
+  let db = post db 23 "joined" 400 in
   let db = post db 24 "after" 300 in
   let notifications actor = C.inbox db ~actor |> List.map (fun event ->
     Yojson.Basic.Util.(event |> member "id" |> to_string)) in
-  check_eq (notifications "owner") ["after"; "joined"; "before"];
+  check_eq (notifications "owner") ["joined"; "after"; "before"];
   check_eq (notifications "participant") ["after"];
   check_eq (notifications "sender") ["joined"];
   check_eq (notifications "page-owner") []
