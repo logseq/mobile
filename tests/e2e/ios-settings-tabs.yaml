@@ -27,10 +27,11 @@ appId: com.logseq.logseq
 - tapOn: "Cancel"
 - tapOn:
     id: "button.sidebar.dismiss"
+- waitForAnimationToEnd
+- assertVisible:
+    id: "button.composer.expand"
 - assertNotVisible:
     id: "tab.bottom.flashcards"
-- assertVisible:
-    id: "tab.bottom.home"
 - tapOn:
     id: "button.sidebar"
 - tapOn:
@@ -44,5 +45,8 @@ appId: com.logseq.logseq
 - tapOn: "Cancel"
 - tapOn:
     id: "button.sidebar.dismiss"
+- waitForAnimationToEnd
+- assertVisible:
+    id: "button.composer.expand"
 - assertVisible:
     id: "tab.bottom.flashcards"
