@@ -64,13 +64,13 @@ can read and update the same discussions, including in encrypted graphs.
 
 ### Platform interaction
 
-- On iOS, use native tab selection and an unread dot, app-standard bottom sheets for threads
-  and reaction selection, and VoiceOver labels that expose unread state and selected reactions.
-  Keep Search and Capture reachable on compact iPhones by adapting the tab widths.
-- On Android, use Material navigation, an unread dot, sheets, and TalkBack semantics. The system Back
-  action closes the reaction picker or thread before leaving the current destination. Keep the
-  reply field visible above the keyboard on both platforms and use the existing LUI components
-  where they provide equivalent behavior.
+- Use icon-only navigation with separate tab and Search/Capture groups on iOS and Android. Expose
+  accessible tab names, selection and unread state. Adapt the groups to compact widths.
+- Use each platform’s native menus for reaction choices and check the viewer’s selected reactions.
+  Use the shared bottom composer and its send control for Add comment and Reply. Keep the field
+  above the keyboard, disable Send for empty drafts, and restore unsent text after dismissal.
+- Keep notification rows and overflow actions consistent with the rest of the app. Android Back
+  returns from an opened discussion to the inbox.
 
 ## Staging configuration
 

@@ -136,7 +136,7 @@ let search_screen model_source send : t =
 let uses_ios_native_header context =
   Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost
 
-let bottom_tab_row ?(tabs_only = false) ~show_flashcards ~tab_width model_source send : t =
+let bottom_tab_row ~android ~show_flashcards ~tab_width ~action_width model_source send : t =
   let current = Signal.sample model_source in
   let cell = 50 and inset = 4 in
   let destinations = [
@@ -169,7 +169,7 @@ let bottom_tab_row ?(tabs_only = false) ~show_flashcards ~tab_width model_source
       ~on_press:(fun _ -> navigate destination action)
       []) in
   let action image title identifier event =
-    icon_button ~icon:(`app image) ~variant:`ghost ~size:`icon ~width:cell ~height:cell
+    icon_button ~icon:(`app image) ~variant:`ghost ~size:`icon ~width:action_width ~height:cell
       ~foreground:"foreground"
       ~label:(View_base.tr current title) ~accessibility_identifier:identifier
       ~on_press:(press send event) [] in
@@ -206,43 +206,28 @@ let bottom_tab_row ?(tabs_only = false) ~show_flashcards ~tab_width model_source
     ignore (mount context ~parent:node (group "tabs" tab_width (List.map tab destinations)));
     attach context parent node;
     node) in
-  if tabs_only then tabs else
+  let actions = group "actions" action_width [
+    action "bottom-search" "Search" "button.search" Model.OpenSearch;
+    action "capture-circle" "Capture" "button.composer.expand" Model.ExpandComposer;
+  ] in
+  let actions =
+    if android then box ~background:"glass" ~border_width:1 ~border_color:"border" ~corner_radius:29 [actions]
+    else View_base.with_liquid_glass "bottom-actions" actions in
   row ~grow:1.0 ~gap:8 ~main:`space_between ~cross:`center
-    ~accessibility_identifier:"row.bottom.capture" [
-      tabs;
-      View_base.with_liquid_glass "bottom-actions" (group "actions" cell [
-          action "bottom-search" "Search" "button.search" Model.OpenSearch;
-          action "capture-circle" "Capture" "button.composer.expand" Model.ExpandComposer;
-        ]);
-    ]
+    ~accessibility_identifier:"row.bottom.capture" [tabs; actions]
 
-let capture_and_search_row (context : Lui_ui.ui_context) model_source send
-    : t =
-  if uses_ios_native_header context then
-    let show_flashcards = Signal.map (fun (current : Model.logseq_model) ->
-      List.mem "flashcards" current.sidebar_tabs) model_source in
-    let layout = Signal.map2 (fun flashcards (current : Model.logseq_model) ->
+let capture_and_search_row (context : Lui_ui.ui_context) model_source send : t =
+  let android = Lui_ui.host context = KotlinHost in
+  if android || uses_ios_native_header context then
+    let layout = Signal.map (fun (current : Model.logseq_model) ->
+      let flashcards = List.mem "flashcards" current.sidebar_tabs in
       let viewport = if current.viewport_width > 0 then current.viewport_width else 390 in
       let count = if flashcards then 4 else 3 in
-      flashcards, max 40 (min 58 ((viewport - 32 - 8 - 108 - 8) / count))) show_flashcards model_source in
-    reactive (fun (show_flashcards, tab_width) -> bottom_tab_row ~show_flashcards ~tab_width model_source send) layout
-  else if Lui_ui.host context = KotlinHost then
-    let show_flashcards = Signal.map (fun (current : Model.logseq_model) ->
-      List.mem "flashcards" current.sidebar_tabs) model_source in
-    column ~gap:6 [
-      row ~grow:1.0 ~gap:10 ~cross:`center
-      ~accessibility_identifier:"row.bottom.capture"
-      [
-        View_composer.composer_view context model_source send;
-        icon_button ~icon:(`app "search") ~variant:`ghost ~size:`icon ~width:56
-          ~height:56 ~background:"surface-container-low" ~corner_radius:28
-          ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "Search")
-          ~accessibility_identifier:"button.search"
-          ~on_press:(press send Model.OpenSearch)
-          [];
-      ];
-      reactive (fun show_flashcards -> bottom_tab_row ~tabs_only:true ~show_flashcards ~tab_width:50 model_source send) show_flashcards;
-    ]
+      let action_width = max 44 (min 50 ((viewport - 32 - 8 - 16 - count * 44) / 2)) in
+      let tab_width = max 40 (min 58 ((viewport - 32 - 8 - 16 - 2 * action_width) / count)) in
+      flashcards, tab_width, action_width) model_source in
+    reactive (fun (show_flashcards, tab_width, action_width) ->
+      bottom_tab_row ~android ~show_flashcards ~tab_width ~action_width model_source send) layout
   else
     row ~grow:1.0 ~gap:10 ~cross:`center
       ~accessibility_identifier:"row.bottom.capture"
@@ -259,6 +244,15 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send
 let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) model_source send : t
     =
   let primary_tabs = uses_ios_native_header context || Lui_ui.host context = KotlinHost in
+  let comment_chrome =
+    if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
+      current.discussion_composition <> None
+      && (Lui_ui.host context = KotlinHost || current.search_open = search_page)) model_source)
+      (column ~container_relative_frame:`horizontal ~cross:`stretch ~gap:0 ~padding_horizontal:16 [
+        box ~height:6 [];
+        View_collaboration.compose_input model_source send;
+        box ~height:21 [];
+      ]) in
   let selection_chrome : t =
     column ~gap:0 ~padding_horizontal:16
       [
@@ -269,6 +263,7 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
   if Lui_ui.host context = KotlinHost then
     stack
       [
+        comment_chrome;
         if_
           ~test:(Signal.map View_base.bottom_chrome_selection_
                    model_source)
@@ -304,7 +299,7 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
           ~test:
             (Signal.map (View_base.bottom_chrome_capture_and_search_ ~primary_tabs)
                model_source)
-          (column ~gap:0 ~padding_horizontal:16
+          (column ~container_relative_frame:`horizontal ~cross:`stretch ~gap:0 ~padding_horizontal:16
              [
                box ~height:8 [];
                capture_and_search_row context model_source send;
@@ -355,6 +350,7 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
     stack
       [
         navigation_chrome;
+        comment_chrome;
         if_
           ~test:(reactive View_base.bottom_chrome_editor_ model_source)
           (View_base.with_liquid_glass "container"
@@ -993,7 +989,8 @@ let native_search_view ?base (_context : Lui_ui.ui_context) model_source send :
      ignore
        (mount context ~parent:node (column ~gap:0
            [if_ ~test:(reactive (fun current ->
-              View_base.search_editor_active_ current || header_selection_active current) model_source)
+              View_base.search_editor_active_ current || header_selection_active current
+              || current.Model.discussion_composition <> None) model_source)
               (main_bottom_chrome ~search_page:true context model_source send)]));
      ignore (mount context ~parent:node (main_header_connection model_source send));
      ignore
@@ -1048,7 +1045,9 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
        model_source
    in
    let composer_dismissal_source =
-     Signal.map (View_base.bottom_chrome_expanded_composer_ ~primary_tabs:(uses_ios_native_header context)) model_source
+     Signal.map (fun current -> current.Model.discussion_composition <> None
+       || View_base.bottom_chrome_expanded_composer_
+          ~primary_tabs:(uses_ios_native_header context || Lui_ui.host context = KotlinHost) current) model_source
    in
    let title_source =
      Signal.map

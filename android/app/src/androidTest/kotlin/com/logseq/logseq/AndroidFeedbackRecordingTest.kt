@@ -470,14 +470,26 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 ui.onNodeWithTag("button.outliner.selection.$action").performClick()
                 pause()
                 if (scenario == "comments") {
-                    ui.onNodeWithTag("field.comment").performTextInput("I'll add the checklist.")
+                    ui.onNodeWithTag("button.comment.post").assertIsNotEnabled()
+                    val field = ui.onNodeWithTag("field.comment")
+                    field.performTextInput("I'll add the checklist.")
+                    ui.onNodeWithTag("surface.composer.dismiss").performClick()
+                    pause()
+                    field.assertDoesNotExist()
+                    ui.onNodeWithTag("button.outliner.selection.comment").performClick()
+                    pause()
+                    field.assertTextEquals("I'll add the checklist.")
                     ui.onNodeWithTag("button.comment.post").performClick()
                     pause()
                     ui.onNodeWithText("I'll add the checklist.").assertIsDisplayed()
                 } else {
                     ui.onNodeWithTag("reaction.heart").performClick()
                     pause()
-                    ui.onNodeWithText("❤️ 1").assertIsDisplayed()
+                    val heart = ui.onNodeWithTag("reaction.block." + uuid(17) + ".heart")
+                    heart.assertIsDisplayed()
+                    heart.performClick()
+                    pause()
+                    heart.assertDoesNotExist()
                 }
             }
             "notifications" -> {
@@ -499,6 +511,30 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 }
                 pause()
                 ui.onNodeWithTag("title.notifications").assertIsDisplayed()
+            }
+            "bottom-navigation" -> {
+                mount(7, dark = true)
+                val home = ui.onNodeWithTag("tab.bottom.home")
+                val search = ui.onNodeWithTag("button.search")
+                val capture = ui.onNodeWithTag("button.composer.expand")
+                ui.onNodeWithText("Home").assertDoesNotExist()
+                home.assertContentDescriptionContains("Home")
+                assertEquals(home.getUnclippedBoundsInRoot().top, search.getUnclippedBoundsInRoot().top)
+                assertTrue(search.getUnclippedBoundsInRoot().right <= capture.getUnclippedBoundsInRoot().left)
+                search.performClick()
+                pause()
+                ui.onNodeWithTag("field.search").assertIsDisplayed()
+                ui.onNodeWithTag("button.search.close").performClick()
+                pause()
+                ui.onNodeWithTag("tab.bottom.tasks").performClick()
+                pause()
+                capture.performClick()
+                pause()
+                ui.onNodeWithTag("field.composer").assertIsDisplayed()
+                ui.onNodeWithTag("button.task-status").assertIsSelected()
+                ui.onNodeWithTag("surface.composer.dismiss").performClick()
+                pause()
+                ui.onNodeWithTag("tab.bottom.tasks").assertIsSelected()
             }
             "youtube" -> {
                 mount(4); pause()

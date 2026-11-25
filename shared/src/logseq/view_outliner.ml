@@ -208,6 +208,15 @@ let row_metadata (row : Model.outline_row) =
 let metadata_member key row =
   match row_metadata row with `Assoc fields -> Option.value ~default:`Null (List.assoc_opt key fields) | _ -> `Null
 
+let row_reactions row =
+  match metadata_member "reactions" row with `List values -> values | _ -> []
+
+let block_menu_reactions row =
+  let owned = View_collaboration.selected_reactions (row_reactions row) in
+  `List (List.map (fun (id, emoji) -> `Assoc [
+    "id", `String id; "emoji", `String emoji; "selected", `Bool (List.mem id owned);
+  ]) Collaboration.emoji_choices)
+
 let block_menu_labels current =
   `Assoc (List.map (fun label -> label, `String (View_base.tr current label))
     ["Open block"; "Add comment"; "Add reaction"; "Edit"; "Scheduled"; "Deadline"; "Status"; "Copy"; "Cut"; "Copy reference"; "Copy URL";
@@ -221,10 +230,13 @@ let handle_block_menu_event model_source row_source send = function
        let uuid = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
        ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))
      | Some (StringValue "select") -> ignore (send (Model.ToggleOutlinerSelection row.row_uuid))
-     | Some (StringValue ("comments" | "reaction" as action)) ->
+     | Some (StringValue "comments") ->
        let uuid = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
-       if action = "comments" then ignore (send (Model.ComposeDiscussion ([uuid], None)))
-       else ignore (send (Model.ShowReactionPicker (Some uuid)))
+       ignore (send (Model.ComposeDiscussion ([uuid], None)))
+     | Some (StringValue action) when String.starts_with ~prefix:"reaction:" action ->
+       let uuid = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
+       let emoji = String.sub action 9 (String.length action - 9) in
+       ignore (send (Model.ToggleDiscussionReaction (uuid, emoji)))
      | Some (StringValue ("scheduled" | "deadline" as field)) ->
        if metadata_member "isTask" row = `Bool true then
          ignore (send (Model.OpenBlockTaskDate (row.row_uuid, field)))
@@ -280,6 +292,7 @@ let outliner_rich_block_view ?(show_code_language = true) model_source title_sou
            "isComment", `Bool (metadata_member "discussionKind" row = `String "comment");
            "statuses", `List statuses;
            "labels", block_menu_labels current;
+           "reactionChoices", block_menu_reactions row;
          ]))) model_source row_source);
    Lui_ui.on_event context node (handle_block_menu_event model_source row_source send);
    node
@@ -762,6 +775,7 @@ let native_outliner_row ~allow_drag ~trailing_inset model_source retained_source
       "selectionMember", `Bool (View_base.row_selected_ current row);
       "isTask", metadata_member "isTask" row;
       "menuLabels", block_menu_labels current;
+      "reactionChoices", block_menu_reactions row;
       "editing", `Bool (View_rows.retained_row_editing_ retained);
       "allowsDrag", `Bool allow_drag;
       "trailingInset", `Int trailing_inset;
@@ -1051,7 +1065,7 @@ let with_result_page ?(root = false) context model_source send fallback : t =
           box ~padding_horizontal:16 [row ~gap:8 ~cross:`center [
             View_base.node_icon_view ~size:28 (Signal.map (fun current ->
               View_base.node_icon current (View_base.active_node_uuid current)) model_source);
-            heading ~level:`h3 ~style_class:"scroll-section-title"
+            heading ~level:`h3 ~style_class:"scroll-section-title" ~foreground:"foreground"
               ~value:(reactive View_base.active_node_title model_source)
               ~accessibility_identifier:(if root then "title.selected-page" else "title.node") []]];
           page_title_spacer ()]);
@@ -1099,7 +1113,7 @@ let outliner_row ?(trailing_inset = 0) context model_source retained_row_source 
 let page_heading_text ?accessibility_identifier ?(tracks_scroll_title = true) parts =
   let suffix = Signal.map snd parts in
   let style_class = if tracks_scroll_title then Some "scroll-section-title" else None in
-  [heading ~level:`h3 ?style_class ~value:(reactive fst parts)
+  [heading ~level:`h3 ?style_class ~foreground:"foreground" ~value:(reactive fst parts)
      ?accessibility_identifier [];
    if_ ~test:(Signal.map Option.is_some suffix)
      (text ~value:(reactive (Option.value ~default:"") suffix) ~style_class:"subheadline single-line"
@@ -1334,15 +1348,27 @@ let outliner_selection_toolbar ?(retain_task_actions = false) model_source send 
           current.outliner_rows in
         List.filter (Hashtbl.mem pending) blocks @ ordered in
       let add_comment () = ignore (send (Model.ComposeDiscussion (selected (), None))) in
-      let add_reaction () = match selected () with
-        | [target] -> ignore (send (Model.ShowReactionPicker (Some target)))
+      let owned = Signal.map (fun (current : Model.logseq_model) ->
+        match current.outliner_selected_block_ids with
+        | [target] ->
+          List.find_opt (fun (row : Model.outline_row) -> row.row_uuid = target) current.outliner_rows
+          |> Option.fold ~none:[] ~some:(fun row -> View_collaboration.selected_reactions (row_reactions row))
+        | _ -> []) model_source in
+      let choose_reaction emoji = match selected () with
+        | [target] -> ignore (send (Model.ToggleDiscussionReaction (target, emoji)))
         | _ -> () in
-      let actions = [
+      let discussion_actions = [
         if_toolbar ~test:can_comment (quick_button ~on_press:add_comment (`app "discussion-comment")
           "Add comment" "button.outliner.selection.comment" "");
-        if_toolbar ~test:can_react (quick_button ~on_press:add_reaction (`app "reaction-add")
-          "Add reaction" "button.outliner.selection.reaction" "");
-        status_menu;
+        if_toolbar ~test:can_react
+          (toolbar_menu ~icon:(`app "reaction-add") ~label:(View_base.tr current "Add reaction")
+            ~accessibility_identifier:"button.outliner.selection.reaction"
+            (View_collaboration.reaction_options ~owned choose_reaction));
+      ] in
+      (* The native iOS toolbar supplies the first action's status menu. *)
+      let leading_actions = if android then discussion_actions @ [status_menu]
+        else status_menu :: discussion_actions in
+      let actions = leading_actions @ [
         quick_button (`app "toolbar-outdent") "Outdent" "button.outliner.selection.outdent" "outdent";
         quick_button (`app "toolbar-indent") "Indent" "button.outliner.selection.indent" "indent";
         quick_button (`app "toolbar-move-up") "Move up" "button.outliner.selection.moveUp" "moveUp";

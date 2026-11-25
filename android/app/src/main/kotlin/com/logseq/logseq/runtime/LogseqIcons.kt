@@ -98,6 +98,38 @@ private val circledEllipsis: ImageVector = ImageVector.Builder(
     close()
 }.build()
 
+// Same stacked card silhouette as the Apple flashcards asset.
+private val flashcardStack = ImageVector.Builder(
+    name = "FlashcardStack",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).path(
+    fill = null,
+    stroke = SolidColor(Color.Black),
+    strokeLineWidth = 1.8f,
+    strokeLineCap = androidx.compose.ui.graphics.StrokeCap.Round,
+) {
+    moveTo(7f, 7f)
+    lineTo(17f, 7f)
+    curveTo(18.1f, 7f, 19f, 7.9f, 19f, 9f)
+    lineTo(19f, 16f)
+    curveTo(19f, 17.1f, 18.1f, 18f, 17f, 18f)
+    lineTo(7f, 18f)
+    curveTo(5.9f, 18f, 5f, 17.1f, 5f, 16f)
+    lineTo(5f, 9f)
+    curveTo(5f, 7.9f, 5.9f, 7f, 7f, 7f)
+    close()
+    moveTo(7f, 4f)
+    lineTo(17f, 4f)
+    curveTo(18.1f, 4f, 19f, 4.9f, 19f, 6f)
+    moveTo(9f, 11f)
+    lineTo(15f, 11f)
+    moveTo(9f, 14f)
+    lineTo(13f, 14f)
+}.build()
+
 // Copy-block-reference glyph: a rounded-square frame with a diagonal
 // reference arrow, matching the iOS r.square asset silhouette.
 private val copyReference: ImageVector = ImageVector.Builder(
@@ -181,6 +213,8 @@ internal val logseqAppIcons: Map<String, ImageVector> = mapOf(
     "disclosure-right" to Icons.AutoMirrored.Filled.KeyboardArrowRight,
     "document" to Icons.Outlined.Description,
     "download" to Icons.Outlined.FileDownload,
+    "capture-circle" to Icons.Filled.AddCircle,
+    "bottom-search" to Icons.Filled.Search,
     "tab-home" to Icons.Outlined.Home,
     "tab-home-selected" to Icons.Filled.Home,
     "tab-tasks" to Icons.Outlined.CheckBox,
@@ -190,7 +224,7 @@ internal val logseqAppIcons: Map<String, ImageVector> = mapOf(
     "discussion-comment" to Icons.Outlined.ChatBubbleOutline,
     "reaction-add" to Icons.Outlined.AddReaction,
     "comment-send" to Icons.AutoMirrored.Filled.Send,
-    "flashcards" to Icons.Outlined.Layers,
+    "flashcards" to flashcardStack,
     "folder" to Icons.Outlined.Folder,
     "graph-local" to Icons.Outlined.Storage,
     "graph-locked" to Icons.Outlined.Lock,

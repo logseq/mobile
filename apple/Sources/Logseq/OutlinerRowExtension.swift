@@ -65,7 +65,13 @@ struct OutlinerRowPayload: Decodable, Equatable {
     let selectionMember: Bool?
     let isTask: Bool?
     let menuLabels: [String: String]?
+    struct ReactionChoice: Decodable, Equatable {
+        let id: String
+        let emoji: String
+        let selected: Bool
+    }
     let discussionsAvailable: Bool?
+    let reactionChoices: [ReactionChoice]?
     let isComment: Bool?
     let editing: Bool?
     let allowsDrag: Bool?
@@ -343,9 +349,17 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
             items.append(menuAction(selectionTitle, icon: "checkmark.circle", action: "select"))
         }
         if row.discussionsAvailable == true {
-            var collaboration = [menuAction("Add reaction", icon: "face.smiling", action: "reaction")]
+            var collaboration: [UIMenuElement] = []
             if row.isComment != true {
-                collaboration.insert(menuAction("Add comment", icon: "bubble.left", action: "comments"), at: 0)
+                collaboration.append(menuAction("Add comment", icon: "bubble.left", action: "comments"))
+            }
+            if let choices = row.reactionChoices, !choices.isEmpty {
+                collaboration.append(UIMenu(title: menuTitle("Add reaction"), image: menuImage("face.smiling"),
+                    children: choices.map { choice in
+                        UIAction(title: choice.emoji, state: choice.selected ? .on : .off) { _ in
+                            emit("menu-action", extra: ["payload": .string("reaction:" + choice.id)])
+                        }
+                    }))
             }
             items.append(UIMenu(options: .displayInline, children: collaboration))
         }

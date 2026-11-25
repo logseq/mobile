@@ -205,8 +205,17 @@ import LogseqModel
                 try press("button.outliner.selection.comment")
                 await pause()
                 if let node = find("field.comment") {
+                    observations["empty-send-disabled"] = find("button.comment.post")
+                        .flatMap { backend.model(id: $0) }?.isEnabled == false
                     try backend.performTextChange(node: node, text: "I'll add the checklist.")
                     try await Task.sleep(for: .milliseconds(400))
+                    try extensionEvent("native-navigation-stack", "dismiss-composer", [:])
+                    await pause()
+                    try press("button.outliner.selection.comment")
+                    await pause()
+                    observations["draft-restored"] = find("field.comment").flatMap {
+                        backend.model(id: $0)?.property(.text)?.stringValue
+                    } == "I'll add the checklist."
                     try press("button.comment.post")
                     await pause()
                 }
@@ -217,8 +226,7 @@ import LogseqModel
                 observations["reaction"] = find("reaction.block." + Self.uuid(17) + ".+1") != nil
                 try extensionEvent("outliner-block-row", "menu-action", ["payload": .string("select")])
                 await pause()
-                try press("button.outliner.selection.reaction")
-                await pause()
+                observations["picker-available"] = find("button.outliner.selection.reaction") != nil
                 try press("reaction.heart")
                 await pause()
                 observations["added-inline"] = find("reaction.block." + Self.uuid(17) + ".heart") != nil

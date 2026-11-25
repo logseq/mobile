@@ -5756,19 +5756,9 @@ let kotlin_composer_preserves_the_capture_contract () =
   let placement =
     descendant_with_identifier renderer chrome "row.bottom.capture"
   in
-  let composer =
-    descendant_with_identifier renderer chrome "surface.composer.root"
-  in
-  let collapsed = List.nth (children renderer composer) 0 in
   check_eq ~msg:"the Android capture row fills its dock slot like iOS"
-    (property_float renderer placement Lui_protocol.GrowValue)
-    1.0;
-  check_eq ~msg:"collapsed Capture fills the available dock width"
-    (property_float renderer collapsed Lui_protocol.GrowValue)
-    1.0;
-  let expand =
-    descendant_with_identifier renderer collapsed "button.composer.expand"
-  in
+    (property_float renderer placement Lui_protocol.GrowValue) 1.0;
+  let expand = descendant_with_identifier renderer placement "button.composer.expand" in
   dispatch application (Lui_protocol.Press expand);
   flush application;
   let expanded_composer =
@@ -5831,40 +5821,26 @@ let kotlin_sidebar_uses_compact_material_drawer_metrics () =
     (property_int renderer top_spacer Lui_protocol.HeightValue)
     8
 
-let collapsed_capture_camera_opens_directly () =
-  List.iter (fun backend ->
-    let application = App.create (backend ()) in
-    start application;
-    send application (Model.SelectGraph "Work");
-    send application (Model.ChangeComposerDraft "Unsent note");
-    flush application;
-    let renderer = Lui_app.runtime application in
-    let root = Lui_app.root_node application in
-    let camera = descendant_with_identifier renderer root "button.composer.camera" in
-    check ~msg:"collapsed Capture exposes a camera shortcut" (camera <> -1);
-    check_eq ~msg:"the shortcut displays the camera icon"
-      (property_string renderer camera Lui_protocol.InlineIconName)
-      "app:toolbar-camera";
-    let before = App.model application in
-    dispatch application (Lui_protocol.Press camera);
-    flush application;
-    let current = App.model application in
-    check_eq ~msg:"one tap presents the camera directly"
-      current.pending_effects
-      (before.pending_effects
-       @ [Model.PresentAttachmentEffect (before.next_effect_id, "camera")]);
-    check ~msg:"the camera shortcut does not open the attachment menu"
-      (not current.attachment_picker_open);
-    check ~msg:"the camera shortcut does not focus the text composer"
-      (not current.composer_expanded);
-    check_eq ~msg:"opening the camera preserves unsent text"
-      current.composer_draft "Unsent note";
-    let capture = descendant_with_identifier renderer root "button.composer.expand" in
-    dispatch application (Lui_protocol.Press capture);
-    flush application;
-    check ~msg:"the adjacent Capture button still opens the text composer"
-      (App.model application).composer_expanded)
-    [kotlin_backend]
+let composer_camera_preserves_draft () =
+  let application = App.create (kotlin_backend ()) in
+  start application;
+  send application (Model.SelectGraph "Work");
+  send application (Model.ChangeComposerDraft "Unsent note");
+  flush application;
+  let renderer = Lui_app.runtime application in
+  let root = Lui_app.root_node application in
+  let capture = descendant_with_identifier renderer root "button.composer.expand" in
+  dispatch application (Lui_protocol.Press capture);
+  flush application;
+  let camera = descendant_with_identifier renderer root "button.attachment.camera" in
+  check ~msg:"the expanded Capture attachment menu exposes Camera" (camera <> -1);
+  let before = App.model application in
+  dispatch application (Lui_protocol.Press camera);
+  flush application;
+  let current = App.model application in
+  check_eq current.pending_effects
+    (before.pending_effects @ [Model.PresentAttachmentEffect (before.next_effect_id, "camera")]);
+  check_eq current.composer_draft "Unsent note"
 
 let ios_navigation_capture_controls_preserve_drafts_and_actions () =
   let application = App.create (ios_backend ()) in
@@ -6870,8 +6846,25 @@ let kotlin_navigation_and_search_own_composed_standard_children () =
     ~msg:"Kotlin capture fills the bottom dock like iOS"
     (property_float renderer capture_row Lui_protocol.GrowValue)
     1.0;
-  send application Model.ExpandComposer;
+  send application (Model.ApplyViewportWidth 320);
   flush application;
+  let capture_row = descendant_with_identifier renderer navigation_chrome "row.bottom.capture" in
+  let tabs = descendant_with_identifier renderer capture_row "group.bottom.tabs" in
+  let actions = descendant_with_identifier renderer capture_row "group.bottom.actions" in
+  let controls = children renderer actions in
+  check_eq (List.length (children renderer tabs)) 4;
+  check_eq (List.length controls) 2;
+  check_eq (property_int renderer tabs Lui_protocol.WidthValue) 184;
+  check_eq (property_int renderer actions Lui_protocol.WidthValue) 96;
+  check_eq (property_string renderer (List.nth controls 1) Lui_protocol.InlineIconName) "app:capture-circle";
+  send application Model.ShowTasks;
+  flush application;
+  let capture = descendant_with_identifier renderer navigation_chrome "button.composer.expand" in
+  dispatch application (Lui_protocol.Press capture);
+  flush application;
+  check ((App.model application).selected_task_status <> None);
+  check_eq (extension_property application navigation "composer-dismissal-enabled")
+    (Some (Lui_protocol.BoolValue true));
   let expanded_row =
     descendant_with_identifier renderer navigation_chrome
       "row.composer.placement"
@@ -12047,7 +12040,7 @@ let cases =
     case "kotlin-composer-preserves-the-capture-contract" kotlin_composer_preserves_the_capture_contract;
     case "kotlin-sidebar-uses-compact-material-drawer-metrics" kotlin_sidebar_uses_compact_material_drawer_metrics;
     case "composer-attachment-selection-is-owned-by-lg" composer_attachment_selection_is_owned_by_lg;
-    case "collapsed-capture-camera-opens-directly" collapsed_capture_camera_opens_directly;
+    case "composer-camera-preserves-draft" composer_camera_preserves_draft;
     case "composer-attachment-menu-preserves-main-actions" composer_attachment_menu_preserves_main_actions;
     case "composer-attachment-picker-owns-each-presented-action" composer_attachment_picker_owns_each_presented_action;
     case "composer-task-status-selection-and-send-are-owned-by-lg" composer_task_status_selection_and_send_are_owned_by_lg;

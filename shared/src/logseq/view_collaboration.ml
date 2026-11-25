@@ -11,50 +11,49 @@ let emoji id = match List.assoc_opt id Collaboration.emoji_choices with
   | Some value -> value
   | None -> Node_presentation.reaction_emoji id
 
-let reaction_picker current send target =
-  row ~gap:4 ~main:`center ~padding_vertical:6 ~flex_wrap:`wrap
-    (List.map (fun (id, symbol) ->
-      button ~text:symbol ~variant:`secondary ~min_width:44 ~height:48
-        ~label:(copy current ("Reaction " ^ symbol))
-        ~accessibility_identifier:("reaction." ^ id)
-        ~on_press:(send_event send (Model.ToggleDiscussionReaction (target, id)))
-        []) Collaboration.emoji_choices)
+let reaction_options ?owned choose =
+  List.map (fun (id, symbol) ->
+    let selected_signal = Option.map (Signal.map (List.mem id)) owned in
+    dropdown_menu_item ~text:symbol ?selected_signal
+      ~accessibility_identifier:("reaction." ^ id)
+      ~on_press:(fun _ -> choose id) []) Collaboration.emoji_choices
+
+let selected_reactions items =
+  List.filter_map (fun item -> if field "selected" item = `Bool true
+    then Some (string "id" item) else None) items
 
 let reaction_chip current send target reaction =
   let id = string "id" reaction in
   let count = match field "count" reaction with `Int count -> count | _ -> 0 in
   let selected = field "selected" reaction = `Bool true in
   let label = emoji id ^ " " ^ string_of_int count in
+  let foreground = if selected then "link" else "foreground" in
   if not (ready current) then
-    text ~value:label ~padding_horizontal:8 ~padding_vertical:4 ~corner_radius:12
-      ~background:"muted" ~style_class:"caption" []
+    text ~value:label ~font_size:"13" ~foreground
+      ~padding_horizontal:8 ~padding_vertical:4 ~corner_radius:12 ~background:"muted" []
   else
     box ~corner_radius:14
       ~background:(if selected then "task-tab-selected-background" else "task-tab-background") [
       button ~text:label ~size:`sm ~min_height:36 ~min_width:44 ~variant:`ghost ~selected
-        ~foreground:(if selected then "link" else "foreground")
-        ~label ~accessibility_identifier:("reaction.block." ^ target ^ "." ^ id)
-        ~on_press:(send_event send (Model.ToggleDiscussionReaction (target, id))) [];
+        ~foreground ~label ~accessibility_identifier:("reaction.block." ^ target ^ "." ^ id)
+        ~on_press:(send_event send (Model.ToggleDiscussionReaction (target, id)))
+        [text ~value:label ~font_size:"13" ~foreground []];
     ]
 
-let add_reaction current send target =
-  icon_button ~icon:(`app "reaction-add") ~variant:`ghost ~size:`icon
-    ~foreground:"muted-foreground" ~width:44 ~height:40 ~label:(copy current "Add reaction")
-    ~accessibility_identifier:("reaction.add." ^ target)
-    ~on_press:(send_event send (Model.ShowReactionPicker (Some target))) []
-
-let active_picker current send target =
-  if current.Model.discussion_target <> None && current.reaction_picker = Some target then
-    [reaction_picker current send target]
-  else []
+let add_reaction current send target reactions =
+  custom (fun context parent ->
+    let owned = Signal.constant context.Lui_ui.ui_scheduler (selected_reactions reactions) in
+    mount context ?parent
+      (menu ~icon:(`app "reaction-add") ~foreground:"muted-foreground"
+        ~label:(copy current "Add reaction") ~accessibility_identifier:("reaction.add." ^ target)
+        (reaction_options ~owned (fun id -> ignore (send (Model.ToggleDiscussionReaction (target, id)))))))
 
 let reaction_buttons current send item =
   let target = string "id" item in
-  column ~gap:4
-    (row ~gap:4 ~cross:`center ~flex_wrap:`wrap
-      (List.map (reaction_chip current send target) (list "reactions" item) @
-       if ready current then [add_reaction current send target] else [])
-     :: active_picker current send target)
+  let reactions = list "reactions" item in
+  row ~gap:4 ~cross:`center ~flex_wrap:`wrap
+    (List.map (reaction_chip current send target) reactions @
+     if ready current then [add_reaction current send target reactions] else [])
 
 let comment current send item =
   let target = string "id" item in
@@ -68,8 +67,8 @@ let comment current send item =
           text ~value:(let actor = string "actor" item in if actor = "" then copy current "Graph member" else actor)
             ~foreground:"muted-foreground" ~style_class:"caption" [];
           text ~value:(string "text" item) ~foreground:"foreground" [];
-        ]] @ if ready current then [add_reaction current send target] else [])
-     :: chips @ active_picker current send target)
+        ]] @ if ready current then [add_reaction current send target (list "reactions" item)] else [])
+     :: chips)
 
 let inline current send ~target ~reactions ~threads =
   let count = List.fold_left (fun count thread -> count + List.length (list "comments" thread)) 0 threads in
@@ -77,11 +76,14 @@ let inline current send ~target ~reactions ~threads =
   let disclosure =
     if count = 0 then [] else
       let label = copy current (if expanded then "Hide comments" else "Show comments") in
-      [button ~text:(copy current "Comments" ^ " · " ^ string_of_int count)
-        ~variant:`ghost ~size:`sm ~min_height:40 ~foreground:"muted-foreground"
-        ~selected:expanded ~icon:(`app "discussion-comment") ~label
-        ~accessibility_identifier:("comments.toggle." ^ target)
-        ~on_press:(send_event send (Model.ToggleInlineComments target)) []] in
+      let caption = copy current "Comments" ^ " · " ^ string_of_int count in
+      [button ~text:caption ~variant:`ghost ~size:`sm ~min_height:40 ~foreground:"muted-foreground"
+        ~selected:expanded ~label ~accessibility_identifier:("comments.toggle." ^ target)
+        ~on_press:(send_event send (Model.ToggleInlineComments target))
+        [row ~cross:`center ~gap:5 [
+          icon ~name:(`app "discussion-comment") ~point_size:13 ~foreground:"muted-foreground" [];
+          text ~value:caption ~font_size:"12" ~foreground:"muted-foreground" [];
+        ]]] in
   let expanded_threads =
     if not expanded then [] else
       List.map (fun thread ->
@@ -102,24 +104,16 @@ let inline current send ~target ~reactions ~threads =
     ]
 
 let composer source send ~autofocus =
-  let current = Signal.sample source in
   column ~gap:8 [
     if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.discussion_error <> None) source)
       (text ~value:(reactive (Signal.map (fun (current : Model.logseq_model) ->
         Option.value ~default:"" current.discussion_error) source)) ~foreground:"error" []);
-    row ~gap:8 ~cross:`end_ [
-      textarea ~grow:1.0 ~min_height:(if autofocus then 90 else 44) ~max_height:160 ~autofocus
-        ~corner_radius:12 ~background:"input" ~foreground:"foreground"
-        ~placeholder:(copy current "Write a comment") ~label:(copy current "Write a comment")
-        ~text_signal:(Signal.map (fun (current : Model.logseq_model) -> current.discussion_draft) source)
-        ~accessibility_identifier:"field.comment"
-        ~on_input:(fun text -> ignore (send (Model.EditDiscussionDraft text))) [];
-      icon_button ~icon:(`app "comment-send") ~variant:`primary ~size:`icon ~width:48 ~height:48
-        ~label:(copy current "Post comment") ~accessibility_identifier:"button.comment.post"
-        ~disabled_signal:(Signal.map (fun (current : Model.logseq_model) ->
-          String.trim current.discussion_draft = "" || Model.posting_comment current) source)
-        ~on_press:(send_event send Model.PostDiscussionComment) [];
-    ];
+    View_composer.comment_input source ~autofocus
+      ~text_signal:(Signal.map (fun (current : Model.logseq_model) -> current.discussion_draft) source)
+      ~disabled_signal:(Signal.map (fun (current : Model.logseq_model) ->
+        String.trim current.discussion_draft = "" || Model.posting_comment current) source)
+      ~on_input:(fun text -> ignore (send (Model.EditDiscussionDraft text)))
+      ~on_submit:(send_event send Model.PostDiscussionComment);
   ]
 
 let discussion_source source =
@@ -127,25 +121,13 @@ let discussion_source source =
     let value = field "discussion" current.collaboration in
     if current.discussion_target = Some (string "target" value) then value else `Null) source
 
-let compose_sheet source send =
-  let current = Signal.sample source in
-  let discussion = discussion_source source in
-  let subject = Signal.map (fun value -> string "text" (field "subject" value)) discussion in
-  let title = match current.Model.discussion_composition with
-    | Some (_, Some _) -> "Reply" | _ -> "Add comment" in
-  View_base.sheet ~model_source:source ~title:(copy current title) ~detents:"0.36,large"
-    ~accessibility_identifier:"sheet.comment.compose" ~on_dismiss:(send_event send Model.CloseDiscussion)
-    [column ~gap:10 ~padding:16 [
-      if_ ~test:(Signal.map (fun title -> title <> "") subject)
-        (text ~value:(reactive subject) ~line_clamp:2 ~foreground:"muted-foreground" []);
-      composer source send ~autofocus:true;
-    ]]
+let compose_input source send = composer source send ~autofocus:true
 
 let thread_sheet source send =
   let current = Signal.sample source in
   let discussion = discussion_source source in
-  let body = reactive (fun (discussion, picker) ->
-    let current = { (Signal.sample source) with Model.reaction_picker = picker } in
+  let body = reactive (fun discussion ->
+    let current = Signal.sample source in
     match field "subject" discussion with
     | `Null ->
       (match string "error" discussion with
@@ -161,7 +143,7 @@ let thread_sheet source send =
          | [] -> text ~value:(copy current "No comments yet") ~foreground:"muted-foreground" []
          | comments -> column ~gap:8 (List.map (comment current send) comments))
       ])
-    (Signal.map2 (fun discussion (current : Model.logseq_model) -> discussion, current.reaction_picker) discussion source) in
+    discussion in
   View_base.sheet ~model_source:source ~title:(copy current "Comments") ~detents:"large"
     ~accessibility_identifier:"sheet.comments" ~on_dismiss:(send_event send Model.CloseDiscussion)
     [column ~grow:1.0 ~gap:8 ~padding:16 [
@@ -171,25 +153,9 @@ let thread_sheet source send =
     ]]
 
 let overlays source send =
-  stack [
-    reactive (function
-      | `Hidden -> box []
-      | `Compose -> compose_sheet source send
-      | `Thread -> thread_sheet source send)
-      (Signal.map (fun (current : Model.logseq_model) ->
-        match current.discussion_target, current.discussion_composition with
-        | None, _ -> `Hidden | Some _, None -> `Thread | Some _, Some _ -> `Compose) source);
-    reactive (function
-      | None -> box []
-      | Some target ->
-        let current = Signal.sample source in
-        View_base.sheet ~model_source:source ~title:(copy current "Add reaction")
-          ~detents:"0.24" ~accessibility_identifier:"sheet.reactions"
-          ~on_dismiss:(send_event send (Model.ShowReactionPicker None))
-          [column ~padding:16 [reaction_picker current send target]])
-      (Signal.map (fun (current : Model.logseq_model) ->
-        if current.discussion_target = None then current.reaction_picker else None) source)
-  ]
+  if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
+    current.discussion_target <> None && current.discussion_composition = None) source)
+    (thread_sheet source send)
 
 let date current item =
   match field "createdAt" item with
