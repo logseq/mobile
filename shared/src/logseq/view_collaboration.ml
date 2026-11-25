@@ -68,7 +68,7 @@ let inline current send ~target ~reactions ~threads =
   let disclosure =
     if count = 0 then [] else
       let label = copy current (if expanded then "Hide comments" else "Show comments") in
-      let caption = copy current "Comments" ^ " · " ^ string_of_int count in
+      let caption = string_of_int count in
       [button ~text:caption ~variant:`ghost ~size:`sm ~min_height:40 ~foreground:"muted-foreground"
         ~selected:expanded ~label ~accessibility_identifier:("comments.toggle." ^ target)
         ~on_press:(send_event send (Model.ToggleInlineComments target))
