@@ -55,7 +55,7 @@ let status_attr = "logseq.property/status"
 let doing_ident = "logseq.property/status.doing"
 type section = Overdue | Doing | Planned
 
-let rows db today lookahead =
+let rows ?actor db today lookahead =
   let offset_day days =
     Option.value ~default:today (Dev_query.Date_time_util.journal_day_plus today days) in
   let first_day = offset_day (-week_days) in
@@ -81,7 +81,7 @@ let rows db today lookahead =
     | None -> activity "block/created-at" in
   let seen = Hashtbl.create 32 in
   let pages = Hashtbl.create 16 in
-  let decorate = Node_presentation.decorate db in
+  let decorate = Node_presentation.decorate ?actor db in
   let default_status_eid = Read.default_task_status_eid db in
   let default_status = Option.bind default_status_eid (Read.choice_metadata identity db) in
   let page_details page =
@@ -205,6 +205,7 @@ let rows db today lookahead =
 type cached_projection = {
   day : int;
   timezone : string;
+  actor : string option;
   db : Ds.db Weak.t;
   result : Json.t;
 }
@@ -259,11 +260,12 @@ let preserve_for_local_edit cache ~before ~after changes =
         then Weak.set cached.db 0 (Some after)
       end) !cache
 
-let project ?(read_rows = rows) cache ~graph ~now ~force db =
+let project ?read_rows ?actor cache ~graph ~now ~force db =
+  let read_rows = Option.value ~default:(rows ?actor) read_rows in
   let day = Cache_model.journal_day_for_ms now in
   let timezone = Int64.to_string (Dev_query.Date_time_util.journal_day_to_local_ms day) in
   let previous = match List.assoc_opt graph !cache with
-    | Some value when value.day = day && value.timezone = timezone -> Some value
+    | Some value when value.day = day && value.timezone = timezone && value.actor = actor -> Some value
     | _ -> None in
   let remember value =
     let remaining = List.remove_assoc graph !cache in
@@ -293,7 +295,7 @@ let project ?(read_rows = rows) cache ~graph ~now ~force db =
           "today", prior "today"; "upcoming", prior "upcoming"] in
     let source = Weak.create 1 in
     Weak.set source 0 (Some db);
-    remember {day; timezone; db = source; result}
+    remember {day; timezone; actor; db = source; result}
 
 let targets db uuids =
   List.map (function

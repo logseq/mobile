@@ -1913,7 +1913,8 @@ let journal_task_row ?(tasks_screen = false) context model_source task_source se
     let inset = 8 in
     with_ios_trailing_padding 0 (column ~gap:0 ~padding_horizontal:inset ~padding_vertical:1
       ~accessibility_identifier:(View_rows.journal_task_scope uuid) [
-        outliner_row_body ~allow_drag:false ~trailing_inset:inset context view_model retained source send_block;
+        decorate_row context view_model source send_block
+          (outliner_row_body ~allow_drag:false ~trailing_inset:inset context view_model retained source send_block);
         if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> not tasks_screen || not current.tasks_view.compact) model_source)
         (View_base.with_int_prop_signal PaddingLeft
           (Signal.map (outliner_task_date_leading context) source)

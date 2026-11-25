@@ -110,6 +110,11 @@ let journal_task_route session =
   | Some route -> Some route.Types.uuid
   | None -> Option.map (fun (page : Model.entity_summary) -> page.uuid) (state session).selected_sidebar_page
 
+let collaboration_identity session =
+  Option.bind (state session).config (fun config ->
+    Option.map (fun (actor : Created_by.identity) -> config.Api.graph_id, actor.uuid)
+      (Created_by.of_token config.Api.token))
+
 let journal_tasks_json ?(force = false) ?(only_changed = false) session =
   match (state session).config with
   | Some {graph_id; _} when graph_id <> "" ->
@@ -117,7 +122,8 @@ let journal_tasks_json ?(force = false) ?(only_changed = false) session =
      | Some db ->
        let cache = session.Types.journal_tasks in
        let previous = if only_changed then Journal_task_dates.cached_result cache ~graph:graph_id else None in
-       let agenda = Journal_task_dates.project cache ~graph:graph_id ~now:(now_ms ()) ~force db in
+       let actor = Option.map snd (collaboration_identity session) in
+       let agenda = Journal_task_dates.project ?actor cache ~graph:graph_id ~now:(now_ms ()) ~force db in
        if Option.exists (fun previous -> agenda == previous || agenda = previous) previous
        then `Null else agenda
      | None -> `Null)
@@ -155,11 +161,6 @@ let with_breadcrumb_journal_days db breadcrumbs fields =
 let search_hit_json db (hit : Search_index.indexed_search_hit) =
   let json = Rpc.search_hit_json ~summary_json:(summary_with_journal_day db) hit in
   if hit.is_page then with_journal_day db hit.uuid json else json
-
-let collaboration_identity session =
-  Option.bind (state session).config (fun config ->
-    Option.map (fun (actor : Created_by.identity) -> config.Api.graph_id, actor.uuid)
-      (Created_by.of_token config.Api.token))
 
 let result_block_encoder session db =
   let presentation = Node_presentation.decorate ?actor:(Option.map snd (collaboration_identity session)) db in
