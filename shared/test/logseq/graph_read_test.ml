@@ -1004,6 +1004,35 @@ let property_value_subtrees_are_not_outline_content () =
     (window_uuids (Read.read_page_window plain (Read.page_reader db "property-page")))
     ["visible"]
 
+let discussions_are_not_outline_content () =
+  let conn = new_conn
+    ["block/page"; "block/parent"; "block/created-at"; "block/journal-day";
+     "block/tags"; "block/refs"; "db/ident"] [] in
+  transact conn [
+    journal "journal" "Journal" 20260814;
+    page "linked-page" "linked-page" "Linked page" [];
+    entity "thread-class" "Comments" [field "db/ident" (Ds.Keyword "logseq.class/Comments")];
+    entity "comment-class" "Comment" [field "db/ident" (Ds.Keyword "logseq.class/Comment")];
+    block "parent" "Journal block" "journal" "journal" 1 [];
+    block "child" "Ordinary child" "journal" "parent" 2 [];
+    block "thread" "Discussion" "journal" "parent" 3 [refs "block/tags" ["thread-class"]];
+    block "reply" "Comment text" "journal" "thread" 4
+      [refs "block/tags" ["comment-class"]; refs "block/refs" ["linked-page"]];
+    block "attachment" "Comment attachment" "journal" "reply" 5 [];
+    block "legacy-reply" "Legacy comment" "journal" "thread" 6 [];
+  ];
+  let db = Ds.conn_db conn in
+  check_eq (uuids (Read.blocks ~through_day:20260814 plain 1 db)) ["parent"; "child"];
+  check_eq (uuids (Read.blocks_for_page plain db "journal")) ["parent"; "child"];
+  check_eq (Read.references_for_node plain db "linked-page") [];
+  match Collaboration.comment_threads db ~actor:None (eid db "parent") with
+  | [`Assoc fields] ->
+    check_eq (List.assoc_opt "id" fields) (Some (`String "thread"));
+    (match List.assoc_opt "comments" fields with
+     | Some (`List comments) -> check_eq (List.length comments) 2
+     | _ -> fail "comments must remain available in the discussion")
+  | _ -> fail "the parent must retain its discussion"
+
 let parent_window_hydrates_only_32_rows_and_continues_without_gaps () =
   let conn = window_conn () in
   let id index = Printf.sprintf "window-%05d" index in
@@ -1241,6 +1270,7 @@ let cases =
     case "cyclic block references have finite rendered projections" cyclic_block_references_have_finite_rendered_projections;
     case "priority survives graph projection and cache" priority_survives_graph_projection_and_cache;
     case "property value subtrees are not outline content" property_value_subtrees_are_not_outline_content;
+    case "discussions are not outline content" discussions_are_not_outline_content;
     case "parent windows skip collapsed and hidden subtrees" parent_window_skips_collapsed_and_hidden_subtrees;
     case "parent windows hydrate 32 rows and continue without gaps" parent_window_hydrates_only_32_rows_and_continues_without_gaps;
     case "parent windows preserve ordering ties and raw references" parent_window_preserves_ties_and_raw_reference_compatibility;
