@@ -54,7 +54,7 @@ import UserNotifications
 
     public func registrationFailed(_ error: any Error) {
         tokenTimeout?.cancel()
-        tokenContinuation?.resume(throwing: error)
+        tokenContinuation?.resume(throwing: (error as? PushError) ?? .unavailable)
         tokenContinuation = nil
     }
 

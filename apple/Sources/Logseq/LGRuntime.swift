@@ -71,13 +71,7 @@ public enum LGRuntimeError: Error, Equatable {
 public final class LGRuntime {
     public let renderer: LGRenderer
     var didApplyCoreResponse: (() -> Void)?
-    public private(set) var lastError: String? {
-        didSet {
-            if let lastError, lastError != oldValue {
-                LogseqRuntimeLog.shared.append(level: .error, source: .ui, message: lastError)
-            }
-        }
-    }
+    public private(set) var lastError: String?
     public private(set) var isStarted = false
 
     @ObservationIgnored
@@ -183,6 +177,11 @@ public final class LGRuntime {
         scheduleEffectDrain()
     }
 
+    private func reportRuntimeError(_ message: String) {
+        lastError = message
+        LogseqRuntimeLog.shared.append(level: .error, source: .ui, message: message)
+    }
+
     public func stop() {
         guard isStarted else { return }
         queryWait?.cancel()
@@ -191,7 +190,7 @@ public final class LGRuntime {
         do {
             try apply(native.dispose())
         } catch {
-            lastError = String(describing: error)
+            reportRuntimeError(String(describing: error))
             #if DEBUG
             print("Logseq renderer event failed: \(lastError ?? "unknown error")")
             #endif
@@ -336,7 +335,7 @@ public final class LGRuntime {
             guard let identifier = event.extensionIdentifier,
                   let name = event.extensionName,
                   let values = event.extensionValues else {
-                lastError = "Invalid LG extension event"
+                reportRuntimeError("Invalid LG extension event")
                 return
             }
             let text = Self.extensionString(values, name: "title")
@@ -513,7 +512,7 @@ public final class LGRuntime {
                     effect = try JSONDecoder().decode(LGEffect.self, from: data)
                 }
             } catch {
-                lastError = "Invalid LG effect: \(String(describing: error))"
+                reportRuntimeError("Invalid LG effect: \(String(describing: error))")
                 return
             }
 
@@ -618,7 +617,7 @@ public final class LGRuntime {
                 LGInteractionDiagnostics.event("patch.apply", "generation=\(decoded.generation) bytes=\(patch.utf8.count) ms=\(Int((ProcessInfo.processInfo.systemUptime - started) * 1_000))")
             } catch {
                 guard epoch == self.patchApplyEpoch else { return }
-                self.lastError = String(describing: error)
+                self.reportRuntimeError(String(describing: error))
                 Self.log.error("renderer apply failed: \(self.lastError ?? "unknown", privacy: .public)")
             }
         }

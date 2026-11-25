@@ -67,6 +67,7 @@ struct LGAccountProfile: View {
                 }
             }
             .interactiveDismissDisabled(saving)
+            .presentationDetents([.medium, .large])
             .photosPicker(isPresented: $showingPhotoPicker, selection: $pickerItem, matching: .images)
             .task { await load() }
             .task(id: photoURL) {
