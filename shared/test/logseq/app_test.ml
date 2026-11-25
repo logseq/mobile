@@ -1396,6 +1396,7 @@ let settings_render_the_main_branch_navigation_contract () =
             Lui_protocol.ForegroundValue)
          "muted-foreground")
     [
+      "label.settings.account";
       "label.settings.general";
       "label.settings.editor";
       "label.settings.sync-server";
@@ -1789,9 +1790,15 @@ let kotlin_settings_use_full_width_material_controls () =
   check_eq ~msg:"community links disclose that they leave the app"
     (property_string renderer report_bug Lui_protocol.InlineIconName)
     "app:open-external";
+  let sign_out_children = children renderer sign_out in
+  let sign_out_icon = List.find (fun id -> node renderer id = Some Lui_protocol.Icon) sign_out_children in
+  let sign_out_label = List.find (fun id -> node renderer id = Some Lui_protocol.Text) sign_out_children in
   check_eq ~msg:"sign out uses the Android logout icon"
-    (property_string renderer sign_out Lui_protocol.InlineIconName)
-    "app:sign-out";
+    (property_string renderer sign_out_icon Lui_protocol.IconName) "app:sign-out";
+  List.iter (fun id ->
+    check_eq ~msg:"sign out icon and label use the Material error color"
+      (property_string renderer id Lui_protocol.ForegroundValue) "error-foreground")
+    [sign_out_icon; sign_out_label];
   check_eq ~msg:"settings actions use an anchored Material action row"
     (node renderer actions)
     (Some Lui_protocol.Row);
