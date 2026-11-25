@@ -1674,14 +1674,14 @@ let update_block_status session input fields =
               | Some uuid -> Some (Ops.Ref_uuid uuid)
               | None -> None)
          in
-         stage_result session operation_id cursor
-           (Ops.Set_property
-              {
-                Ops.uuid;
-                attr = "logseq.property/status";
-                expected;
-                value = Some (Rpc.status_semantic_ref status);
-              }))
+         let value = Some (Rpc.status_semantic_ref status) in
+         let repetition =
+           if value = Some (Ops.Ref_ident Task_recurrence.done_ident) && expected <> value then
+             Option.bind (query_db session) (fun db ->
+               Task_recurrence.complete_repetition db ~uuid ~expected ~now:(now_ms ()))
+           else None in
+         stage_result session operation_id cursor (Option.value repetition
+           ~default:(Ops.Set_property {Ops.uuid; attr = "logseq.property/status"; expected; value})))
   else
     match
       let ( let* ) = Result.bind in

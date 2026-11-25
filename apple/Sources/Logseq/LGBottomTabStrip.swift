@@ -19,12 +19,13 @@ struct LGBottomTabStrip: View {
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(LUIAppleExtension(
             identifier: "bottom-tab-strip",
-            fingerprint: "lui-extension-v1|16:bottom-tab-strip|profiles:ios/swiftui|standard-children:1|children:|properties:14:selected-index:int:required:none,5:inset:int:required:none,5:items:string:required:none|events:15:home-double-tap[],6:select[5:index:int:required]",
+            fingerprint: "lui-extension-v1|16:bottom-tab-strip|profiles:ios/swiftui|standard-children:1|children:|properties:10:cell-width:int:required:none,14:selected-index:int:required:none,5:inset:int:required:none,5:items:string:required:none|events:15:home-double-tap[],6:select[5:index:int:required]",
             acceptsStandardChildren: true,
             properties: [
                 .init(name: "selected-index", kind: .int, isRequired: true),
                 .init(name: "inset", kind: .int, isRequired: true),
                 .init(name: "items", kind: .string, isRequired: true),
+                .init(name: "cell-width", kind: .int, isRequired: true),
             ],
             events: [
                 .init(name: "select", fields: [.init(name: "index", kind: .int, isRequired: true)]),
@@ -44,7 +45,7 @@ struct LGBottomTabStrip: View {
                 horizontalMargin: horizontalMargin, context: context
             )
             // UITabBar reserves horizontal margins around its floating capsule.
-            .frame(width: CGFloat(items.count) * 50 + inset * 2 + 2 * horizontalMargin, height: 58)
+            .frame(width: CGFloat(items.count) * tabWidth + inset * 2 + 2 * horizontalMargin, height: 58)
             .padding(.horizontal, -horizontalMargin)
             .background(LGSidebarPanExclusion())
             // Align the floating items within UITabBar with the trailing actions.
@@ -108,6 +109,11 @@ struct LGBottomTabStrip: View {
         return CGFloat(value)
     }
 
+    private var tabWidth: CGFloat {
+        guard case let .int(value) = context.property("cell-width") else { return 58 }
+        return CGFloat(value)
+    }
+
     @ViewBuilder
     private func indicator(dragging: Bool) -> some View {
         let capsule = Capsule().fill(colors["bottom-tab-selected"] ?? Color.primary.opacity(0.12))
@@ -168,11 +174,24 @@ private struct LGNativeBottomTabBar: UIViewRepresentable {
             return item
         }
 
-        private func icon(_ name: String) -> UIImage? {
-            switch LGIconPolicy.icons[name] {
-            case let .systemName(symbol): UIImage(systemName: symbol)
-            case let .assetName(asset): UIImage(named: asset, in: .module, compatibleWith: nil)
-            default: nil
+        private func icon(_ iconName: String) -> UIImage? {
+            switch LGIconPolicy.icons[iconName] {
+            case let .systemName(symbol):
+                return UIImage(systemName: symbol)
+            case let .assetName(asset):
+                guard let image = UIImage(named: asset, in: .module, compatibleWith: nil) else { return nil }
+                guard name == "flashcards" else { return image }
+                // Enlarge the glyph inside the standard tab icon canvas.
+                let size = CGSize(width: 28, height: 28)
+                let scale: CGFloat = 1.4
+                let width = image.size.width * scale
+                let height = image.size.height * scale
+                return UIGraphicsImageRenderer(size: size).image { _ in
+                    image.draw(in: CGRect(x: (size.width - width) / 2, y: (size.height - height) / 2,
+                                          width: width, height: height))
+                }.withRenderingMode(.alwaysTemplate)
+            default:
+                return nil
             }
         }
     }

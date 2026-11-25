@@ -424,7 +424,7 @@ let extension_registry () =
     let open Lui_extension in
     component "bottom-tab-strip" [profile IOS SwiftUIHost] true []
       [property "inset" IntScalar true None; property "selected-index" IntScalar true None;
-       property "items" StringScalar true None]
+       property "items" StringScalar true None; property "cell-width" IntScalar true None]
       [event "select" [event_field "index" IntScalar true]; event "home-double-tap" []]);
   Lui_extension.register_component registry
     (Lui_extension.component "native-flashcards-toolbar"

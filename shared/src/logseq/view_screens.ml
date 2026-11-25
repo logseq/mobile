@@ -138,7 +138,7 @@ let uses_ios_native_header context =
 
 let bottom_tab_row model_source send : t =
   let current = Signal.sample model_source in
-  let cell = 50 and inset = 4 in
+  let cell = 50 and tab_width = 58 and inset = 4 in
   let destinations = [
     Model.JournalsDestination, "Home", "home", "tab-home", "tab-home-selected", Model.ShowJournals;
     Model.TasksDestination, "Tasks", "tasks", "tab-tasks", "tab-tasks-selected", Model.ShowTasks;
@@ -153,7 +153,7 @@ let bottom_tab_row model_source send : t =
     let selected = Signal.map (fun (current : Model.logseq_model) -> current.destination = destination) model_source in
     icon_button ~icon:(`app image)
       ~icon_signal:(Signal.map (fun selected -> `app (if selected then selected_image else image)) selected)
-      ~selected_signal:selected ~variant:`ghost ~size:`icon ~width:cell ~height:cell
+      ~selected_signal:selected ~variant:`ghost ~size:`icon ~width:tab_width ~height:cell
       ~style_class:"system-toolbar-icon"
       ~foreground_signal:(Signal.map (fun selected -> if selected then "link" else "foreground") selected)
       ~label:(View_base.tr current title) ~accessibility_identifier:("tab.bottom." ^ name)
@@ -164,8 +164,8 @@ let bottom_tab_row model_source send : t =
       ~foreground:"foreground"
       ~label:(View_base.tr current title) ~accessibility_identifier:identifier
       ~on_press:(press send event) [] in
-  let group name children =
-    row ~width:(List.length children * cell + 2 * inset)
+  let group name width children =
+    row ~width:(List.length children * width + 2 * inset)
          ~padding:inset ~gap:0 ~cross:`center
          ~accessibility_identifier:("group.bottom." ^ name) children in
   let tabs = custom (fun context parent ->
@@ -179,6 +179,7 @@ let bottom_tab_row model_source send : t =
                 "image", `String image; "selectedImage", `String selected_image])
         destinations) |> Yojson.Safe.to_string) model_source in
     Lui_ui.extension_property context node "inset" (IntValue inset);
+    Lui_ui.extension_property context node "cell-width" (IntValue tab_width);
     Lui_ui.extension_property_signal context node "items" (Signal.map View_base.string_wire_value items);
     Lui_ui.extension_property_signal context node "selected-index" (Signal.map View_base.int_wire_value selected);
     Lui_ui.on_event context node (function
@@ -191,13 +192,13 @@ let bottom_tab_row model_source send : t =
       | ExtensionEvent (_, _, "home-double-tap", _) ->
         ignore (send Model.ScrollHomeToTop)
       | _ -> ());
-    ignore (mount context ~parent:node (group "tabs" (List.map tab destinations)));
+    ignore (mount context ~parent:node (group "tabs" tab_width (List.map tab destinations)));
     attach context parent node;
     node) in
   row ~grow:1.0 ~gap:8 ~main:`space_between ~cross:`center
     ~accessibility_identifier:"row.bottom.capture" [
       tabs;
-      View_base.with_liquid_glass "bottom-actions" (group "actions" [
+      View_base.with_liquid_glass "bottom-actions" (group "actions" cell [
           action "bottom-search" "Search" "button.search" Model.OpenSearch;
           action "capture-circle" "Capture" "button.composer.expand" Model.ExpandComposer;
         ]);

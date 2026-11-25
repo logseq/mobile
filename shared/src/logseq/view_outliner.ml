@@ -11,7 +11,7 @@ let task_effect_active key (current : Model.logseq_model) =
     | Model.NodePropertyEffect (_, id, _) | Model.LoadPropertyValuesEffect (_, id, _) -> id = key
     | _ -> false) (current.pending_effects @ current.in_flight_effects)
 
-let task_date_sheet (context : Lui_ui.ui_context) parent ~model_source ~name
+let task_date_sheet ?repeat (context : Lui_ui.ui_context) parent ~model_source ~name
     ~saved_dates ~ready ~waiting ~feedback ~close ~submit =
   let _, field_label, _ = List.find (fun (field, _, _) -> field = name) task_date_fields in
   let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
@@ -26,8 +26,12 @@ let task_date_sheet (context : Lui_ui.ui_context) parent ~model_source ~name
     let error = if invalid then Some (tr "Choose a valid date and time") else Option.map tr error in
     Option.fold ~none:`Null ~some:(fun error -> `String error) error)
     feedback (Signal.value invalid)) in
-  let status = own (Signal.map2 (fun waiting error -> waiting, error) waiting error) in
-  let payload = own (Signal.map2 (fun (saved, ready) (waiting, error) ->
+  let repeat_options = match repeat with
+    | Some (options, _) -> options
+    | None -> Signal.constant context.ui_scheduler `Null in
+  let status = own (Signal.map2 (fun waiting (error, repeat) -> waiting, error, repeat) waiting
+    (own (Signal.map2 (fun error repeat -> error, repeat) error repeat_options))) in
+  let payload = own (Signal.map2 (fun (saved, ready) (waiting, error, repeat) ->
     StringValue (Yojson.Basic.to_string (`Assoc [
       "title", `String (tr field_label); "clearTitle", `String (tr "Clear" ^ " " ^ tr field_label);
       "submitTitle", `String (tr "Save"); "mixedTitle", `String (tr "Mixed dates");
@@ -35,7 +39,7 @@ let task_date_sheet (context : Lui_ui.ui_context) parent ~model_source ~name
       "ready", `Bool ready; "waiting", `Bool waiting;
       "canClear", `Bool (List.exists (fun value -> value <> `Null) saved);
       "mixed", `Bool (List.length saved > 1);
-      "error", error
+      "error", error; "repeatOptions", repeat
     ]))) dates status) in
   Lui_ui.extension_property_signal context node "payload" payload;
   let apply value =
@@ -49,7 +53,11 @@ let task_date_sheet (context : Lui_ui.ui_context) parent ~model_source ~name
     | ExtensionEvent (_, _, "choose", fields) ->
       (match String_map.find_opt "value" fields with
        | Some (StringValue value) ->
-         Option.iter (fun day -> apply (`Assoc ["day", `Int day])) (int_of_string_opt value)
+         (match repeat with
+          | Some (_, submit) when String.starts_with ~prefix:"repeat:" value
+              && Signal.sample ready && not (Signal.sample waiting) ->
+            submit (String.sub value 7 (String.length value - 7))
+          | _ -> Option.iter (fun day -> apply (`Assoc ["day", `Int day])) (int_of_string_opt value))
        | _ -> ())
     | ExtensionEvent (_, _, "submit", fields) ->
       (match String_map.find_opt "value" fields with
@@ -84,7 +92,7 @@ let task_dates_dialog model_source send : t =
         | None -> None) model_source) in
       let saved_dates = own (Signal.map (Option.fold ~none:[] ~some:(fun targets ->
         List.map (journal_task_field name) targets |> List.sort_uniq compare)) loaded) in
-      let submit value =
+      let save changes repeat =
         match Signal.sample loaded with
         | Some targets when not (Signal.sample waiting) ->
           let current = Signal.sample model_source in
@@ -96,12 +104,32 @@ let task_dates_dialog model_source send : t =
             "action", `String "saveTaskDates"; "graphId", `String graph;
             "editingUuid", Option.fold ~none:`Null ~some:(fun uuid -> `String uuid) editing;
             "agendaCollapsedSections", collapsed;
-            "targets", `List targets; "changes", `Assoc [name, value]]) in
+            "targets", `List targets; "changes", `Assoc changes; "repeat", repeat]) in
           ignore (send (Model.SubmitNodeProperty (key, payload)))
         | _ -> () in
       let ready = own (Signal.map Option.is_some loaded) in
-      task_date_sheet context parent ~model_source ~name
-        ~saved_dates ~ready ~waiting ~feedback ~close ~submit)
+      let tr = View_base.tr (Signal.sample model_source) in
+      let choices = ["none", "Does not repeat"; "day", "Daily"; "week", "Weekly";
+        "month", "Monthly"; "year", "Yearly"] in
+      let repeat_options = own (Signal.map (function
+        | Some [target] when List.exists (fun (field, _, _) ->
+            journal_task_field field target <> `Null) task_date_fields ->
+          let rule = journal_task_field "repeat" target in
+          let selection = if rule = `Null then "none" else
+            match journal_task_field "frequency" rule, journal_task_field "mode" rule, journal_task_field "custom" rule with
+            | `Int 1, `String "skip-to-future", (`Bool false | `Null) ->
+              (match journal_task_field "unit" rule with `String unit -> unit | _ -> "")
+            | _ -> "" in
+          let label = match List.assoc_opt selection choices with
+            | Some label -> tr label
+            | None -> tr "Custom repeat" in
+          `Assoc ["title", `String (tr "Repeat"); "selection", `String selection;
+            "value", `String label; "choices", `List (List.map (fun (id, label) ->
+              `Assoc ["id", `String id; "label", `String (tr label)]) choices)]
+        | _ -> `Null) loaded) in
+      task_date_sheet ~repeat:(repeat_options, fun unit -> save [] (`String unit))
+        context parent ~model_source ~name ~saved_dates ~ready ~waiting ~feedback ~close
+        ~submit:(fun value -> save [name, value] `Null))
     (Signal.map (fun (current : Model.logseq_model) -> current.task_date_editor) model_source)
 
 let composer_task_date_dialog model_source send : t =
@@ -1815,8 +1843,9 @@ let journal_task_row ?(tasks_screen = false) context model_source task_source se
         else View_base.journal_display_title current day (task_text (journal_task_field "page" task)) in
       let dates = List.map (fun (key, name, image) ->
         key, name, image, journal_task_field key task) task_date_fields in
-      (current.Model.language, current.system_language), dates, page) model_source task_source in
-    let metadata = reactive (fun (_, dates, page) ->
+      (current.Model.language, current.system_language), dates, page,
+      journal_task_field "repeat" task <> `Null) model_source task_source in
+    let metadata = reactive (fun (_, dates, page, repeats) ->
       let current = Signal.sample model_source in
       let chip id ?icon_name ?overdue_signal ~label value on_press =
         View_property.compact_task_metadata ?icon_name ?overdue_signal ~label
@@ -1834,7 +1863,11 @@ let journal_task_row ?(tasks_screen = false) context model_source task_source se
             (View_property.task_date_label current date)
             (fun () -> ignore (send (Model.OpenBlockTaskDate (uuid, key)))))
         | _ -> None) dates in
-      let items = dates @ (if page = "" then [] else
+      let repeat =
+        if repeats then [icon ~name:`repeat ~width:14 ~height:14 ~foreground:"muted-foreground"
+          ~accessibility_identifier:("journal-task.repeat." ^ uuid) []]
+        else [] in
+      let items = dates @ repeat @ (if page = "" then [] else
         [chip "page" ~label:(View_base.tr_named current "Open {1}" page) page (fun () ->
           ignore (send (View_base.request_node_action (Signal.sample model_source) (Signal.sample source).page_id)))]) in
       let items = List.concat (List.mapi (fun index item ->
@@ -2009,36 +2042,33 @@ let tasks_screen context model_source send : t = custom @@ fun mount_context par
     ]) in
   mount mount_context ?parent (View_base.with_reading_insets
     (column ~grow:1.0 ~accessibility_identifier:"screen.tasks" [
-      column ~gap:12 ~padding_horizontal:16 ~padding_vertical:12 [
-        heading ~value:(View_base.tr (Signal.sample model_source) "Tasks")
-          ~level:`h1 ~style_class:"semibold" ~accessibility_identifier:"tasks.title" [];
-        row ~gap:8 ~cross:`center [
-          tab_button "today" "Today" "tasks-today" Model.TasksToday;
-          tab_button "upcoming" "Upcoming" "calendar" Model.TasksUpcoming;
-        ];
-      ];
       keyed ~source:(own (Signal.map (fun tab -> [tab]) tab)) ~key:Fun.id ~cmp:compare
         ~mount:(fun source ->
           let active_tab = Signal.sample source in
-          column ~grow:1.0 [
-          if_ ~test:(Signal.map ((=) []) entries)
-            (column ~grow:1.0 ~gap:10 ~main:`center ~cross:`center [
-              icon ~name:(`app (if active_tab = Model.TasksToday then "tasks-today" else "calendar"))
-                ~width:25 ~height:25 ~foreground:"muted-foreground" [];
-              text ~value:(View_base.tr (Signal.sample model_source)
-                (if active_tab = Model.TasksToday then "No tasks to show" else "No upcoming tasks"))
-                ~foreground:"muted-foreground" ~accessibility_identifier:"tasks.empty" [];
-            ]);
-          if_ ~test:(Signal.map ((<>) []) entries)
-            (with_journal_task_transition model_source
-               (virtual_list ~grow:1.0 ~gap:0 ~accessibility_identifier:"list.tasks" [
-                 box ~height:16 [];
-                 View_rows.windowed_keyed ~identifier:"tasks.window" ~source:entries ~key:View_rows.page_entry_identifier ~cmp:compare
-                   ~is_pinned:View_rows.page_entry_pinned_
-                   ~mount:(fun entry -> box [mount_journal_task_entry ~tasks_screen:true context model_source send entry]) ();
-                 outliner_bottom_spacer ();
-               ]));
-        ]);
+          with_journal_task_transition model_source
+            (virtual_list ~grow:1.0 ~gap:0 ~accessibility_identifier:"list.tasks" [
+              column ~gap:12 ~padding_horizontal:16 ~padding_vertical:12 [
+                heading ~value:(View_base.tr (Signal.sample model_source) "Tasks")
+                  ~level:`h1 ~style_class:"semibold" ~accessibility_identifier:"tasks.title" [];
+                row ~gap:8 ~cross:`center [
+                  tab_button "today" "Today" "tasks-today" Model.TasksToday;
+                  tab_button "upcoming" "Upcoming" "calendar" Model.TasksUpcoming;
+                ];
+              ];
+              if_ ~test:(Signal.map ((=) []) entries)
+                (column ~height:180 ~gap:10 ~main:`center ~cross:`center [
+                  icon ~name:(`app (if active_tab = Model.TasksToday then "tasks-today" else "calendar"))
+                    ~width:25 ~height:25 ~foreground:"muted-foreground" [];
+                  text ~value:(View_base.tr (Signal.sample model_source)
+                    (if active_tab = Model.TasksToday then "No tasks to show" else "No upcoming tasks"))
+                    ~foreground:"muted-foreground" ~accessibility_identifier:"tasks.empty" [];
+                ]);
+              box ~height:16 [];
+              View_rows.windowed_keyed ~identifier:"tasks.window" ~source:entries ~key:View_rows.page_entry_identifier ~cmp:compare
+                ~is_pinned:View_rows.page_entry_pinned_
+                ~mount:(fun entry -> box [mount_journal_task_entry ~tasks_screen:true context model_source send entry]) ();
+              outliner_bottom_spacer ();
+            ]));
     ]))
 
 let outliner_entries ?prefetch_history ?reset_key context model_source ~source send : t =

@@ -5194,10 +5194,11 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
     flush application in
   check_eq (children renderer tabs) (List.map tab ["home"; "tasks"; "flashcards"]);
   check_eq (children renderer actions) [search; capture];
-  List.iter (fun id ->
-    check_eq (property_int renderer id Lui_protocol.WidthValue) 50;
+  List.iter (fun (id, width) ->
+    check_eq (property_int renderer id Lui_protocol.WidthValue) width;
     check_eq (property_int renderer id Lui_protocol.HeightValue) 50)
-    (children renderer tabs @ children renderer actions);
+    (List.map (fun id -> id, 58) (children renderer tabs)
+     @ List.map (fun id -> id, 50) (children renderer actions));
   check_eq (property_string renderer capture Lui_protocol.InlineIconName) "app:capture-circle";
   let flashcard_icon () = property_string renderer (tab "flashcards") Lui_protocol.InlineIconName in
   check_eq (flashcard_icon ()) "app:flashcards";

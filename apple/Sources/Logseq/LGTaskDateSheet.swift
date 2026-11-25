@@ -31,6 +31,18 @@ enum LGTaskDateSheetExtension {
 }
 
 struct LGTaskDateSheetState: Decodable, Equatable {
+    struct RepeatOptions: Decodable, Equatable {
+        struct Choice: Decodable, Equatable, Identifiable {
+            let id: String
+            let label: String
+        }
+
+        let title: String
+        let selection: String
+        let value: String
+        let choices: [Choice]
+    }
+
     let title: String
     let clearTitle: String
     let submitTitle: String
@@ -41,6 +53,7 @@ struct LGTaskDateSheetState: Decodable, Equatable {
     let canClear: Bool
     let mixed: Bool
     let error: String?
+    let repeatOptions: RepeatOptions?
 
     var selection: Date? {
         value.map { Date(timeIntervalSince1970: Double($0) / 1000) }
@@ -148,6 +161,39 @@ struct LGTaskDateSheet: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
+            }
+
+            if let options = state.repeatOptions {
+                Menu {
+                    ForEach(options.choices) { choice in
+                        Button {
+                            editingInput = false
+                            try? context.emit(name: "choose", values: ["value": .string("repeat:\(choice.id)")])
+                        } label: {
+                            if choice.id == options.selection {
+                                Label(choice.label, systemImage: "checkmark")
+                            } else {
+                                Text(choice.label)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Label(options.title, systemImage: "repeat")
+                        Spacer()
+                        Text(options.value)
+                            .foregroundStyle(.secondary)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(minHeight: 44)
+                    .padding(.horizontal, 12)
+                }
+                .foregroundStyle(.primary)
+                .disabled(!enabled)
+                .accessibilityIdentifier("task-dates.repeat")
+                .padding(.horizontal, 12)
             }
 
             Button {

@@ -4,6 +4,7 @@ press prop:accessibility-identifier=button.graph-add
 type prop:accessibility-identifier=field.graph-name "Drive Graph"
 press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=tab.bottom.flashcards
 press prop:accessibility-identifier=tab.bottom.flashcards
 wait prop:accessibility-identifier=flashcards.empty
 expect text:"No cards due"
