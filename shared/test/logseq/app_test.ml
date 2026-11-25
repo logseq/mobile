@@ -3242,12 +3242,13 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     (-1);
   check_eq ~msg:"Home is available from the bottom tab bar" journals (-1);
   let shortcuts = children renderer sidebar_content in
-  check_eq ~msg:"the sidebar starts with Flashcards"
-    (child_with_identifier renderer (List.hd shortcuts) "link.sidebar.flashcards") flashcards;
-  check (flashcards <> -1);
-  let graphs_tweak = List.nth shortcuts 1 in
-  check_eq ~msg:"Graphs follows Flashcards in the sidebar"
+  let graphs_tweak = List.hd shortcuts in
+  check_eq ~msg:"the sidebar starts with Graphs"
     (child_with_identifier renderer graphs_tweak "link.sidebar.graphs") graphs;
+  check (graphs <> -1);
+  check_eq ~msg:"Flashcards follows Graphs in the sidebar"
+    (child_with_identifier renderer (List.nth shortcuts 1) "link.sidebar.flashcards") flashcards;
+  check (flashcards <> -1);
   check_eq ~msg:"VoiceOver can identify whether Graphs is the current destination"
     (extension_property application graphs_tweak "current") (Some (Lui_protocol.BoolValue false));
   check_eq ~msg:"the sidebar keeps a consistent gap between navigation rows"

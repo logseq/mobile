@@ -273,17 +273,14 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send ~settings : t =
   let content =
     let shortcuts =
       (if native_sidebar then [] else [sidebar_journals_row context model_source send]) @ [
+        if_ ~test:(Signal.map View_base.graphs_tab_visible_ model_source)
+          (sidebar_graphs_row context model_source send);
         if_ ~test:(Signal.map View_base.flashcards_tab_visible_ model_source)
           (sidebar_flashcards_row context model_source send);
       ] in
     column ~accessibility_identifier:(if native_sidebar then "sidebar.content" else "sidebar.navigation")
       ~grow:1.0 ~gap:(if native_sidebar then 2 else 4) ~padding:(if native_sidebar then 16 else 12)
-      (header @ shortcuts @ [
-      if_
-        ~test:(Signal.map View_base.graphs_tab_visible_ model_source)
-        (sidebar_graphs_row context model_source send);
-      pages;
-    ]) in
+      (header @ shortcuts @ [pages]) in
   if native_sidebar then
     box ~accessibility_identifier:"sidebar.navigation" ~grow:1.0
       [custom (fun context parent ->

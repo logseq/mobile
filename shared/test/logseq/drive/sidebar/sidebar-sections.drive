@@ -1,4 +1,4 @@
-# The sidebar shows Flashcards, Graphs, Favorites, and Recent. Home and Notifications live in the bottom tabs.
+# The sidebar shows Graphs, Flashcards, Favorites, and Recent. Home and Notifications live in the bottom tabs.
 expect prop:accessibility-identifier=button.graph-add
 press prop:accessibility-identifier=button.graph-add
 type prop:accessibility-identifier=field.graph-name "Drive Graph"

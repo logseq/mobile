@@ -564,8 +564,11 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 ui.onNodeWithTag("tab.bottom.home").performClick()
                 pause()
                 ui.onNodeWithTag("button.sidebar").performClick()
+                val graphs = ui.onNodeWithTag("link.sidebar.graphs").getUnclippedBoundsInRoot()
+                val flashcards = ui.onNodeWithTag("link.sidebar.flashcards")
+                assertTrue("Graphs appears above Flashcards", graphs.bottom <= flashcards.getUnclippedBoundsInRoot().top)
                 captureFrame()
-                ui.onNodeWithTag("link.sidebar.flashcards").performClick()
+                flashcards.performClick()
                 pause()
                 ui.onNodeWithTag("screen.flashcards").assertIsDisplayed()
             }
