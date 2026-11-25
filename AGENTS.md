@@ -14,6 +14,25 @@ See [Mobile UX Rules](UX_RULES.md) when changing navigation, safe areas, or outl
   run) with sandbox disabled; SwiftPM's own sandbox conflicts with the agent
   sandbox.
 
+## UI/UX pull requests
+
+Every PR that changes UI or UX must include a screen recording of the changed
+experience. Upload the video with GitHub CLI's `--attach` flag and verify that it
+plays inline in the PR description. Keep video files out of Git commits.
+
+GitHub CLI introduced `--attach` in v2.99.0.
+
+In the PR body file, put `![](/absolute/path/to/demo.mp4)` in its own paragraph.
+Use the same local path for `--attach` so GitHub CLI replaces the reference with
+the uploaded video.
+
+```sh
+gh pr create --body-file "$pr_body" --attach "$demo_video"
+gh pr edit "$pr_number" --body-file "$pr_body" --attach "$demo_video"
+```
+
+See [Attaching files with GitHub CLI](https://docs.github.com/en/github-cli/github-cli/attaching-files-with-github-cli).
+
 ## Build system
 
 - Use `dune build @shared/native/runtest` for core validation. The mobile entry object
