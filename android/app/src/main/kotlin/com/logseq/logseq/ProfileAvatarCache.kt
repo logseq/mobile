@@ -16,11 +16,19 @@ internal object ProfileAvatarCache {
     private const val byteLimit = 128L * 1024
     private const val entryLimit = 64
     private val lifetime = TimeUnit.HOURS.toMillis(1)
+    private const val profileBucketHost = "logseq-user-public-metadata-bucket-prod.s3.amazonaws.com"
+    private val regionalProfileBucketHost = Regex(
+        "logseq-user-public-metadata-bucket-prod\\.s3\\.[a-z0-9-]+\\.amazonaws\\.com"
+    )
     private val hosts = setOf(
-        "logseq-user-public-metadata-bucket-prod.s3.amazonaws.com", "assets.logseq.com", "assets.logseq.io",
-        "avatars.githubusercontent.com", "lh3.googleusercontent.com",
+        "assets.logseq.com", "assets.logseq.io", "avatars.githubusercontent.com", "lh3.googleusercontent.com",
     )
     private val http = OkHttpClient.Builder().callTimeout(2, TimeUnit.SECONDS).followRedirects(false).build()
+
+    fun isProfileBucketHost(host: String): Boolean {
+        val normalized = host.lowercase()
+        return normalized == profileBucketHost || regionalProfileBucketHost.matches(normalized)
+    }
 
     fun image(context: Context, rawUrl: String?): Bitmap? {
         val url = supportedUrl(rawUrl) ?: return null
@@ -58,8 +66,8 @@ internal object ProfileAvatarCache {
     }
 
     private fun supportedUrl(rawUrl: String?): HttpUrl? = rawUrl?.toHttpUrlOrNull()?.takeIf {
-        it.isHttps && it.host in hosts && it.port == 443 && it.query == null && it.fragment == null &&
-            it.username.isEmpty() && it.password.isEmpty()
+        it.isHttps && (it.host in hosts || isProfileBucketHost(it.host)) && it.port == 443 && it.query == null &&
+            it.fragment == null && it.username.isEmpty() && it.password.isEmpty()
     }
 
     private fun file(context: Context, url: HttpUrl): File {

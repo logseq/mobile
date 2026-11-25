@@ -160,7 +160,7 @@ struct CognitoTokenStore: Sendable {
         let payload = try JSONSerialization.jsonObject(with: body) as? [String: String]
         guard (response as? HTTPURLResponse)?.statusCode == 200,
               let signed = payload?["presigned-url"].flatMap(URL.init(string:)),
-              signed.scheme == "https", signed.host == "logseq-user-public-metadata-bucket-prod.s3.amazonaws.com",
+              signed.scheme == "https", signed.host.map(LGProfileAvatarCache.isProfileBucketHost) == true,
               var publicURL = URLComponents(url: signed, resolvingAgainstBaseURL: false) else { throw CognitoAuthProviderError.invalidResponse }
         var upload = URLRequest(url: signed)
         upload.httpMethod = "PUT"

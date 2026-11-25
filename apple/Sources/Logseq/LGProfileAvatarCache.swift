@@ -7,10 +7,22 @@ enum LGProfileAvatarCache {
     private static let lifetime: TimeInterval = 3600
     private static let byteLimit = 128 * 1024
     private static let entryLimit = 64
+    private static let profileBucket = "logseq-user-public-metadata-bucket-prod"
     private static let hosts = [
-        "logseq-user-public-metadata-bucket-prod.s3.amazonaws.com", "assets.logseq.com", "assets.logseq.io",
-        "avatars.githubusercontent.com", "lh3.googleusercontent.com",
+        "assets.logseq.com", "assets.logseq.io", "avatars.githubusercontent.com", "lh3.googleusercontent.com",
     ]
+
+    static func isProfileBucketHost(_ host: String) -> Bool {
+        let host = host.lowercased()
+        if host == "\(profileBucket).s3.amazonaws.com" { return true }
+        let prefix = "\(profileBucket).s3."
+        let suffix = ".amazonaws.com"
+        guard host.hasPrefix(prefix), host.hasSuffix(suffix) else { return false }
+        let region = host.dropFirst(prefix.count).dropLast(suffix.count)
+        return !region.isEmpty && region.allSatisfy { character in
+            character.isASCII && (character.isLetter || character.isNumber || character == "-")
+        }
+    }
 
     @concurrent static func image(at url: URL) async -> UIImage? {
         guard supports(url) else { return nil }
@@ -46,7 +58,8 @@ enum LGProfileAvatarCache {
     }
 
     private static func supports(_ url: URL) -> Bool {
-        url.scheme == "https" && (url.host.map(hosts.contains) ?? false)
+        guard let host = url.host?.lowercased() else { return false }
+        return url.scheme == "https" && (hosts.contains(host) || isProfileBucketHost(host))
             && url.user == nil && url.password == nil && url.port == nil && url.query == nil && url.fragment == nil
     }
 

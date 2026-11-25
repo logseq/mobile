@@ -99,7 +99,7 @@ internal class CognitoAuthProvider(context: Context, transport: CognitoUserPool?
             check(response.code == 200)
             checkNotNull(JSONObject(response.body!!.string()).getString("presigned-url").toHttpUrlOrNull())
         }
-        check(signed.isHttps && signed.host == "logseq-user-public-metadata-bucket-prod.s3.amazonaws.com")
+        check(signed.isHttps && ProfileAvatarCache.isProfileBucketHost(signed.host))
         val upload = Request.Builder().url(signed).header("Cache-Control", "public, max-age=0")
             .put(photo.toRequestBody("image/jpeg".toMediaType())).build()
         profileClient.newCall(upload).execute().use { check(it.code == 200) }
