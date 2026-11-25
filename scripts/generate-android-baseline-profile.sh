@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Record android/app/src/main/baseline-prof.txt on a connected device.
 #
-# The device must be signed in with a graph open. Unlike Gradle's connected
-# tasks, this script installs over the existing app and never uninstalls it,
-# so the signed-in session and local graph survive.
+# The device must be signed in with a graph open in a locally installed debug,
+# benchmark, or similarly signed app. Unlike Gradle's connected tasks, this
+# script installs over the existing app and never uninstalls it, so the
+# signed-in session and local graph survive.
 
 set -euo pipefail
 
@@ -27,7 +28,9 @@ cd "$repo_root/android"
 
 app_apk=app/build/outputs/apk/benchmark/app-benchmark.apk
 test_apk=baselineprofile/build/outputs/apk/benchmark/baselineprofile-benchmark.apk
-"${adb[@]}" install -r "$app_apk"
+if ! "${adb[@]}" install -r "$app_apk"; then
+  die "could not install the benchmark APK over the existing app; if the device has a tester or release install, install a local debug build first, sign in, and rerun this script"
+fi
 "${adb[@]}" install -r -t "$test_apk"
 
 output_dir=/sdcard/Android/media/com.logseq.logseq.baselineprofile
