@@ -15,6 +15,7 @@ import tempfile
 EXTENSIONS = {
     "LogseqWidgets.appex": ("com.logseq.logseq.shortcuts", "com.apple.widgetkit-extension"),
     "LogseqShareExtension.appex": ("com.logseq.logseq.ShareViewController", "com.apple.share-services"),
+    "LogseqDiscussionNotificationService.appex": ("com.logseq.logseq.DiscussionNotificationService", "com.apple.usernotifications.service"),
 }
 WIDGET_ACTIONS = {"QuickAddIntent", "RecordAudioIntent", "OpenJournalIntent"}
 WIDGET_STATUS_ACTIONS = {"SetWidgetTaskStatusIntent", "ShowWidgetTaskStatusesIntent", "RefreshRandomBlocksWidgetIntent"}
@@ -25,6 +26,7 @@ WIDGET_KINDS = {
 }
 TEAM = "K378MFWK59"
 APP_GROUP = "group.com.logseq.logseq"
+COMMUNICATION_NOTIFICATIONS = "com.apple.developer.usernotifications.communication"
 
 
 def require(condition, message):
@@ -96,7 +98,10 @@ def verify_app(app, args):
         require("arm64" in archs and not {"x86_64", "i386"}.intersection(archs), f"Wrong device architectures: {bundle.name}: {archs}")
         entitlements = plistlib.loads(subprocess.check_output(["codesign", "-d", "--entitlements", ":-", str(bundle)], stderr=subprocess.PIPE))
         require(entitlements.get("com.apple.developer.team-identifier") == TEAM, f"Wrong signing team: {bundle.name}")
-        require(APP_GROUP in entitlements.get("com.apple.security.application-groups", []), f"Missing shared App Group: {bundle.name}")
+        if bundle == app or bundle.name in {"LogseqWidgets.appex", "LogseqShareExtension.appex"}:
+            require(APP_GROUP in entitlements.get("com.apple.security.application-groups", []), f"Missing shared App Group: {bundle.name}")
+        if bundle == app:
+            require(entitlements.get(COMMUNICATION_NOTIFICATIONS) is True, "Missing Communication Notifications entitlement")
         if args.app_store:
             require(not entitlements.get("get-task-allow", False), f"Development entitlement in release: {bundle.name}")
             profile_path = bundle / "embedded.mobileprovision"

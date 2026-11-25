@@ -1,12 +1,29 @@
 import Foundation
 import Observation
 
+public struct LogseqAccountProfile: Sendable {
+    public let fullName: String
+    public let photo: URL?
+
+    public init(fullName: String, photo: URL?) {
+        self.fullName = fullName
+        self.photo = photo
+    }
+}
+
 public protocol LogseqCognitoProviding: Sendable {
     // Logseq APIs require Cognito ID-token identity claims, not access-token scopes.
     // Return nil for a missing or invalid session; throw when token retrieval fails.
     func apiToken() async throws -> String?
     func authenticate(_ request: String) async throws -> String
     func signOut() async throws
+    func readProfile() async throws -> LogseqAccountProfile
+    func updateProfile(fullName: String, photo: Data?) async throws -> String?
+}
+
+public extension LogseqCognitoProviding {
+    func readProfile() async throws -> LogseqAccountProfile { throw LogseqAuthenticationError.notSignedIn }
+    func updateProfile(fullName: String, photo: Data?) async throws -> String? { throw LogseqAuthenticationError.notSignedIn }
 }
 
 public enum LogseqAuthenticationState: String, Sendable {
@@ -78,6 +95,12 @@ public enum LogseqAuthenticationError: Error, LocalizedError {
             onAccessToken(token)
         }
         return response
+    }
+
+    public func readProfile() async throws -> LogseqAccountProfile { try await provider.readProfile() }
+
+    public func updateProfile(fullName: String, photo: Data?) async throws {
+        if let token = try await provider.updateProfile(fullName: fullName, photo: photo) { onAccessToken(token) }
     }
 
     public func signOut() async {

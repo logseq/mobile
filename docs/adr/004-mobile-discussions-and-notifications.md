@@ -58,10 +58,17 @@ can read and update the same discussions, including in encrypted graphs.
   sync. The service checks the authenticated author and recipient’s graph membership, limits
   fan-out and frequency, deduplicates by graph and event UUID, and queues delivery after the
   corresponding write commits. Desktop and mobile writes follow the same path.
-- Show generic alert text on the lock screen. Push payloads contain the graph and event IDs needed
-  for navigation. Keep titles, message text, member names, and emoji inside the graph. After a
-  notification tap, resolve the event against the synced graph and current account before
-  navigating. Drop unavailable graph routes without changing the current account.
+- Show the sender’s display name and avatar in native notifications. Use the sender’s initial
+  when their public profile photo is unavailable. Show the reaction emoji, or a short comment
+  preview when the graph is explicitly unencrypted. Encrypted graphs omit comment text from
+  the notification payload and queue. The platform controls when notification previews appear.
+- Push payloads contain the graph and event IDs needed for navigation. After a notification
+  tap, resolve the event against the synced graph and current account before navigating.
+  Drop unavailable graph routes without changing the current account.
+- Edit a full name and photo from Account settings. Save them as Cognito profile attributes and
+  upload a resized JPEG to Logseq’s existing avatar endpoint. Keep the longest edge at or below
+  512 pixels and the final upload at or below 128 KiB. Sync profile metadata to the user entity
+  with subsequent graph edits.
 - Use the existing Cloudflare sync worker in the Logseq repository for registration, membership
   checks and push delivery. Keep provider credentials in worker secrets. Exercise delivery with
   staging credentials and signed mobile builds before enabling it in production.
@@ -78,7 +85,10 @@ can read and update the same discussions, including in encrypted graphs.
 
 ## Staging configuration
 
-The iOS app reads the APNs environment from its provisioning profile. The Android build
+The iOS app reads the APNs environment from its provisioning profile. To show sender avatars,
+use a host profile with the Communication Notifications capability and provision the
+`com.logseq.logseq.DiscussionNotificationService` extension. Device builds can locate the development
+extension profile automatically or use `LOGSEQ_IOS_NOTIFICATION_PROFILE`. The Android build
 reads the Firebase app configuration from `LOGSEQ_ANDROID_FIREBASE_APP_ID`,
 `LOGSEQ_ANDROID_FIREBASE_API_KEY`, `LOGSEQ_ANDROID_FIREBASE_SENDER_ID`, and
 `LOGSEQ_ANDROID_FIREBASE_PROJECT_ID`. Enable worker delivery after applying the D1 migration

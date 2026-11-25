@@ -103,6 +103,14 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
                     AndroidRuntimeLogs.errors.collect { LogseqDialogs.notifyError(it) }
                 }
             }
+            if (runtime.accountProfileOpen) AccountProfileSheet(
+                readProfile = runtime.authentication::readProfile,
+                updateProfile = { name, photo ->
+                    runtime.authentication.updateProfile(name, photo)
+                    runtime.refreshAccountProfileToken()
+                },
+                dismiss = runtime::closeAccountProfile,
+            )
             Scaffold { padding ->
                 // Expose test tags as accessibility resource IDs for Maestro.
                 val host = Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }

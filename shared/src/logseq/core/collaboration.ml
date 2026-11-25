@@ -72,8 +72,10 @@ let valid_emoji emoji =
 
 let author db eid = List.find_map (Read.uuid_for_eid db) (refs db eid creator)
 let actor_name db eid =
-  List.find_map (fun actor -> Option.bind (text db actor "block/title") (fun name ->
-    if String_kit.is_blank name then None else Some name)) (refs db eid creator)
+  List.find_map (fun actor ->
+    List.find_map (fun attr -> Option.bind (text db actor attr) (fun name ->
+      if String_kit.is_blank name then None else Some name)) ["logseq.property.user/name"; "block/title"])
+    (refs db eid creator)
 
 let created_at db eid = Option.value ~default:0 (Read.int_value (Read.value db eid "block/created-at"))
 

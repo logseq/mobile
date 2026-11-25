@@ -185,6 +185,7 @@ let host_action (update : Host_update.host_update) =
   | Open_quick_action kind -> Model.OpenQuickAction kind
   | Confirm_outliner_delete -> Model.ConfirmOutlinerDelete
   | Open_capture -> Model.ExpandComposer
+  | Resume_settings -> Model.ResumeSettings
   | Open_pushed_discussion (graph, id) -> Model.OpenPushedDiscussion (graph, id)
   | Push_preference (enabled, comments, reactions) ->
     Model.ApplyPushPreference {enabled; comments; reactions}
@@ -331,6 +332,8 @@ let encode_effect ?(model : Model.logseq_model option) (eff : Model.logseq_effec
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"persist-composer-draft\",\"text\":"
     ^ Lui_wire.quoted draft ^ "}"
+  | PresentAccountProfileEffect id ->
+    "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"present-account-profile\",\"text\":\"\"}"
   | PresentJournalCalendarEffect id ->
     "{\"id\":" ^ string_of_int id ^ ",\"kind\":\"present-journal-calendar\",\"text\":\"\"}"
   | PresentAttachmentEffect (id, kind) ->

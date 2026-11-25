@@ -1322,6 +1322,15 @@ let cancel_outliner_editing_has_a_stable_native_effect_payload () =
     (Native_bridge.encode_effect (Model.CancelOutlinerEditingEffect 9))
     "{\"id\":9,\"kind\":\"cancel-outliner-editing\",\"text\":\"\"}"
 
+let returning_from_profile_preserves_the_sync_server_draft () =
+  let opened = Model.update (Model.initial ()) Model.OpenSettings in
+  let edited = Model.update opened (Model.ChangeBaseURL "https://other.example.com") in
+  let profile = Model.update edited Model.OpenAccountProfile in
+  check (not profile.settings_open);
+  let resumed = Model.update profile Model.ResumeSettings in
+  check resumed.settings_open;
+  check_eq "https://other.example.com" resumed.base_url_draft
+
 let settings_render_the_main_branch_navigation_contract () =
   let application = App.create (ios_backend ()) in
   start application;
@@ -1387,6 +1396,7 @@ let settings_render_the_main_branch_navigation_contract () =
             Lui_protocol.ForegroundValue)
          "muted-foreground")
     [
+      "label.settings.account";
       "label.settings.general";
       "label.settings.editor";
       "label.settings.sync-server";
@@ -1780,9 +1790,15 @@ let kotlin_settings_use_full_width_material_controls () =
   check_eq ~msg:"community links disclose that they leave the app"
     (property_string renderer report_bug Lui_protocol.InlineIconName)
     "app:open-external";
+  let sign_out_children = children renderer sign_out in
+  let sign_out_icon = List.find (fun id -> node renderer id = Some Lui_protocol.Icon) sign_out_children in
+  let sign_out_label = List.find (fun id -> node renderer id = Some Lui_protocol.Text) sign_out_children in
   check_eq ~msg:"sign out uses the Android logout icon"
-    (property_string renderer sign_out Lui_protocol.InlineIconName)
-    "app:sign-out";
+    (property_string renderer sign_out_icon Lui_protocol.IconName) "app:sign-out";
+  List.iter (fun id ->
+    check_eq ~msg:"sign out icon and label use the Material error color"
+      (property_string renderer id Lui_protocol.ForegroundValue) "error-foreground")
+    [sign_out_icon; sign_out_label];
   check_eq ~msg:"settings actions use an anchored Material action row"
     (node renderer actions)
     (Some Lui_protocol.Row);
@@ -12000,6 +12016,7 @@ let cases =
     case "encrypted-graph-unlock-has-a-stable-native-effect-payload" encrypted_graph_unlock_has_a_stable_native_effect_payload;
     case "graph-database-export-has-a-stable-native-effect-payload" graph_database_export_has_a_stable_native_effect_payload;
     case "cancel-outliner-editing-has-a-stable-native-effect-payload" cancel_outliner_editing_has_a_stable_native_effect_payload;
+    case "returning from profile preserves the sync server draft" returning_from_profile_preserves_the_sync_server_draft;
     case "settings-render-the-main-branch-navigation-contract" settings_render_the_main_branch_navigation_contract;
     case "kotlin-settings-sheet-uses-one-bounded-scroll-layout" kotlin_settings_sheet_uses_one_bounded_scroll_layout;
     case "kotlin-settings-tabs-open-through-the-rendered-press-handler" kotlin_settings_tabs_open_through_the_rendered_press_handler;

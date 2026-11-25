@@ -73,6 +73,10 @@
     <string>Record audio to add to your Logseq graph.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Transcribe your audio recordings on this device.</string>
+    <key>NSUserActivityTypes</key>
+    <array>
+        <string>INSendMessageIntent</string>
+    </array>
     <key>UIBackgroundModes</key>
     <array>
         <string>fetch</string>

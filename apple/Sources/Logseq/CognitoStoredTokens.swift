@@ -2,6 +2,7 @@ import Foundation
 
 struct CognitoStoredTokens: Codable, Sendable {
     let idToken: String?
+    var accessToken: String? = nil
     let refreshToken: String
     let expiresAt: Date
 

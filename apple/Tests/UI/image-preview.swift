@@ -15,6 +15,9 @@ import ImageIO
         let screen = LGImagePreview.Screen(preview: gallery)
         screen.loadViewIfNeeded()
         precondition(screen.currentURL == urls[1], "Tapping an image must start at that image")
+        let close = screen.navigationItem.leftBarButtonItem
+        precondition(close?.accessibilityIdentifier == "image.preview.close" && close?.customView == nil,
+                     "Close uses the native navigation bar control")
         precondition(screen.navigationItem.rightBarButtonItems?.count == 2, "Preview provides Save to Photos and Share")
         let first = gallery.pageViewController(gallery, viewControllerBefore: gallery.currentPage!)!
         let next = gallery.pageViewController(gallery, viewControllerAfter: first) as! LGImagePreview.ImagePage

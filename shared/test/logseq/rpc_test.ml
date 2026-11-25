@@ -1308,6 +1308,22 @@ let shared_sync_driver_bounds_backoff_and_rejects_reconfigured_events () =
   let next = begin_sync_transport session in
   check_eq (member "url" (List.hd (sync_commands next))) (`String "wss://example.com/sync/plain-1")
 
+let refreshing_profile_token_reconnects_and_accepts_remote_changes () =
+  let session, cursor, applied, _ = sync_driver_session () in
+  let old_generation = sync_generation (begin_sync_transport session) in
+  ignore (sync_event session old_generation "opened" []);
+  ignore (response_result (dispatch_json session "setAccessToken" "updated-profile-access"));
+  let next = begin_sync_transport session in
+  let generation = sync_generation next in
+  check (generation > old_generation);
+  check_eq (sync_commands (sync_event session old_generation "frame"
+    ["body", `String {|{"type":"pull/ok","t":99,"data":[]}|}])) [];
+  ignore (sync_event session generation "opened" []);
+  ignore (sync_event session generation "frame"
+    ["body", `String {|{"type":"pull/ok","t":11,"data":[]}|}]);
+  check_eq !cursor 11;
+  check_eq (List.length !applied) 1
+
 let clearing_authentication_invalidates_old_sync_transport () =
   let session, _, applied, _ = sync_driver_session () in
   let generation = sync_generation (begin_sync_transport session) in
@@ -7003,6 +7019,7 @@ let cases =
  case "shared sync driver bounds backoff and rejects reconfigured events" shared_sync_driver_bounds_backoff_and_rejects_reconfigured_events;
     case "shared sync driver handles missing cursor and network changes" shared_sync_driver_handles_missing_cursor_and_network_changes;
  case "shared sync driver owns pull protocol and notification coalescing" shared_sync_driver_owns_pull_protocol_and_notification_coalescing;
+    case "profile token refresh accepts remote changes on the new generation" refreshing_profile_token_reconnects_and_accepts_remote_changes;
     case "shared sync driver scopes events and controls reconnect" shared_sync_driver_scopes_events_and_controls_reconnect;
     case "shared sync driver snapshot recovery is explicit and edit safe" shared_sync_driver_snapshot_recovery_is_explicit_and_edit_safe;
     case "shared sync driver backs off repeated snapshot recovery" shared_sync_driver_repeated_snapshot_recovery_backs_off_until_pull_succeeds;

@@ -322,6 +322,7 @@ type composer_submission =
   }
 
 type logseq_effect =
+  | PresentAccountProfileEffect of int
   | PushPreferenceEffect of int * push_preferences
   | CollaborationEffect of int * string
   | PdfAnnotationEffect of int * string
@@ -714,6 +715,7 @@ type logseq_action =
   | SetOutlinerTaskPriority of string * string
   | OpenJournalCalendar
   | OpenSettings
+  | ResumeSettings
   | DismissSettings
   | OpenSettingsTabs
   | BackSettings
@@ -743,6 +745,7 @@ type logseq_action =
   | ApplyRuntimeLog of runtime_log_record list * runtime_log_record option
   | RefreshRuntimeLog
   | CopyRuntimeLog
+  | OpenAccountProfile
   | RequestSignOut
   | CancelSignOut
   | SignOut

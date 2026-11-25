@@ -65,6 +65,7 @@ type host_update =
   | Open_quick_action of string
   | Confirm_outliner_delete
   | Open_capture
+  | Resume_settings
   | Open_pushed_discussion of string * string
   | Push_preference of bool * bool * bool
   | Open_node of string
@@ -172,6 +173,7 @@ let decode kind payload =
     | "open-quick-action" -> Ok (Open_quick_action (Util.to_string value))
     | "confirm-outliner-delete" -> Ok Confirm_outliner_delete
     | "open-capture" -> Ok Open_capture
+    | "resume-settings" -> Ok Resume_settings
     | "open-pushed-discussion" -> Ok (Open_pushed_discussion (string_field "graphId" value, string_field "eventId" value))
     | "push-preference" -> Ok (Push_preference
         (bool_field "enabled" value, bool_field "comments" value, bool_field "reactions" value))

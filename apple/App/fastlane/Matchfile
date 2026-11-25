@@ -8,4 +8,4 @@ username("dev@logseq.com")
 team_id("K378MFWK59")
 renew_expired_certs(true)
 
-app_identifier(["com.logseq.logseq", "com.logseq.logseq.ShareViewController", "com.logseq.logseq.shortcuts"])
+app_identifier(["com.logseq.logseq", "com.logseq.logseq.ShareViewController", "com.logseq.logseq.shortcuts", "com.logseq.logseq.DiscussionNotificationService"])

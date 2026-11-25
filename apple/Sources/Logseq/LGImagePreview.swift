@@ -8,16 +8,10 @@ import UIKit
 
 @MainActor enum LGImagePreview {
   private static func closeButton(identifier: String, onClose: @escaping () -> Void) -> UIBarButtonItem {
-    let button = UIButton(type: .system)
-    button.setImage(UIImage(systemName: "xmark"), for: .normal)
-    button.accessibilityLabel = Locale.current.language.languageCode?.identifier == "zh" ? "关闭" : "Close"
-    button.accessibilityIdentifier = identifier
-    button.widthAnchor.constraint(equalToConstant: 44).isActive = true
-    button.heightAnchor.constraint(equalToConstant: 44).isActive = true
-    button.addAction(UIAction { _ in onClose() }, for: .touchUpInside)
-    let item = UIBarButtonItem(customView: button)
-    // The shared glass capsule otherwise clips a custom button to 36pt tall.
-    if #available(iOS 26.0, *) { item.hidesSharedBackground = true }
+    let item = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { _ in onClose() })
+    item.tintColor = .label
+    item.accessibilityLabel = Locale.current.language.languageCode?.identifier == "zh" ? "关闭" : "Close"
+    item.accessibilityIdentifier = identifier
     return item
   }
 

@@ -954,6 +954,10 @@ private struct CreateSyncGraphPayload: Encodable {
         )
     }
 
+    public func updateAccessToken(_ token: String) async {
+        await dispatchRawAndWait("setAccessToken", payload: token)
+    }
+
     private func dispatchRawAndWait(_ action: String, payload: String? = nil) async {
         await performAsyncAndWait(
             LogseqRPCRequest(
