@@ -55,7 +55,7 @@
     "target": "f0000000-0000-4000-8000-000000000017",
     "kind": "comment",
     "actor": "Robin",
-    "ageDays": 45,
+    "ageDays": 350,
     "title": "Older activity"
   },
   {
@@ -63,7 +63,7 @@
     "target": "f0000000-0000-4000-8000-000000000017",
     "kind": "comment",
     "actor": "Robin",
-    "ageDays": 120,
+    "ageDays": 420,
     "title": "Archived activity"
   }
 ]

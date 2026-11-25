@@ -8263,7 +8263,7 @@ let notifications_filter_month_and_preserve_read_history () =
   let item id age =
     let time = Session_types.now_ms () - age * 86_400_000 in
     `Assoc ["id", `String id; "target", `String "test-block"; "createdAt", `Int time] in
-  let recent = item "recent" 20 and older = item "older" 45 and archived = item "archived" 120 in
+  let recent = item "recent" 20 and older = item "older" 270 and archived = item "archived" 420 in
   let model = { (Model.initial ()) with
     Model.selected_graph_id = Some "test-graph";
     collaboration = `Assoc ["account", `String "member"; "inbox", `List [recent; older; archived]] } in
