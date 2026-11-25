@@ -1,5 +1,6 @@
 package com.logseq.logseq.ui.extensions
 
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,6 +38,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
@@ -52,6 +56,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.Locale
+import kotlinx.coroutines.delay
 import org.json.JSONObject
 
 internal fun LuiExtensionRegistry.registerTaskDateSheet() {
@@ -78,9 +83,21 @@ internal fun LuiExtensionRegistry.registerTaskDateSheet() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TaskDateSheet(context: LuiExtensionContext, state: JSONObject) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // The slide-up animation plus the IME/inset reflow shift the layout;
+    // swallow touches until the sheet has visibly settled so taps don't
+    // land on the wrong date cell.
+    val settled = sheetState.currentValue == SheetValue.Expanded && !sheetState.isAnimationRunning
+    var inputReady by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(500)
+        inputReady = true
+    }
+    val interactive = settled && inputReady
+    val interactiveNow = rememberUpdatedState(interactive)
     ModalBottomSheet(
         onDismissRequest = { context.emit("dismiss") },
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = sheetState,
     ) {
         val focus = LocalFocusManager.current
         val ready = state.optBoolean("ready")
@@ -92,7 +109,14 @@ private fun TaskDateSheet(context: LuiExtensionContext, state: JSONObject) {
         val submit = { if (canSubmit) context.emit("submit", mapOf("value" to input)) }
 
         Column(Modifier.fillMaxWidth().testTag("sheet.task-dates")
-            .semantics { testTagsAsResourceId = true }) {
+            .semantics { testTagsAsResourceId = true }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    if (!interactiveNow.value) event.changes.forEach { it.consume() }
+                }
+            }
+        ) {
             TextField(
                 value = input,
                 onValueChange = { input = it },

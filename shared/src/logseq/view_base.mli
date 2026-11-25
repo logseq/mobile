@@ -292,6 +292,8 @@ val sidebar_graph_icon_name : Model.logseq_model -> Model.graph -> string
 val local_graphs : Model.logseq_model -> Model.graph list
 val remote_graphs : Model.logseq_model -> Model.graph list
 val shared_graphs : Model.logseq_model -> Model.graph list
+val picker_graphs : Model.logseq_model -> Model.graph list
+val ellipsize_middle : string -> int -> string
 val shared_graphs_present_ : Model.logseq_model -> bool
 val local_graphs_empty_ : Model.logseq_model -> bool
 val graphs_empty_ : Model.logseq_model -> bool

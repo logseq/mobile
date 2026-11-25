@@ -150,6 +150,7 @@ let outliner_editor_schema () =
         ];
       Lui_extension.event "caret-change"
         [ Lui_extension.event_field "caret-utf16-offset" IntScalar true ];
+      Lui_extension.event "ime-dismissed" [];
     ]
 
 let outliner_block_content_schema () =

@@ -459,7 +459,7 @@ let settings_sheet mode owner feature view_source model_source send close : t =
             ~on_input:(local_input (fun value -> set_value (`String value))) [])
         (own (Signal.map (fun (draft : filter_draft) -> draft.op) source))];
       if_list_section_item ~test:(own (Signal.map (fun draft -> filter_error draft <> None) source))
-        (list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [text ~foreground:"destructive" ~accessibility_identifier:(id "error")
+        (list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [text ~foreground:"error-foreground" ~accessibility_identifier:(id "error")
           ~value:(reactive (own (Signal.map (fun draft -> Option.value ~default:"" (filter_error draft)) source))) []]);
       if_list_section_item ~test:(Signal.value selecting) (list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [values_sheet]);
     ]) in
@@ -582,7 +582,7 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
       | _ when load_error <> "" -> Some load_error
       | _ -> None in
     match message with
-    | Some message -> text ~value:message ~foreground:"destructive" ~style_class:"footnote"
+    | Some message -> text ~value:message ~foreground:"error-foreground" ~style_class:"footnote"
         ~accessibility_identifier:("view.edit.error." ^ view.id) []
     | None -> box [] in
   let options = own (Signal.map (fun col ->

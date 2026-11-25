@@ -2017,6 +2017,10 @@ let sync_transport_event session _input fields =
         | None -> Error "Graph sync transport is unavailable"
         | Some apply ->
           (match apply body with
+           | Error "journal belongs to another graph" ->
+             (* A stale transport frame for a graph the session switched
+                away from; nothing to apply and not a user-facing failure. *)
+             Ok (projection_server_t session)
            | Error _ as error -> error
            | Ok () -> reconcile_authoritative_blocks session; Ok (projection_server_t session)) in
       let receive event = Sync_driver.receive ~cursor:(projection_server_t session)

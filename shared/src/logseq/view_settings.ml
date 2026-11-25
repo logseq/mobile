@@ -794,7 +794,7 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
                 ~test:
                   (Signal.map View_base.settings_base_url_invalid_
                      model_source)
-                (text ~foreground:"destructive"
+                (text ~foreground:"error-foreground"
                    ~value:(View_base.tr (Signal.sample model_source) "Enter a valid HTTP or HTTPS URL.") []);
             ];
         ];
@@ -931,7 +931,7 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
       if_
         ~test:
           (Signal.map View_base.settings_base_url_invalid_ model_source)
-        (text ~foreground:"destructive"
+        (text ~foreground:"error-foreground"
            ~value:(View_base.tr (Signal.sample model_source) "Enter a valid HTTP or HTTPS URL.") []);
       if_
         ~test:(Signal.map View_base.selected_graph_local_ model_source)

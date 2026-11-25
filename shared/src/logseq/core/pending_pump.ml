@@ -733,7 +733,12 @@ let complete_semantic_response session (active : Types.semantic_active) input =
              | Some config, `Assoc fields ->
                Json.to_string (`Assoc (("graphId", `String config.graph_id) :: List.remove_assoc "graphId" fields))
              | _ -> body in
-           apply scoped_body)
+           (match apply scoped_body with
+            | Error "journal belongs to another graph" ->
+              (* A stale settlement for a graph the session switched away
+                 from; nothing to apply and not a user-facing failure. *)
+              Ok ()
+            | other -> other))
       | _ -> Ok () in
     List.iter (fun ((pending : Types.semantic_pending), _, failure) ->
       Option.iter (fun record -> record ~semantic:true pending.operation.operation_id failure)

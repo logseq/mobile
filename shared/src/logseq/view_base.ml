@@ -170,6 +170,8 @@ let handle_outliner_editor_event input_event block_id_source send =
       send
         (Model.MoveOutlinerCaret
            (uuid, extension_int values "caret-utf16-offset"))
+    else if name = "ime-dismissed" then
+      send (Model.PerformOutlinerToolbarAction "hideKeyboard")
     else true
   | _ -> true
 
@@ -1170,16 +1172,59 @@ let graph_shared_ (graph : Model.graph) =
 
 let local_graphs (current : Model.logseq_model) =
   List.filter (fun (graph : Model.graph) ->
-    not (graph_shared_ graph) && Model.graph_local_ current graph.id)
+    (* Signed-out views hide the shared section, so downloaded shared
+       graphs must surface under Local to stay openable/removable. *)
+    (current.authentication_state = "signedOut" || not (graph_shared_ graph))
+    && Model.graph_local_ current graph.id)
     (model_graphs current)
 
 let remote_graphs (current : Model.logseq_model) =
-  List.filter (fun (graph : Model.graph) ->
-    not (graph_shared_ graph) && not (Model.graph_local_ current graph.id))
-    (model_graphs current)
+  (* Remote and shared entries are unreachable while signed out; listing
+     them only leads to unauthenticated open attempts. *)
+  if current.authentication_state = "signedOut" then []
+  else
+    List.filter (fun (graph : Model.graph) ->
+      not (graph_shared_ graph) && not (Model.graph_local_ current graph.id))
+      (model_graphs current)
 
 let shared_graphs (current : Model.logseq_model) =
-  List.filter graph_shared_ (model_graphs current)
+  if current.authentication_state = "signedOut" then []
+  else List.filter graph_shared_ (model_graphs current)
+
+let utf8_length (value : string) =
+  let rec loop index count =
+    if index >= String.length value then count
+    else
+      loop (index + String_kit.utf8_sequence_length (Char.code value.[index]))
+        (count + 1)
+  in
+  loop 0 0
+
+let utf8_byte_index (value : string) chars =
+  let rec loop index count =
+    if count >= chars || index >= String.length value then index
+    else
+      loop (index + String_kit.utf8_sequence_length (Char.code value.[index]))
+        (count + 1)
+  in
+  loop 0 0
+
+(* Long titles must keep their differentiating suffix visible; tail
+   truncation hides it. Middle-elide down to a fixed character budget. *)
+let ellipsize_middle (title : string) (max_chars : int) =
+  let length = utf8_length title in
+  if length <= max_chars || max_chars < 10 then title
+  else
+    let head = utf8_byte_index title (max_chars - 9) in
+    let tail = utf8_byte_index title (length - 8) in
+    String.sub title 0 head ^ "…"
+    ^ String.sub title tail (String.length title - tail)
+
+let picker_graphs (current : Model.logseq_model) =
+  List.filter (fun (graph : Model.graph) ->
+    current.authentication_state <> "signedOut"
+    || Model.graph_local_ current graph.id)
+    (model_graphs current)
 
 let shared_graphs_present_ current = shared_graphs current <> []
 

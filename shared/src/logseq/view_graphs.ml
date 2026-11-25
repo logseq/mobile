@@ -19,7 +19,7 @@ let graph_row (_context : Lui_ui.ui_context) model_source graph_source
     [
       column ~gap:4 ~grow:1.0
         [
-          text ~style_class:"semibold"
+          text ~style_class:"semibold" ~white_space:`nowrap ~text_overflow:`ellipsis
             ~value:(reactive View_base.graph_title graph_source)
             [];
           if_
@@ -84,7 +84,7 @@ let graph_list_row (context : Lui_ui.ui_context) model_source graph_source
        [
          column ~gap:4
            [
-             text
+             text ~white_space:`nowrap ~text_overflow:`ellipsis
                ~value:
                  (reactive View_base.graph_title graph_source)
                [];
@@ -167,17 +167,23 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
             column ~gap:20 ~padding:24 ~cross:`stretch ~style_class:"form"
               ~accessibility_identifier:"form.graph-create"
               [
-                text_field
-                  ~text_signal:
-                    (Signal.map View_base.model_new_graph_name
-                       model_source)
-                  ~placeholder:(View_base.tr (Signal.sample model_source) "Graph name") ~label:(View_base.tr (Signal.sample model_source) "Graph name")
-                  ~accessibility_identifier:"field.graph-name"
-                  ~on_input:
-                    (on_input send (fun text ->
-                         Model.ChangeNewGraphName text))
-                  [];
-                graph_encryption_setup_fields model_source send;
+                (* Unmount text inputs while creating: a focused field would
+                   otherwise keep the IME open over the progress row. *)
+                if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
+                  not (Model.graph_create_active_ current)) model_source)
+                  (text_field
+                    ~text_signal:
+                      (Signal.map View_base.model_new_graph_name
+                         model_source)
+                    ~placeholder:(View_base.tr (Signal.sample model_source) "Graph name") ~label:(View_base.tr (Signal.sample model_source) "Graph name")
+                    ~accessibility_identifier:"field.graph-name"
+                    ~on_input:
+                      (on_input send (fun text ->
+                           Model.ChangeNewGraphName text))
+                    []);
+                if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
+                  not (Model.graph_create_active_ current)) model_source)
+                  (graph_encryption_setup_fields model_source send);
                 graph_creation_progress model_source;
                 switch_
                   ~checked_signal:
@@ -331,7 +337,7 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t =
   let warning_icon =
     if android then
       [ icon ~name:(`app "warning") ~width:28 ~height:28
-          ~foreground:"destructive"
+          ~foreground:"error-foreground"
           ~accessibility_identifier:"icon.graph-delete-warning" [] ]
     else []
   in
@@ -359,7 +365,14 @@ let graph_picker_overflow_menu model_source send : t =
  custom (fun context parent ->
    let kotlin_host = Lui_ui.host context = KotlinHost in
    let entries =
-     [ dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Settings")
+     [ if_dropdown_menu_item
+         ~test:(Signal.map (fun (current : Model.logseq_model) ->
+           current.Model.authentication_state = "signedOut") model_source)
+         (dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Sign in")
+            ?icon:(if kotlin_host then Some (`app "sign-in") else None)
+            ~on_press:(press send Model.SignIn)
+            []);
+       dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Settings")
          ?icon:(if kotlin_host then Some (`app "settings") else None)
          ~on_press:(press send Model.OpenSettings)
          []
@@ -402,7 +415,7 @@ let graph_password_sheet (context : Lui_ui.ui_context) model_source send
                   text ~style_class:"footnote" ~foreground:"muted-foreground"
                     ~value:(View_base.tr (Signal.sample model_source) "Enter your E2EE password to unlock this graph.") [];
                   if_ ~test:(Signal.map View_base.graph_unlock_error_present_ model_source)
-                    (text ~style_class:"footnote" ~foreground:"destructive"
+                    (text ~style_class:"footnote" ~foreground:"error-foreground"
                       ~accessibility_identifier:"error.graph-unlock"
                       ~value:(reactive View_base.graph_unlock_error_message model_source) []);
                 ];
@@ -618,7 +631,7 @@ let kotlin_graph_picker_catalog (context : Lui_ui.ui_context) model_source
           column ~gap:12
             [
               keyed
-                ~source:(reactive View_base.model_graphs model_source)
+                ~source:(reactive View_base.picker_graphs model_source)
                 ~key:View_base.graph_identifier ~cmp:compare
                 ~mount:(fun graph_source ->
                   graph_row context model_source graph_source false send);
@@ -687,7 +700,7 @@ let graph_picker_screen (context : Lui_ui.ui_context) model_source send : t
             column ~gap:12
               [
                 keyed
-                  ~source:(reactive View_base.model_graphs model_source)
+                  ~source:(reactive View_base.picker_graphs model_source)
                   ~key:View_base.graph_identifier ~cmp:compare
                   ~mount:(fun graph_source ->
                     graph_row context model_source graph_source false
