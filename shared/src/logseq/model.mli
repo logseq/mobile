@@ -35,6 +35,23 @@ type sidebar_page =
 
 type node_deletion = PageToDelete of sidebar_page | BlockToDelete of sidebar_page
 
+type tasks_tab = TasksToday | TasksUpcoming
+type task_sort = ScheduledDate | DeadlineDate | PageOrder
+type task_page_sort = PageName | PageUpdated | PageCreated
+
+type tasks_view =
+  { tab : tasks_tab
+  ; group_by_page : bool
+  ; sort_tasks : task_sort
+  ; sort_pages : task_page_sort
+  ; compact : bool
+  ; show_completed : bool
+  ; show_past : bool
+  }
+
+val default_tasks_view : tasks_view
+val tasks_view_section : tasks_tab -> string
+
 type ui_session =
   { graph_id : string option
   ; destination : primary_destination
@@ -48,6 +65,7 @@ type ui_session =
   ; selected_page_id : string option
   ; settings_open : bool
   ; recent_graph_ids : string list
+  ; tasks_view : tasks_view option
   }
 
 type graph =
@@ -401,6 +419,9 @@ type logseq_model =
   ; pending_sync_error : string option
   ; sync_details_open : bool
   ; destination : primary_destination
+  ; home_scroll_request : int
+  ; tasks_view : tasks_view
+  ; tasks_selection_mode : bool
   ; sidebar_open : bool
   ; viewport_width : int
   ; graph_menu_open : bool
@@ -418,6 +439,7 @@ type logseq_model =
   ; task_statuses : task_status list
   ; task_priorities : task_status list
   ; selected_task_status : task_status option
+  ; composer_task_defaulted : bool
   ; flashcards : flashcard list
   ; flashcard_decks_json : string
   ; flashcard_cloze_revealed : bool
@@ -609,7 +631,10 @@ type logseq_action =
   | SelectSidebarPage of string
   | OpenQuickAction of string
   | ShowJournals
+  | ScrollHomeToTop
   | ShowTasks
+  | SetTasksView of tasks_view
+  | SelectTasks
   | ShowFlashcards
   | FlashcardDeckAction of string
   | ShowGraphs

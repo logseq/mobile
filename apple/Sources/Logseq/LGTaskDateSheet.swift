@@ -22,6 +22,7 @@ enum LGTaskDateSheetExtension {
                 .init(name: "dismiss", fields: [])
             ]
         ) { context in
+            let _ = context.revision
             guard case let .string(payload) = context.property("payload"),
                   let state = try? JSONDecoder().decode(LGTaskDateSheetState.self, from: Data(payload.utf8))
             else { return AnyView(EmptyView()) }
@@ -31,6 +32,18 @@ enum LGTaskDateSheetExtension {
 }
 
 struct LGTaskDateSheetState: Decodable, Equatable {
+    struct RepeatOptions: Decodable, Equatable {
+        struct Choice: Decodable, Equatable, Identifiable {
+            let id: String
+            let label: String
+        }
+
+        let title: String
+        let selection: String
+        let value: String
+        let choices: [Choice]
+    }
+
     let title: String
     let clearTitle: String
     let submitTitle: String
@@ -41,9 +54,17 @@ struct LGTaskDateSheetState: Decodable, Equatable {
     let canClear: Bool
     let mixed: Bool
     let error: String?
+    let repeatOptions: RepeatOptions?
 
     var selection: Date? {
         value.map { Date(timeIntervalSince1970: Double($0) / 1000) }
+    }
+}
+
+struct LGTaskDateSheetDetent: CustomPresentationDetent {
+    static func height(in context: Context) -> CGFloat? {
+        // Allow a six-week month, the search field, and the task date actions.
+        min(500, context.maxDetentValue)
     }
 }
 
@@ -82,11 +103,12 @@ private struct LGTaskDatePresentation: View {
 }
 
 struct LGTaskDateSheet: View {
-    let context: LUIAppleExtensionViewContext
-    let state: LGTaskDateSheetState
+    let request: LGTaskDateSheetRequest
     @Environment(\.calendar) private var calendar
     @FocusState private var editingInput: Bool
     @State private var input = ""
+    private var context: LUIAppleExtensionViewContext { request.context }
+    private var state: LGTaskDateSheetState { request.state }
     private var enabled: Bool { state.ready && !state.waiting }
     private var canSubmit: Bool { enabled && !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -119,14 +141,35 @@ struct LGTaskDateSheet: View {
 
             Divider()
 
+            if let error = state.error {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .accessibilityIdentifier("task-dates.error")
+            }
+
             if state.ready {
                 ScrollView {
-                    LGTaskCalendar(selection: state.selection, onSelect: choose)
-                        .padding(.horizontal, 16)
+                    VStack(spacing: 0) {
+                        LGTaskCalendar(selection: state.selection, onSelect: choose)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 8)
+                            .disabled(!enabled)
+                        if state.mixed && state.error == nil {
+                            Text(state.mixedTitle)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                        }
+                        dateActions
+                    }
                 }
                 .scrollBounceBehavior(.basedOnSize)
                 .scrollIndicators(.hidden)
-                .disabled(!enabled)
             } else {
                 Spacer()
                 if state.waiting {
@@ -134,42 +177,63 @@ struct LGTaskDateSheet: View {
                 }
                 Spacer()
             }
-
-            if let error = state.error {
-                Text(error)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .accessibilityIdentifier("task-dates.error")
-            } else if state.mixed {
-                Text(state.mixedTitle)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-            }
-
-            Button {
-                editingInput = false
-                try? context.emit(name: "clear", values: [:])
-            } label: {
-                Text(state.clearTitle)
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .disabled(!enabled || !state.canClear)
-            .opacity(enabled && state.canClear ? 1 : 0.45)
-            .accessibilityIdentifier("task-dates.clear")
-            .padding(.horizontal, 12)
-            .padding(.bottom, 4)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("sheet.task-dates")
+    }
+
+    @ViewBuilder
+    private var dateActions: some View {
+        if let options = state.repeatOptions {
+            Menu {
+                ForEach(options.choices) { choice in
+                    Button {
+                        editingInput = false
+                        try? context.emit(name: "choose", values: ["value": .string("repeat:\(choice.id)")])
+                    } label: {
+                        if choice.id == options.selection {
+                            Label(choice.label, systemImage: "checkmark")
+                        } else {
+                            Text(choice.label)
+                        }
+                    }
+                }
+            } label: {
+                HStack {
+                    Label(options.title, systemImage: "repeat")
+                    Spacer()
+                    Text(options.value)
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(minHeight: 44)
+                .padding(.horizontal, 12)
+            }
+            .foregroundStyle(.primary)
+            .disabled(!enabled)
+            .accessibilityIdentifier("task-dates.repeat")
+            .padding(.horizontal, 12)
+        }
+
+        Button {
+            editingInput = false
+            try? context.emit(name: "clear", values: [:])
+        } label: {
+            Text(state.clearTitle)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .padding(.horizontal, 12)
+                .background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .disabled(!enabled || !state.canClear)
+        .opacity(enabled && state.canClear ? 1 : 0.45)
+        .accessibilityIdentifier("task-dates.clear")
+        .padding(.horizontal, 12)
+        .padding(.bottom, 4)
     }
 
     private func choose(_ day: Date) {

@@ -15,5 +15,5 @@ expect prop:accessibility-identifier=button.outliner.selection.outdent
 expect prop:accessibility-identifier=button.outliner.selection.indent
 expect-absent prop:accessibility-identifier=button.outliner.selection.delete
 ext ext:outliner-block-row outliner-block-row menu-action '{"payload":"delete"}'
-expect-absent prop:accessibility-identifier=toolbar.outliner.selection
+expect-prop ext:bottom-chrome-switch selection-active false
 expect text:"First seeded block"

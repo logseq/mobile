@@ -19,7 +19,7 @@ appId: com.logseq.logseq
 - assertNotVisible:
     id: "field.composer"
 - tapOn:
-    id: "link.sidebar.journals"
+    id: "button.sidebar.dismiss"
     retryTapIfNoChange: false
 - tapOn:
     id: "button.composer.expand"
@@ -36,7 +36,7 @@ appId: com.logseq.logseq
 - assertNotVisible:
     id: "field.composer"
 - tapOn:
-    id: "link.sidebar.journals"
+    id: "button.sidebar.dismiss"
     retryTapIfNoChange: false
 - assertVisible:
     id: "button.composer.expand"

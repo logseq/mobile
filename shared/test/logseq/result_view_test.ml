@@ -743,6 +743,34 @@ let typed_edits_restart_and_sync_acknowledgements () = with_runtime (fun session
         Option.fold ~none:"missing" ~some:Dev_query.Edn_util.pr_str value ^ " at eid " ^ string_of_int id) in
   check_eq (List.sort Float.compare (List.map number values)) [5.; 8.])
 
+let status_cells_advance_only_the_configured_repeating_date () = with_runtime (fun session runtime conn ->
+  let module Date = Dev_query.Date_time_util in
+  let now = Int64.of_int (Session_types.now_ms ()) in
+  let scheduled = Date.minus Days 1 now and deadline = Date.plus Days 2 now in
+  let ident attr = Ds.Ref_to (Ds.Ident attr) in
+  ignore (Ds.transact_conn conn [
+    put alpha Task_recurrence.scheduled (Ds.Int64 scheduled);
+    put alpha Task_recurrence.deadline (Ds.Int64 deadline);
+    put alpha "logseq.property/status" (ident "logseq.property/status.doing");
+    put alpha "logseq.property.repeat/repeated?" (Ds.Bool true);
+    put alpha "logseq.property.repeat/temporal-property" (ident Task_recurrence.scheduled);
+  ]);
+  Graph_runtime.rebase runtime 42 [] [alpha];
+  let db = Graph_runtime.db runtime in
+  let attr = "logseq.property/status" in
+  let cell = Result_view.property_json db ~owner:alpha ~attr ~encode_block:(fun _ -> `Null) in
+  let status_eid = Option.get (Ds.entid db "db/ident" (Ds.Keyword Task_recurrence.done_ident)) in
+  let done_uuid = Option.get (Graph_read.uuid_for_eid db status_eid) in
+  let result = action session (base_action "editCell" table_view @ [
+    "blockUuid", `String alpha; "attr", `String attr; "expected", member "raw" cell;
+    "value", `String ""; "selectedValues", `List [`String done_uuid]]) in
+  check_eq ~msg:(Json.to_string result) (member "ok" result) (`Bool true);
+  let db = Graph_runtime.db runtime in
+  let id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid alpha)) in
+  check_eq (Graph_read.value db id Task_recurrence.scheduled) (Some (Ds.Int64 (Date.plus Days 2 scheduled)));
+  check_eq (Graph_read.value db id Task_recurrence.deadline) (Some (Ds.Int64 deadline));
+  check_eq (Task_recurrence.referenced_ident db id attr) (Some Task_recurrence.todo_ident))
+
 let date_cells_accept_calendar_dates () = with_runtime (fun session runtime _ ->
   let view = find_view table_view (read session) in
   let row = List.find (fun row -> member "uuid" (member "block" row) = `String alpha) (items "rows" view) in
@@ -1619,6 +1647,7 @@ let cases = [
   case "tuple tables and query evaluation failures render on both hosts" tuple_table_and_query_errors;
   case "typed edits survive restart and clear after real sync acknowledgements" typed_edits_restart_and_sync_acknowledgements;
   case "date cells accept valid calendar dates and reject impossible dates" date_cells_accept_calendar_dates;
+  case "status cells advance only the configured recurring date" status_cells_advance_only_the_configured_repeating_date;
   case "native boolean editing completes the real core effect pipeline" native_boolean_editor_uses_the_real_effect_pipeline;
   case "filter property catalogs survive hidden columns and corrupt sibling settings" available_properties_and_corrupt_filter_isolation;
   case "native view toolbar aligns tabs actions and expandable search to the owning bullet" native_toolbar_alignment_and_search_expansion;

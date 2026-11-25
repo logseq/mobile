@@ -73,7 +73,28 @@ import UIKit
         guard scroll.delegate?.scrollViewShouldScrollToTop?(scroll) != false, !topRequested else {
             throw failure("Nearby status-bar returns must retain the standard iOS animation")
         }
-        print("PASS: distant status-bar returns prepare the top window and nearby returns keep native animation")
+        func descendants(_ id: Int) -> [Int] {
+            [id] + (backend.model(id: id)?.children ?? backend.extensionModel(id: id)?.children ?? []).flatMap(descendants)
+        }
+        guard let strip = backend.rootIDs.flatMap(descendants).first(where: {
+            backend.extensionModel(id: $0)?.identifier == "bottom-tab-strip"
+        }) else { throw failure("Missing the bottom tab strip") }
+        for fraction in [0.8, 0.3] {
+            scroll.setContentOffset(CGPoint(x: 0, y: scroll.contentSize.height * fraction), animated: false)
+            try await Task.sleep(for: .milliseconds(400))
+            let halfway = scroll.contentOffset.y / 2
+            try backend.performExtensionEvent(node: strip, name: "home-double-tap", values: [:])
+            try await wait("Double-tapping Home must jump directly to the top") { scroll.contentOffset.y < halfway }
+            guard scroll.contentOffset.y <= -scroll.adjustedContentInset.top + 1 else {
+                throw failure("Double-tapping Home moved through an intermediate position")
+            }
+            try await wait("Home must mount the first block before returning to the top") {
+                views(window).compactMap { $0 as? UILabel }.contains { label in
+                    label.text == "Journal block 0" && label.convert(label.bounds, to: window).intersects(window.bounds)
+                }
+            }
+        }
+        print("PASS: repeated Home double-taps jump directly to the first journal block, and status-bar returns retain their platform behavior")
     }
 
     @MainActor private static func delegateContract() throws {

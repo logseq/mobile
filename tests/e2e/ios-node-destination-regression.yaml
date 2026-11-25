@@ -4,9 +4,7 @@ appId: com.logseq.logseq
     file: "__LOGSEQ_E2E_SETUP_FLOW__"
 - launchApp
 - tapOn:
-    id: "button.sidebar"
-- tapOn:
-    id: "link.sidebar.journals"
+    id: "tab.bottom.home"
     retryTapIfNoChange: true
 - extendedWaitUntil:
     notVisible:

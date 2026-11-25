@@ -291,6 +291,6 @@ val delete_blocks :
   string
 val delete_block :
   Session_types.session -> (string * Yojson.Basic.t) list -> string
-val reload_flashcards : Session_types.session -> int -> unit
+val reload_flashcards : ?resume:bool -> Session_types.session -> int -> unit
 val dispatch : Session_types.session -> string -> string option -> string
 val call : Session_types.session -> string -> string

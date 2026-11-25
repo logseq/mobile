@@ -20,8 +20,6 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "button.composer.expand"
 - tapOn:
-    id: "button.sidebar"
-- tapOn:
-    id: "link.sidebar.journals"
+    id: "tab.bottom.home"
 - assertNotVisible:
     id: "button.content-mode"

@@ -110,6 +110,24 @@ let session_asset (asset : Host_update.host_composer_asset) :
     local_path = asset.local_path;
     payload = asset.payload }
 
+let decode_tasks_view options =
+  let member key = Yojson.Safe.Util.member key options in
+  let bool key default = match member key with `Bool value -> value | _ -> default in
+  let defaults = Model.default_tasks_view in
+  { defaults with
+    group_by_page = bool "groupByPage" defaults.group_by_page;
+    sort_tasks = (match member "taskSort" with
+      | `String "deadline" -> Model.DeadlineDate
+      | `String "page-order" -> Model.PageOrder
+      | _ -> defaults.sort_tasks);
+    sort_pages = (match member "pageSort" with
+      | `String "name" -> Model.PageName
+      | `String "created" -> Model.PageCreated
+      | _ -> defaults.sort_pages);
+    compact = bool "compact" defaults.compact;
+    show_completed = bool "showCompleted" defaults.show_completed;
+    show_past = bool "showPast" defaults.show_past }
+
 let host_action (update : Host_update.host_update) =
   match update with
   | Settings settings ->
@@ -153,7 +171,8 @@ let host_action (update : Host_update.host_update) =
           List.map (fun uuid -> Model.NodeRoute uuid) session.search_path;
         selected_page_id = session.selected_page_id;
         settings_open = session.settings_open;
-        recent_graph_ids = session.recent_graph_ids }
+        recent_graph_ids = session.recent_graph_ids;
+        tasks_view = Option.map decode_tasks_view session.tasks_view }
   | Composer_draft draft -> Model.ApplyComposerDraft draft
   | Graph_loading loading -> Model.ApplyGraphLoading loading
   | Authentication authentication ->
@@ -191,6 +210,19 @@ let encode_session_routes routes =
   encode_string_vector
     (List.map (fun (Model.NodeRoute uuid) -> uuid) routes)
 
+let encode_tasks_view (options : Model.tasks_view) =
+  let task_sort = match options.sort_tasks with
+    | ScheduledDate -> "scheduled"
+    | DeadlineDate -> "deadline"
+    | PageOrder -> "page-order" in
+  let page_sort = match options.sort_pages with
+    | PageName -> "name"
+    | PageUpdated -> "updated"
+    | PageCreated -> "created" in
+  `Assoc ["groupByPage", `Bool options.group_by_page; "taskSort", `String task_sort;
+    "pageSort", `String page_sort; "compact", `Bool options.compact;
+    "showCompleted", `Bool options.show_completed; "showPast", `Bool options.show_past]
+
 let encode_ui_session (session : Model.ui_session) =
   "{\"graphId\":" ^ encode_option_string session.graph_id
   ^ ",\"destination\":"
@@ -215,7 +247,10 @@ let encode_ui_session (session : Model.ui_session) =
   ^ ",\"selectedPageId\":"
   ^ encode_option_string session.selected_page_id
   ^ ",\"settingsOpen\":" ^ string_of_bool session.settings_open
-  ^ ",\"recentGraphIds\":" ^ encode_string_vector session.recent_graph_ids ^ "}"
+  ^ ",\"recentGraphIds\":" ^ encode_string_vector session.recent_graph_ids
+  ^ ",\"tasksView\":"
+  ^ Yojson.Basic.to_string (Option.fold ~none:`Null ~some:encode_tasks_view session.tasks_view)
+  ^ "}"
 
 let encode_task_status (status : Model.task_status) =
   "{\"uuid\":" ^ Lui_wire.quoted status.uuid ^ ",\"ident\":"

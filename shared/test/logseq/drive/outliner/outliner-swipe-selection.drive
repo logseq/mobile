@@ -8,4 +8,4 @@ wait prop:accessibility-identifier=outliner.block.journal-block-1
 ext ext:outliner-block-row outliner-block-row toggle-selection '{"uuid":"journal-block-1"}'
 wait prop:accessibility-identifier=toolbar.outliner.selection
 press prop:accessibility-identifier=button.outliner.selection.done
-expect-absent prop:accessibility-identifier=toolbar.outliner.selection
+expect-prop ext:bottom-chrome-switch selection-active false

@@ -1504,13 +1504,17 @@ let journal_task_dates_partition_and_recover () = R.with_runtime (fun _ runtime 
   let uuids section response = List.map (member "uuid") (items section response) in
   check_eq (uuids "overdue" successful) [`String Q.alpha];
   check_eq (uuids "planned" successful) [`String Q.beta];
+  check_eq (uuids "today" successful) [`String Q.alpha];
+  check_eq (List.sort compare (uuids "upcoming" successful))
+    (List.sort compare [`String Q.alpha; `String Q.beta]);
   let display = member "block" (List.hd (items "overdue" successful)) in
   check_eq (member "uuid" display) (`String Q.alpha);
   check ~msg:"agenda retains rich block markup"
     (List.exists (fun part -> member "type" part = `String "emphasis") (items "markup" display));
   check ~msg:"dated blocks without status still render the graph's default status"
     (member "status" display <> `Null);
-  let other_graph = project ~graph:"other" ~read_rows:(fun _ _ _ -> `List [], `List [], `List []) () in
+  let other_graph = project ~graph:"other"
+    ~read_rows:(fun _ _ _ -> `List [], `List [], `List [], `List [], `List []) () in
   check_eq (uuids "overdue" other_graph) [];
   check_eq ~msg:"revisiting an unchanged resident graph reuses its task projection"
     (project ~read_rows:(fun _ _ _ -> failwith "cache miss") ()) successful;
@@ -1518,6 +1522,7 @@ let journal_task_dates_partition_and_recover () = R.with_runtime (fun _ runtime 
   check_eq (member "error" broken) (`Bool true);
   check_eq (member "retained" broken) (`Bool true);
   check_eq (member "planned" broken) (member "planned" successful);
+  check_eq (member "upcoming" broken) (member "upcoming" successful);
   let other = project ~graph:"unvisited" ~read_rows:(fun _ _ _ -> failwith "injected initial failure") () in
   check_eq (member "retained" other) (`Bool false);
   check_eq (uuids "planned" other) [];
@@ -1617,13 +1622,19 @@ let journal_tasks_use_a_bounded_date_window () = R.with_runtime (fun _ runtime c
   check_eq (uuids "overdue" initial) [`String Q.alpha];
   check_eq (uuids "planned" initial) [`String Q.beta];
   check_eq (uuids "doing" initial) [];
+  check_eq ~msg:"Today includes six prior days plus today" (uuids "today" initial) [];
+  check_eq ~msg:"Upcoming extends beyond the legacy seven-day agenda"
+    (List.sort compare (uuids "upcoming" initial)) (List.sort compare [`String Q.beta; `String Q.definition]);
   rebase runtime conn [
+    put Q.alpha Journal_task_dates.scheduled (Ds.Int64 (local 20261117));
     put Q.owner Journal_task_dates.scheduled (Ds.Int64 (local 20261123));
     Ds.Retract (Q.ref_uuid Q.definition, Journal_task_dates.deadline, None);
     put Q.definition "block/updated-at" (Ds.Int64 (local 20261115))];
   let changed = project () in
   check_eq (uuids "overdue" changed) [`String Q.alpha];
   check_eq (uuids "planned" changed) [`String Q.owner; `String Q.beta];
+  check_eq (List.sort compare (uuids "today" changed))
+    (List.sort compare [`String Q.alpha; `String Q.owner]);
   check_eq ~msg:"an undated Doing task outside the activity window is omitted"
     (uuids "doing" changed) [];
   let db = Graph_runtime.db runtime in
@@ -1719,6 +1730,55 @@ let journal_task_dates_calendar_preserves_each_task_time () =
     check_eq (Graph_runtime.pending_operations runtime) []))
     [1793511000000L; 1793514600000L]
 
+let recurring_tasks_advance_when_completed () = R.with_runtime (fun session runtime conn ->
+  let module Date = Dev_query.Date_time_util in
+  let now = Int64.of_int (Session_types.now_ms ()) in
+  let scheduled = Date.minus Days 2 now and deadline = Date.minus Days 1 now in
+  let status ident = Ds.Ref_to (Ds.Ident ("logseq.property/status." ^ ident)) in
+  rebase runtime conn [
+    put Q.alpha Journal_task_dates.scheduled (Ds.Int64 scheduled);
+    put Q.alpha Journal_task_dates.deadline (Ds.Int64 deadline);
+    put Q.alpha "logseq.property/status" (status "doing")];
+  let db = Graph_runtime.db runtime in
+  let targets = Journal_task_dates.values db
+    (Journal_task_dates.targets db [`String Q.alpha]) |> member "targets" in
+  let request = `Assoc ["action", `String "saveTaskDates"; "targets", targets;
+    "changes", `Assoc []; "repeat", `String "week"] in
+  ignore (result (Rpc_test.dispatch_json session "nodeProperty" (J.to_string request)));
+  let response = event session "setTaskStatus"
+    ["uuid", `String Q.alpha; "statusIdent", `String "logseq.property/status.done"] in
+  check_eq (value runtime Q.alpha Journal_task_dates.scheduled)
+    (Some (Ds.Int64 (Date.plus Weeks 1 scheduled)));
+  check_eq (value runtime Q.alpha Journal_task_dates.deadline)
+    (Some (Ds.Int64 (Date.plus Weeks 1 deadline)));
+  let db = Graph_runtime.db runtime in
+  let eid = Option.get (Ds.entid db "block/uuid" (Ds.Uuid Q.alpha)) in
+  check_eq (Task_recurrence.recurrence_json db eid |> member "unit") (`String "week");
+  check_eq (Option.bind (Graph_read.status_for_eid Result.ok db eid) (fun value -> value.Cache_model.ident))
+    (Some "logseq.property/status.todo");
+  let upcoming = items "upcoming" (member "journalTasks" response) in
+  check (List.exists (fun row -> member "uuid" row = `String Q.alpha) upcoming))
+
+let recurring_task_modes_keep_calendar_cadence () =
+  let module Date = Dev_query.Date_time_util in
+  let midnight day = Int64.to_int (Date.journal_day_to_local_ms day) in
+  let current = midnight 20260131 and now = midnight 20260301 in
+  let next mode = Task_recurrence.next_repetition ~current ~now {unit_name = "month"; frequency = 1; mode} in
+  check_eq (next From_scheduled) (Some (midnight 20260228));
+  check_eq (next Skip_to_future) (Some (midnight 20260331));
+  check_eq (next From_completion) (Some (midnight 20260401))
+
+let recurring_task_dates_advance_as_one_occurrence () =
+  let module Date = Dev_query.Date_time_util in
+  let start = Int64.to_int (Date.journal_day_to_local_ms 20260307) + 9 * 3_600_000 in
+  let deadline = start + 8 * 3_600_000 in
+  let now = Int64.to_int (Date.plus Days 1 (Int64.of_int start)) + 3 * 3_600_000 in
+  let rule = {Task_recurrence.unit_name = "day"; frequency = 1; mode = Skip_to_future} in
+  let dates = [Task_recurrence.scheduled, start; Task_recurrence.deadline, deadline] in
+  let next = Task_recurrence.next_dates ~now rule dates in
+  check_eq (List.map (fun (c : Pending_ops.property_change) -> c.value) next)
+    (List.map (fun (_, date) -> Some (Pending_ops.Int_value (Int64.to_int (Date.plus Days 2 (Int64.of_int date))))) dates)
+
 let task_date_sheet_rejects_invalid_text () =
   List.iter (fun backend -> R.with_runtime (fun session _ _ ->
     Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
@@ -1744,6 +1804,10 @@ let task_date_sheet_rejects_invalid_text () =
         Lui_protocol.String_map.singleton "value" (Lui_protocol.StringValue value))) in
       submit "invalid date";
       check_eq ~msg:"invalid text cannot save the midnight default" (submitted ()) None;
+      (match App_test.extension_property app node "payload" with
+       | Some (Lui_protocol.StringValue payload) ->
+         check_eq (member "error" (J.from_string payload)) (`String "Choose a valid date and time")
+       | _ -> fail "Expected task date sheet state");
       submit "October 15, 2030 at 3:00pm";
       match submitted () with
       | Some request ->
@@ -1777,6 +1841,25 @@ let agenda_date_save_releases_hidden_editor () = R.with_runtime (fun session run
   check_eq ~msg:"a date outside the agenda releases the scoped editor" (draft hidden) `Null;
   check_eq ~msg:"the title draft is saved before closing" (value runtime Q.alpha "block/title")
     (Some (Ds.String "Edited agenda task")))
+
+let today_date_save_keeps_visible_journal_task_editing () = R.with_runtime (fun session runtime conn ->
+  let now = Session_types.now_ms () in
+  let day = Cache_model.journal_day_for_ms now in
+  rebase runtime conn [put Q.page "block/journal-day" (Ds.Int64 (Int64.of_int day));
+    put Q.alpha Task_recurrence.scheduled (Ds.Int64 (Int64.of_int now))];
+  ignore (start session "Draft in Today");
+  let save collapsed original next =
+    let input = `Assoc [
+      "action", `String "saveTaskDates"; "editingUuid", `String Q.alpha;
+      "targets", `List [`Assoc ["uuid", `String Q.alpha; "scheduled", `Int original]];
+      "agendaCollapsedSections", `List collapsed;
+      "tasksView", `Assoc ["section", `String "today"; "groupByPage", `Bool true;
+        "showCompleted", `Bool true; "showPast", `Bool true];
+      "changes", `Assoc ["scheduled", `Int next]] in
+    result (Rpc_test.dispatch_json session "nodeProperty" (J.to_string input)) in
+  check_eq (member "uuid" (draft (save [] now (now + 1)))) (`String Q.alpha);
+  let group = Journal_task_dates.task_group_key "today" Q.page in
+  check_eq (draft (save [`String group] (now + 1) (now + 2))) `Null)
 
 let starting_old_task_makes_it_recent () = R.with_runtime (fun session runtime conn ->
   let before = Session_types.now_ms () in
@@ -1837,6 +1920,7 @@ let splitting_query_result_focuses_new_outline_row () =
 let cases = [
   case "task date sheet rejects invalid text" task_date_sheet_rejects_invalid_text;
   case "agenda date save releases the hidden editor" agenda_date_save_releases_hidden_editor;
+  case "saving a date preserves a visible Today task editor" today_date_save_keeps_visible_journal_task_editing;
   case "starting an old undated task makes it recent" starting_old_task_makes_it_recent;
   case "splitting a query result focuses the new outline row" splitting_query_result_focuses_new_outline_row;
   case "editor date buttons follow Task membership" editor_task_date_buttons_follow_task_membership;
@@ -1849,6 +1933,9 @@ let cases = [
   case "journal tasks omit blocks from today's journal" journal_tasks_omit_blocks_from_today;
   case "journal task projection survives page navigation" journal_task_projection_survives_page_navigation;
   case "journal task dates batch uses atomic guarded properties" journal_task_dates_batch_is_atomic_and_guarded;
+  case "recurring tasks advance when completed" recurring_tasks_advance_when_completed;
+  case "recurring task modes keep their calendar cadence" recurring_task_modes_keep_calendar_cadence;
+  case "recurring task dates advance as one occurrence" recurring_task_dates_advance_as_one_occurrence;
   case "calendar task dates preserve individual times" journal_task_dates_calendar_preserves_each_task_time;
   case "date command NLP inputs open empty without initializing the engine" temporal_command_inputs_open_empty;
   case "date command calendars preview valid NLP input on both hosts" temporal_command_previews_follow_valid_input;

@@ -13,7 +13,7 @@ appId: com.logseq.logseq
     id: "sidebar.navigation"
 - takeScreenshot: "tests/e2e/screenshots/ios-sidebar"
 - tapOn:
-    id: "link.sidebar.journals"
+    id: "button.sidebar.dismiss"
 - scrollUntilVisible:
     element: "Open Aug 24th, 2026"
     direction: DOWN

@@ -3235,11 +3235,13 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   check_eq ~msg:"the sidebar has no duplicate graph switch"
     (descendant_with_identifier renderer native_sidebar "button.graph-switch")
     (-1);
-  let journals_tweak = List.hd (children renderer sidebar_content) in
-  check_eq ~msg:"the sidebar content starts directly with navigation rows"
-    (child_with_identifier renderer journals_tweak "link.sidebar.journals") journals;
-  check_eq ~msg:"VoiceOver can identify Journals as the current destination"
-    (extension_property application journals_tweak "current") (Some (Lui_protocol.BoolValue true));
+  check_eq ~msg:"Home is available from the bottom tab bar" journals (-1);
+  check_eq ~msg:"Flashcards is available from the bottom tab bar" flashcards (-1);
+  let graphs_tweak = List.hd (children renderer sidebar_content) in
+  check_eq ~msg:"the sidebar starts with the Graphs link"
+    (child_with_identifier renderer graphs_tweak "link.sidebar.graphs") graphs;
+  check_eq ~msg:"VoiceOver can identify whether Graphs is the current destination"
+    (extension_property application graphs_tweak "current") (Some (Lui_protocol.BoolValue false));
   check_eq ~msg:"the sidebar keeps a consistent gap between navigation rows"
     (property_int renderer sidebar_content Lui_protocol.Gap)
     2;
@@ -3262,7 +3264,7 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     (property_string renderer graph_switch Lui_protocol.IconPlacementValue)
     "trailing";
   check_eq ~msg:"sidebar destinations use native navigation rows"
-    (property_string renderer journals Lui_protocol.RoleValue)
+    (property_string renderer graphs Lui_protocol.RoleValue)
     "navigation";
   List.iter (fun (row, icon, icon_size) ->
     check_eq ~msg:"sidebar destinations have a spacious touch target"
@@ -3278,7 +3280,7 @@ let sidebar_renders_main_branch_navigation_identifiers () =
       (property_int renderer label Lui_protocol.FontWeight) 500;
     check ~msg:"sidebar destinations have no selected background"
       (not (property_bool renderer row Lui_protocol.Selected)))
-    [journals, "app:calendar", 22; flashcards, "app:flashcards", 28; graphs, "app:folder", 22];
+    [graphs, "app:folder", 22];
   check ~msg:"sidebar keeps the recent section identifier" (recent <> -1);
   check_eq ~msg:"sidebar pages keep their document icon"
     (property_string renderer favorite_link Lui_protocol.InlineIconName)
@@ -3310,8 +3312,6 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   let favorite_tweak = parent_with_child_identifier renderer favorites "link.sidebar.page.page-a" in
   check_eq ~msg:"VoiceOver can identify the current favorite"
     (extension_property application favorite_tweak "current") (Some (Lui_protocol.BoolValue true));
-  check_eq ~msg:"VoiceOver no longer identifies Journals as current"
-    (extension_property application journals_tweak "current") (Some (Lui_protocol.BoolValue false));
   check_eq ~msg:"a selected page has no graph switch in its header"
     (descendant_with_identifier renderer navigation "button.graph-switch") (-1);
   send application Model.ShowJournals;
@@ -3512,8 +3512,12 @@ let flashcard_presentation_and_review_state_are_owned_by_lg () =
   check ~msg:"opening flashcards closes the sidebar"
     (not shown.sidebar_open);
   check_eq
-    ~msg:"entering flashcards clears page context before loading due cards"
+    ~msg:"reopening refreshes the active review against the graph"
     shown.pending_effects
+    [ Model.ClearSelectedPageEffect 1; Model.LoadFlashcardsEffect 2 ];
+  check_eq
+    ~msg:"opening flashcards with no review still loads due cards"
+    (Model.update (Model.initial ()) Model.ShowFlashcards).pending_effects
     [ Model.ClearSelectedPageEffect 1; Model.LoadFlashcardsEffect 2 ];
   check ~msg:"cloze reveal is retained in LG state"
     cloze.flashcard_cloze_revealed;
@@ -3525,7 +3529,12 @@ let flashcard_presentation_and_review_state_are_owned_by_lg () =
       Model.ClearSelectedPageEffect 1;
       Model.LoadFlashcardsEffect 2;
       Model.ReviewFlashcardEffect (3, "card-a", "good");
-    ]
+    ];
+  let resumed =
+    List.fold_left Model.update answer [Model.ShowJournals; Model.ShowTasks; Model.ShowFlashcards] in
+  check_eq ~msg:"switching tabs keeps the current card queue" resumed.flashcards [card];
+  check ~msg:"switching tabs keeps both reveal states"
+    (resumed.flashcard_cloze_revealed && resumed.flashcard_answer_revealed)
 
 let load_older_journals_coalesces_while_pending () =
   let requested = Model.update (Model.initial ()) Model.LoadOlderJournals in
@@ -4117,7 +4126,7 @@ let flashcards_render_empty_and_non_cloze_control_states () =
     <> -1)
 
 let sidebar_flashcards_link_selects_the_flashcard_destination () =
-  let application = App.create (ios_backend ()) in
+  let application = App.create (kotlin_backend ()) in
   start application;
   send application Model.OpenSidebar;
   flush application;
@@ -4134,7 +4143,7 @@ let sidebar_flashcards_link_selects_the_flashcard_destination () =
   check_eq ~msg:"the existing sidebar link enters the LG destination"
     (App.model application).destination Model.FlashcardsDestination;
   check ~msg:"selecting flashcards closes the controlled drawer"
-    (not (property_bool renderer root Lui_protocol.Selected))
+    (not (App.model application).sidebar_open)
 
 let graph_catalog_and_lifecycle_state_are_owned_by_lg () =
   let local = graph "local" "Local graph" false true in
@@ -5186,16 +5195,19 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   let tab name = descendant_with_identifier renderer tabs ("tab.bottom." ^ name) in
   let selected id = property_bool renderer id Lui_protocol.Selected in
   let strip = descendant_with_extension renderer application row "bottom-tab-strip" in
+  let current_strip () =
+    descendant_with_extension renderer application (native_bottom_chrome renderer application) "bottom-tab-strip" in
   let swipe_to index =
-    dispatch application (Lui_protocol.ExtensionEvent (strip, "bottom-tab-strip", "select",
+    dispatch application (Lui_protocol.ExtensionEvent (current_strip (), "bottom-tab-strip", "select",
       Lui_protocol.String_map.singleton "index" (Lui_protocol.IntValue index)));
     flush application in
   check_eq (children renderer tabs) (List.map tab ["home"; "tasks"; "flashcards"]);
   check_eq (children renderer actions) [search; capture];
-  List.iter (fun id ->
-    check_eq (property_int renderer id Lui_protocol.WidthValue) 50;
+  List.iter (fun (id, width) ->
+    check_eq (property_int renderer id Lui_protocol.WidthValue) width;
     check_eq (property_int renderer id Lui_protocol.HeightValue) 50)
-    (children renderer tabs @ children renderer actions);
+    (List.map (fun id -> id, 58) (children renderer tabs)
+     @ List.map (fun id -> id, 50) (children renderer actions));
   check_eq (property_string renderer capture Lui_protocol.InlineIconName) "app:capture-circle";
   let flashcard_icon () = property_string renderer (tab "flashcards") Lui_protocol.InlineIconName in
   check_eq (flashcard_icon ()) "app:flashcards";
@@ -5224,7 +5236,25 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   check_eq ~msg:"iOS keeps main's compact native-navigation inset"
     (property_int renderer top_inset Lui_protocol.HeightValue)
     16;
-  ()
+  let double_home () =
+    dispatch application (Lui_protocol.ExtensionEvent (current_strip (), "bottom-tab-strip", "home-double-tap",
+      Lui_protocol.String_map.empty));
+    flush application in
+  check_eq (App.model application).home_scroll_request 0;
+  double_home ();
+  swipe_to 1;
+  send application Model.ExpandComposer;
+  flush application;
+  check ~msg:"Capture defaults to a task on Tasks" ((App.model application).selected_task_status <> None);
+  send application Model.DismissComposer;
+  flush application;
+  double_home ();
+  check_eq (App.model application).home_scroll_request 2;
+  check_eq (App.model application).destination Model.JournalsDestination;
+  send application Model.ExpandComposer;
+  flush application;
+  check_eq ~msg:"Dismissing an empty task capture preserves normal capture on Home"
+    (App.model application).selected_task_status None
 
 let composer_dismissal_preserves_an_unsent_draft () =
   let expanded = Model.update (Model.initial ()) Model.ExpandComposer in
@@ -6053,6 +6083,11 @@ let composer_task_status_button_toggles_todo () =
   check ~msg:"selecting TODO reveals the scheduled button" (scheduled <> -1);
   check ~msg:"the task button exposes its selected state"
     (property_bool renderer button Lui_protocol.Selected);
+  List.iter (fun id ->
+    let control = descendant_with_identifier renderer navigation id in
+    check_eq ~msg:"Task mode highlights all task controls"
+      (property_string renderer control Lui_protocol.ForegroundValue) "link")
+    ["button.task-status"; "button.composer.scheduled"; "button.composer.deadline"];
   dispatch application (Lui_protocol.Press button);
   flush application;
   check_eq ~msg:"pressing the selected task button clears the status"
@@ -8028,6 +8063,29 @@ let journal_task_results_edit_and_select_the_source_block () =
       flush app)
       ["scheduled", "calendar", scheduled (); "deadline", "deadline", deadline ()]
   ) [true, ios_backend; false, kotlin_backend]
+
+let task_view_changes_settle_the_editor_and_respect_selection () =
+  let task = `Assoc ["uuid", `String "task"; "block", `Assoc ["pageId", `String "page"];
+    "past", `Bool true] in
+  let editing = Some {Model.editing_uuid = "task"; editing_is_task = Some true;
+    editing_title = "Draft"; caret_utf16_offset = 2} in
+  let current = { (Model.initial ()) with destination = Model.TasksDestination;
+    outliner_editing = editing; outliner_edit_scope = Some ("journal-task.task", "task");
+    journal_tasks = `Assoc ["today", `List [task]; "upcoming", `List []] } in
+  let upcoming = {current.tasks_view with tab = Model.TasksUpcoming} in
+  let update model options = Model.update model (Model.SetTasksView options) in
+  List.iter (fun options ->
+    let updated = update current options in
+    check_eq updated.outliner_edit_scope None;
+    check_eq updated.outliner_editing None;
+    check (List.exists (function Model.CancelOutlinerEditingEffect _ -> true | _ -> false)
+      updated.pending_effects))
+    [upcoming; {current.tasks_view with show_past = false}];
+  let selecting = {current with outliner_selected_block_ids = ["task"]} in
+  check_eq (update selecting upcoming) selecting;
+  let selecting = Model.update {current with outliner_editing = None} (Model.ToggleOutlinerSelection "task") in
+  check_eq ~msg:"switching tabs cannot race an in-flight selection"
+    (update selecting upcoming) selecting
 
 let older_journals_only_appear_at_the_journal_root () =
   let available =
@@ -10583,7 +10641,9 @@ let typed_toolbars_keep_reactive_width_and_labels () =
         (View_base.outliner_editor_task_label (App.model application)))
       [None; done_status; None];
     snapshot None [] [];
-    check_eq ~msg:"empty selection removes the toolbar" (find "toolbar.outliner.selection") (-1);
+    let switch = extension_node application "bottom-chrome-switch" in
+    check_eq ~msg:"empty selection returns to the bottom tabs"
+      (extension_property application switch "selection-active") (Some (Lui_protocol.BoolValue false));
     check_eq ~msg:"ending editing removes the editor toolbar" (find "toolbar.outliner.editor") (-1))
 
 let parent_selection_highlights_visible_descendants () =
@@ -10638,8 +10698,13 @@ let pushed_node_selection_has_a_destination_toolbar () =
   flush application;
   let renderer = Lui_app.runtime application in
   let chrome = native_bottom_chrome renderer application in
+  let switch = descendant_with_extension renderer application chrome "bottom-chrome-switch" in
+  let capture_pane, selection_pane =
+    match children renderer switch with [capture; selection] -> capture, selection | _ -> failwith "missing chrome panes" in
   let toolbar = descendant_with_identifier renderer chrome "toolbar.outliner.selection" in
   check ~msg:"the navigation chrome shows the active pushed node’s selection toolbar" (toolbar <> -1);
+  check ~msg:"tabs are inert during selection" (property_bool renderer capture_pane Lui_protocol.Inert);
+  check ~msg:"selection actions accept input" (not (property_bool renderer selection_pane Lui_protocol.Inert));
   let copy = descendant_with_identifier renderer toolbar "button.outliner.selection.copy" in
   dispatch application (Lui_protocol.Press copy);
   flush application;
@@ -10653,15 +10718,19 @@ let pushed_node_selection_has_a_destination_toolbar () =
     flush application
   in
   apply [unselected_route];
-  check_eq ~msg:"clearing route selection removes its toolbar"
-    (descendant_with_identifier renderer chrome "toolbar.outliner.selection") (-1);
+  check ~msg:"clearing route selection makes the outgoing toolbar inert"
+    (property_bool renderer selection_pane Lui_protocol.Inert);
+  check ~msg:"tabs can accept input after selection"
+    (not (property_bool renderer capture_pane Lui_protocol.Inert));
   send application (Model.RequestAppNode "grandchild");
   let nested = { (node_projection "grandchild" "page" "Grandchild" [] []) with
     Model.node_outliner_rows = [outline_row "grandchild" "Grandchild"] } in
   apply [route; nested];
-  check_eq ~msg:"a covered destination cannot keep its selection toolbar active"
-    (descendant_with_identifier renderer chrome "toolbar.outliner.selection") (-1);
+  check ~msg:"a covered destination cannot keep its selection toolbar active"
+    (property_bool renderer selection_pane Lui_protocol.Inert);
   apply [route; {nested with Model.node_outliner_selected_block_ids = ["grandchild"]}];
+  check ~msg:"the visible destination restores the same toolbar"
+    (not (property_bool renderer selection_pane Lui_protocol.Inert));
   let toolbar_count = descendant_count_with_identifier renderer
     (Lui_app.root_node application) "toolbar.outliner.selection" in
   check_eq ~msg:"only the visible destination owns a select bar" toolbar_count 1
@@ -12024,6 +12093,7 @@ let cases =
     case "graph-switch-rearms-journal-pagination" graph_switch_rearms_journal_pagination;
     case "journal-agenda-is-retained-across-navigation" journal_agenda_is_retained_across_navigation;
     case "journal-task-results-edit-and-select-the-source-block" journal_task_results_edit_and_select_the_source_block;
+    case "task view changes settle the editor and respect selection" task_view_changes_settle_the_editor_and_respect_selection;
     case "older-journals-only-appear-at-the-journal-root" older_journals_only_appear_at_the_journal_root;
     case "journal-date-headings-open-their-page-on-both-hosts" journal_date_headings_open_their_page_on_both_hosts;
     case "journal dates follow the app language on both hosts" journal_dates_follow_the_app_language;

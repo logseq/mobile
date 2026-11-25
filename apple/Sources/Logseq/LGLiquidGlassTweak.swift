@@ -56,6 +56,47 @@ extension EnvironmentValues {
     @Entry var lgUsesSideCaptureActions = false
 }
 
+@MainActor
+struct LGBottomChromeSwitch: View {
+    let context: LUIAppleExtensionViewContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    static func register(in registry: LUIAppleExtensionRegistry) throws {
+        try registry.register(LUIAppleExtension(
+            identifier: "bottom-chrome-switch",
+            fingerprint: "lui-extension-v1|20:bottom-chrome-switch|profiles:ios/swiftui|standard-children:1|children:|properties:16:selection-active:bool:required:none|events:",
+            acceptsStandardChildren: true,
+            properties: [.init(name: "selection-active", kind: .bool, isRequired: true)]
+        ) { AnyView(LGBottomChromeSwitch(context: $0)) })
+    }
+
+    var body: some View {
+        let _ = context.revision
+        let selectionActive = context.property("selection-active") == .bool(true)
+        let children = context.childIDs
+        ZStack(alignment: .bottom) {
+            if children.count == 2 {
+                if selectionActive {
+                    chrome(children[1])
+                } else {
+                    chrome(children[0])
+                }
+            }
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: selectionActive)
+    }
+
+    private func chrome(_ id: Int) -> some View {
+        // Fade each capsule with its own icons, with a brief overlap on exchange.
+        context.content(for: id)
+            .compositingGroup()
+            .transition(reduceMotion ? .identity : .asymmetric(
+                insertion: .opacity.animation(.easeOut(duration: 0.12).delay(0.06)),
+                removal: .opacity.animation(.easeIn(duration: 0.12))
+            ))
+    }
+}
+
 private struct LGBottomBarActions: ViewModifier {
     @Environment(\.lgUsesSideCaptureActions) private var usesSideCaptureActions
 
@@ -66,10 +107,6 @@ private struct LGBottomBarActions: ViewModifier {
     }
 }
 
-private extension EnvironmentValues {
-    @Entry var lgCollectBottomBarGlass = false
-}
-
 struct LGBottomBarGlass: ViewModifier {
     enum Surface {
         case capture
@@ -77,68 +114,16 @@ struct LGBottomBarGlass: ViewModifier {
         case trailing
     }
 
-    enum Position: CaseIterable { case leading, trailing }
-
     let surface: Surface
-    @Environment(\.lgCollectBottomBarGlass) private var collectsGlass
-
-    private var position: Position { surface == .trailing ? .trailing : .leading }
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if collectsGlass {
-            content.anchorPreference(key: LGBottomBarGlassBounds.self, value: .bounds) { anchor in
-                [position: anchor]
-            }
-        } else if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, *) {
             content.glassEffect(.regular.interactive(surface != .capture), in: .capsule)
         } else if surface == .capture {
             content.background(.regularMaterial, in: Capsule())
         } else {
             content.modifier(LGLiquidGlassSurface(shape: .capsule))
-        }
-    }
-}
-
-private struct LGBottomBarGlassBounds: PreferenceKey {
-    static let defaultValue: [LGBottomBarGlass.Position: Anchor<CGRect>] = [:]
-
-    static func reduce(value: inout Value, nextValue: () -> Value) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
-    }
-}
-
-struct LGBottomBarGlassLayer: ViewModifier {
-    let animation: Animation?
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            GlassEffectContainer(spacing: 0) {
-                content.environment(\.lgCollectBottomBarGlass, true)
-            }
-            .backgroundPreferenceValue(LGBottomBarGlassBounds.self) { anchors in
-                GeometryReader { geometry in
-                    // The model replaces the controls. Their glass stays mounted
-                    // and animates to the new bounds behind the incoming controls.
-                    GlassEffectContainer(spacing: 0) {
-                        ForEach(LGBottomBarGlass.Position.allCases, id: \.self) { position in
-                            if let anchor = anchors[position] {
-                                let frame = geometry[anchor]
-                                Color.clear
-                                    .frame(width: frame.width, height: frame.height)
-                                    .glassEffect(.regular, in: .capsule)
-                                    .position(x: frame.midX, y: frame.midY)
-                                    .animation(animation, value: frame)
-                            }
-                        }
-                    }
-                }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
-        } else {
-            content
         }
     }
 }

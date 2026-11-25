@@ -281,6 +281,7 @@ type page_entry = Outline_entry of retained_row | Reference_entry of reference_e
   | Placeholder_entry of placeholder
   | Journal_task_gap
   | Journal_task_heading of string
+  | Tasks_page_heading of string * string * string
   | Journal_task_row of Yojson.Basic.t * bool
   | Journal_task_error
 
@@ -320,6 +321,9 @@ let task_field name = function
 let journal_task_uuid task =
   match task_field "uuid" task with `String uuid -> uuid | _ -> ""
 
+let task_list agenda section =
+  match task_field section agenda with `List rows -> rows | _ -> []
+
 let journal_task_scope uuid = "journal-task." ^ uuid
 
 let journal_task_editing (current : Model.logseq_model) task =
@@ -331,12 +335,9 @@ let journal_task_editing (current : Model.logseq_model) task =
 let journal_task_editing_row (current : Model.logseq_model) =
   match current.outliner_edit_scope with
   | Some (scope, _) when String.starts_with ~prefix:"journal-task." scope ->
-    ["overdue"; "doing"; "planned"] |> List.find_map (fun section ->
-      match task_field section current.journal_tasks with
-      | `List tasks ->
-        Option.bind (List.find_opt (journal_task_editing current) tasks)
-          (fun task -> Response_snapshot.related_row (task_field "block" task))
-      | _ -> None)
+    ["today"; "upcoming"; "overdue"; "doing"; "planned"] |> List.find_map (fun section ->
+      Option.bind (List.find_opt (journal_task_editing current) (task_list current.journal_tasks section))
+        (fun task -> Response_snapshot.related_row (task_field "block" task)))
   | _ -> None
 
 let task_rows current =
@@ -349,6 +350,66 @@ let task_rows current =
     | _ -> [] in
   (if task_field "error" current.journal_tasks = `Bool true then [Journal_task_error] else [])
   @ section "overdue" @ section "doing" @ section "planned"
+
+let tasks_view_rows (current : Model.logseq_model) =
+  let options = current.tasks_view in
+  let section = Model.tasks_view_section options.tab in
+  let agenda = current.journal_tasks in
+  let text = function `String text -> text | _ -> "" in
+  let number ~default = function `Int value -> value | _ -> default in
+  let page_id task = text (task_field "pageId" (task_field "block" task)) in
+  let page_title task =
+    let day = match task_field "pageJournalDay" task with `Int day -> Some day | _ -> None in
+    let title = View_base.journal_display_title current day (text (task_field "page" task)) in
+    if title = "" then View_base.tr current "Untitled" else title in
+  let order task = match task_field "orderPath" task with
+    | `List path -> List.map text path
+    | _ -> [text (task_field "order" (task_field "block" task))] in
+  let date field task = number ~default:max_int (task_field field task) in
+  let compare_tasks left right =
+    match options.sort_tasks with
+    | ScheduledDate -> compare (date "scheduled" left, date "deadline" left)
+        (date "scheduled" right, date "deadline" right)
+    | DeadlineDate -> compare (date "deadline" left, date "scheduled" left)
+        (date "deadline" right, date "scheduled" right)
+    | PageOrder -> compare (page_id left, order left) (page_id right, order right) in
+  let compare_pages left right =
+    let by_name () = compare (String.lowercase_ascii (page_title left), page_id left)
+      (String.lowercase_ascii (page_title right), page_id right) in
+    let latest field =
+      let activity task = number ~default:min_int (task_field field task) in
+      match Int.compare (activity right) (activity left) with
+      | 0 -> by_name ()
+      | order -> order in
+    match options.sort_pages with
+    | PageName -> by_name () | PageUpdated -> latest "pageUpdated" | PageCreated -> latest "pageCreated" in
+  let display = Journal_task_dates.visible_in_tasks ~section ~show_completed:options.show_completed
+    ~show_past:options.show_past in
+  let render tasks =
+    List.sort (fun left right -> match compare_tasks left right with
+      | 0 -> String.compare (journal_task_uuid left) (journal_task_uuid right)
+      | order -> order) tasks
+    |> List.map (fun task -> Journal_task_row (task, journal_task_editing current task)) in
+  match task_field section agenda with
+  | `List rows ->
+    let tasks = List.filter display rows in
+    let entries = if not options.group_by_page then render tasks else
+      let groups = Hashtbl.create 16 in
+      List.iter (fun task ->
+        let id = page_id task in
+        let previous = Option.value ~default:[] (Hashtbl.find_opt groups id) in
+        Hashtbl.replace groups id (task :: previous)) tasks;
+      Hashtbl.to_seq_values groups |> List.of_seq
+      |> List.sort (fun left right -> compare_pages (List.hd left) (List.hd right))
+      |> List.concat_map (function
+        | task :: _ as tasks ->
+          let page = page_id task in
+          let key = Journal_task_dates.task_group_key section page in
+          Tasks_page_heading (key, page, page_title task) ::
+          (if List.mem key (Model.journal_tasks_collapsed current) then [] else render tasks)
+        | [] -> []) in
+    (if task_field "error" agenda = `Bool true then [Journal_task_error] else []) @ entries
+  | _ -> if options.tab = TasksToday then task_rows current else []
 
 let embedded_task_rows current =
   match task_rows current with [] -> [] | entries -> Journal_task_gap :: entries
@@ -419,7 +480,7 @@ let page_entries ?(include_tasks = true) rows current =
     let page = function
       | Outline_entry row -> Some row.value.page_id
       | Placeholder_entry value -> Some value.parent_uuid
-      | Journal_task_gap | Journal_task_heading _ | Journal_task_row _ | Journal_task_error ->
+      | Journal_task_gap | Journal_task_heading _ | Tasks_page_heading _ | Journal_task_row _ | Journal_task_error ->
         (match task_field "page" current.journal_tasks with `String page -> Some page | _ -> None)
       | Reference_entry _ -> None in
     match outline with
@@ -439,6 +500,7 @@ let page_entry_identifier = function
   | Placeholder_entry value -> "placeholder." ^ value.parent_uuid
   | Journal_task_gap -> "journal-tasks.gap"
   | Journal_task_heading section -> "journal-tasks." ^ section
+  | Tasks_page_heading (key, _, _) -> key
   | Journal_task_row (task, _) -> journal_task_scope (journal_task_uuid task)
   | Journal_task_error -> "journal-tasks.error"
 

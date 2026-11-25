@@ -585,9 +585,10 @@ let row_selected_ (current : Model.logseq_model) (row : Model.outline_row) =
 
 let outliner_selection_active_ (current : Model.logseq_model) =
   current.outliner_selected_block_ids <> []
+  || (current.destination = TasksDestination && current.tasks_selection_mode)
 
 let outliner_selection_inactive_ (current : Model.logseq_model) =
-  current.outliner_selected_block_ids = []
+  not (outliner_selection_active_ current)
 
 let outliner_editor_active_ (current : Model.logseq_model) =
   outliner_selection_inactive_ current && current.outliner_editing <> None
@@ -759,9 +760,7 @@ let bottom_chrome_presentation ?(primary_tabs = false) (current : Model.logseq_m
   else if outliner_selection_active_ current then "outliner-selection"
   else if outliner_editor_active_ current then "outliner-editor"
   else if
-    (journals_destination_ current
-     || (primary_tabs && graph_selected_ current
-         && (tasks_destination_ current || flashcards_destination_ current)))
+    (journals_destination_ current || (primary_tabs && graph_selected_ current))
     && (not current.search_open)
     && (not (graph_loading_visible_ current))
     && not (graph_picker_visible_ current)

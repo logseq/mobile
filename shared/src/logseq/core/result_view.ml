@@ -599,7 +599,8 @@ let edit_property ?(text_value = false) ?(allow_builtin = false) db ~now ~fresh_
       | _ -> invalid_arg "Invalid selected values" in
     let expected = Option.map (semantic db) (raw db target_id attr) in
     let intent = if attr = "logseq.property/status" then
-        Ops.task_status_edit ~now ~uuid:target ~expected ~value:assigned
+        Task_recurrence.status_edit ~db ~now ~uuid:target ~expected ~value:assigned
+          (Ops.task_status_edit ~now ~uuid:target ~expected ~value:assigned)
       else Ops.Set_property {uuid = target; attr; expected; value = assigned} in
     if !created = [] then intent else Ops.Atomic (List.rev !created @ [intent])
 let begin_text_edit db ~now ~fresh_uuid input =

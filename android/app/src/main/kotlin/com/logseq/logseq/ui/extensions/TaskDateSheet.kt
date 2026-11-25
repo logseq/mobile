@@ -16,6 +16,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerState
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -159,6 +161,12 @@ private fun TaskDateSheet(context: LuiExtensionContext, state: JSONObject) {
                 Text(state.optString("mixedTitle"), Modifier.padding(horizontal = 16.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
+            state.optJSONObject("repeatOptions")?.let { options ->
+                TaskDateRepeatMenu(options, enabled) { choice ->
+                    focus.clearFocus()
+                    context.emit("choose", mapOf("value" to "repeat:$choice"))
+                }
+            }
             TextButton(
                 onClick = {
                     focus.clearFocus()
@@ -167,6 +175,35 @@ private fun TaskDateSheet(context: LuiExtensionContext, state: JSONObject) {
                 enabled = enabled && state.optBoolean("canClear"),
                 modifier = Modifier.padding(horizontal = 12.dp).testTag("task-dates.clear"),
             ) { Text(state.optString("clearTitle")) }
+        }
+    }
+}
+
+@Composable
+private fun TaskDateRepeatMenu(options: JSONObject, enabled: Boolean, onChoose: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val choices = options.optJSONArray("choices")
+    Box(Modifier.padding(horizontal = 12.dp)) {
+        TextButton(
+            onClick = { expanded = true },
+            enabled = enabled,
+            modifier = Modifier.testTag("task-dates.repeat"),
+        ) { Text("${options.optString("title")} · ${options.optString("value")}") }
+        DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
+            for (index in 0 until (choices?.length() ?: 0)) {
+                val choice = choices?.optJSONObject(index) ?: continue
+                val id = choice.optString("id")
+                DropdownMenuItem(
+                    text = { Text(choice.optString("label")) },
+                    trailingIcon = if (id == options.optString("selection")) {
+                        { Icon(Icons.Filled.Check, contentDescription = null) }
+                    } else null,
+                    onClick = {
+                        expanded = false
+                        onChoose(id)
+                    },
+                )
+            }
         }
     }
 }

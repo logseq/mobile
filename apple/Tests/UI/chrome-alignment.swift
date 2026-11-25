@@ -35,6 +35,18 @@ import SwiftUI
             return result
         }
         var errors: [String] = []
+        for identifier in ["tab.bottom.tasks", "tasks.tab.upcoming"] {
+            try backend.performPress(node: id(identifier))
+            try await Task.sleep(for: .milliseconds(350))
+            for item in ["tasks.empty.icon", "tasks.empty"] {
+                let empty = try frame(item)
+                if abs(empty.midX - window.bounds.midX) > 1 {
+                    errors.append("\(item) must be centered after pressing \(identifier): \(empty)")
+                }
+            }
+        }
+        try backend.performPress(node: id("tab.bottom.home"))
+        try await Task.sleep(for: .milliseconds(350))
         try backend.performPress(node: id("button.composer.expand"))
         try await Task.sleep(for: .milliseconds(800))
         let controls = try frame("row.composer.controls")
@@ -48,25 +60,36 @@ import SwiftUI
                 errors.append(identifier + " does not use the full centered footer touch cell")
             }
         }
+        try backend.performPress(node: id("button.task-status"))
+        try await Task.sleep(for: .milliseconds(350))
+        let taskModeControls = try [
+            "button.attachment", "button.task-status", "button.composer.scheduled",
+            "button.composer.deadline", "button.composer.tags",
+        ].map(frame)
+        let intervals = zip(taskModeControls, taskModeControls.dropFirst()).map { $1.midX - $0.midX }
+        if intervals.contains(where: { abs($0 - intervals[0]) > 0.5 }) {
+            errors.append("Task composer controls must have equal spacing: \(intervals)")
+        }
         try backend.performPress(node: id("button.sidebar"))
         try await Task.sleep(for: .milliseconds(1500))
         let settings = try frame("button.sidebar.settings")
         let sidebar = try frame("sidebar.navigation")
         let composer = try frame("row.bottom.capture")
-        let journalsButton = try frame("link.sidebar.journals")
-        let journalsID = try id("link.sidebar.journals")
-        guard let contentID = backend.model(id: journalsID)?.children.first,
-              let journals = frames[contentID] else { throw failure("Missing Journals label frame") }
+        let graphsButton = try frame("link.sidebar.graphs")
+        let graphsID = try id("link.sidebar.graphs")
+        guard let contentID = backend.model(id: graphsID)?.children.first,
+              let graphs = frames[contentID] else { throw failure("Missing Graphs label frame") }
         let toolbar = try frame("button.sidebar")
-        print("CHROME sidebar=\(sidebar) journals=\(journals) toolbar=\(toolbar) settings=\(settings) composer=\(composer)")
-        if journals.midY <= toolbar.midY || journals.midY > toolbar.maxY + 4 {
-            errors.append("Journals must sit just below the header controls")
+        print("CHROME sidebar=\(sidebar) graphs=\(graphs) toolbar=\(toolbar) settings=\(settings) composer=\(composer)")
+        if graphs.midY <= toolbar.midY || graphs.midY > toolbar.maxY + 4 {
+            errors.append("Graphs must sit just below the header controls")
         }
-        if journalsButton.minY < window.safeAreaInsets.top {
-            errors.append("The Journals touch target must clear the status area")
+        if graphsButton.minY < window.safeAreaInsets.top {
+            errors.append("The Graphs touch target must clear the status area")
         }
-        if abs(sidebar.maxX - settings.maxX - 16) > 1 || settings.width < 44 || settings.height < 44 {
-            errors.append("Settings must sit at the sidebar's bottom trailing corner with a 44-point touch target")
+        if abs(window.bounds.maxX - window.safeAreaInsets.right - settings.maxX - 16) > 1
+            || settings.width < 44 || settings.height < 44 {
+            errors.append("Settings must sit at the screen's bottom trailing corner with a 44-point touch target")
         }
         if abs(settings.midY - composer.midY) > 1 {
             errors.append("Settings must share the collapsed composer's vertical center")

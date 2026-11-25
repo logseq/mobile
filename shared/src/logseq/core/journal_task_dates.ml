@@ -2,13 +2,37 @@ module Ds = Datascript
 module Read = Graph_read
 module Json = Yojson.Basic
 
-let scheduled = "logseq.property/scheduled"
-let deadline = "logseq.property/deadline"
-let fields = ["scheduled", scheduled; "deadline", deadline]
+let scheduled = Task_recurrence.scheduled
+let deadline = Task_recurrence.deadline
+let fields = Task_recurrence.fields
 let member = Json.Util.member
 let json_int = function Some value -> `Int value | None -> `Null
 let identity value = Ok value
 let week_days = 7
+let max_upcoming_days = 31
+
+let task_group_key section page = "task-page:" ^ section ^ ":" ^ page
+
+let task_field key = function
+  | `Assoc fields -> Option.value ~default:`Null (List.assoc_opt key fields)
+  | _ -> `Null
+
+let visible_in_tasks ~section ~show_completed ~show_past task =
+  let status = task_field "ident" (task_field "status" (task_field "block" task)) in
+  (show_completed || status <> `String Task_recurrence.done_ident)
+  && (section = "upcoming" || show_past || task_field "past" task <> `Bool true)
+
+let task_is_visible agenda ~section ~collapsed ~group_by_page ~show_completed ~show_past uuid =
+  match task_field section agenda with
+  | `List tasks ->
+    List.exists (fun task ->
+      task_field "uuid" task = `String uuid
+      && visible_in_tasks ~section ~show_completed ~show_past task
+      && (not group_by_page ||
+        match task_field "pageId" (task_field "block" task) with
+        | `String page -> not (List.mem (task_group_key section page) collapsed)
+        | _ -> true)) tasks
+  | _ -> false
 
 let configuration db =
   let read_config datom =
@@ -19,22 +43,16 @@ let configuration db =
   | Some (Ds.Map entries) ->
     let setting key = List.assoc_opt (Ds.Keyword key) entries in
     let days = match setting "scheduled/future-days" with
-      | Some (Ds.Int64 days) when days >= 0L -> Int64.to_int (min (Int64.of_int week_days) days)
-      | _ -> week_days in
+      | Some (Ds.Int64 days) when days >= 0L -> Int64.to_int (min (Int64.of_int max_upcoming_days) days)
+      | _ -> max_upcoming_days in
     setting "feature/disable-scheduled-and-deadline-query?" = Some (Ds.Bool true), days
-  | _ -> false, week_days
+  | _ -> false, max_upcoming_days
 
-let valid_date value =
-  value >= -62135596800000 && value <= 253402300799999
-
-let date db eid attr =
-  match Read.int_value (Read.value db eid attr) with
-  | Some value when valid_date value -> Some value
-  | _ -> None
+let valid_date = Task_recurrence.valid_date
+let date = Task_recurrence.date
 
 let status_attr = "logseq.property/status"
 let doing_ident = "logseq.property/status.doing"
-
 type section = Overdue | Doing | Planned
 
 let rows db today lookahead =
@@ -42,10 +60,13 @@ let rows db today lookahead =
     Option.value ~default:today (Dev_query.Date_time_util.journal_day_plus today days) in
   let first_day = offset_day (-week_days) in
   let last_day = offset_day week_days in
-  let end_day = Option.map offset_day lookahead in
-  let midnight = Dev_query.Date_time_util.journal_day_to_local_ms in
-  let start = midnight first_day in
-  let stop = Int64.pred (midnight (offset_day (week_days + 1))) in
+  let first_today = offset_day (1 - week_days) in
+  let first_upcoming = offset_day 1 in
+  let module Date = Dev_query.Date_time_util in
+  let midnight = Date.journal_day_to_local_ms today in
+  let last_upcoming = Cache_model.journal_day_for_ms (Int64.to_int (Date.plus Months 1 midnight)) in
+  let end_day = Option.map (fun days -> offset_day (min week_days days)) lookahead in
+  let upcoming_end = Option.map (fun days -> min last_upcoming (offset_day days)) lookahead in
   let within_window = function
     | Some timestamp as value ->
       let day = Cache_model.journal_day_for_ms timestamp in
@@ -59,18 +80,21 @@ let rows db today lookahead =
     | Some _ as updated -> updated
     | None -> activity "block/created-at" in
   let seen = Hashtbl.create 32 in
-  let page_titles = Hashtbl.create 16 in
+  let pages = Hashtbl.create 16 in
   let decorate = Node_presentation.decorate db in
   let default_status_eid = Read.default_task_status_eid db in
   let default_status = Option.bind default_status_eid (Read.choice_metadata identity db) in
-  let page_title page =
-    match Hashtbl.find_opt page_titles page with
-    | Some title -> title
+  let page_details page =
+    match Hashtbl.find_opt pages page with
+    | Some details -> details
     | None ->
       let title = match Read.entity_summary identity db page with
         | Some summary -> summary.title | None -> "" in
-      Hashtbl.add page_titles page title;
-      title in
+      let created = Read.int_value (Read.value db page "block/created-at") in
+      let updated = Read.int_value (Read.value db page "block/updated-at") in
+      let details = title, created, (if updated = None then created else updated) in
+      Hashtbl.add pages page details;
+      details in
   let eids_with_ref attr value =
     Datascript_value.datoms_by_ref db Ds.Aevt attr value |> Seq.map (fun datom -> datom.Ds.e) in
   let doing_eids = match Ds.entid db "db/ident" (Ds.Keyword doing_ident) with
@@ -83,9 +107,10 @@ let rows db today lookahead =
           | Some task -> Read.class_descendants db task
           | None -> [] in
         Seq.append explicit (List.to_seq classes |> Seq.flat_map (eids_with_ref "block/tags")) in
-  let dated_eids = match end_day with
-    | None -> Seq.empty
-    | Some _ -> List.to_seq fields |> Seq.flat_map (fun (_, attr) ->
+  let start = Date.journal_day_to_local_ms first_day in
+  let next_after_upcoming = Option.value ~default:last_upcoming (Date.journal_day_plus last_upcoming 1) in
+  let stop = Int64.pred (Date.journal_day_to_local_ms next_after_upcoming) in
+  let dated_eids = List.to_seq fields |> Seq.flat_map (fun (_, attr) ->
       let datoms = if Ds.Schema.schema_attr_is_avet_accessible (Ds.schema db) attr then
           Ds.index_range db attr ~start:(Ds.Int64 start) ~stop:(Ds.Int64 stop) ()
         else Ds.Db.datoms db Ds.Aevt ~a:attr () in
@@ -93,6 +118,20 @@ let rows db today lookahead =
         match datom.v with
         | Ds.Int64 time | Ds.Instant time when time >= start && time <= stop -> Some datom.e
         | _ -> None) datoms) in
+  let recent_eids = Seq.init week_days (fun i -> offset_day (-i)) |> Seq.flat_map (fun day ->
+    match Option.bind (Read.journal_page_uuid db day)
+      (fun uuid -> Ds.entid db "block/uuid" (Ds.Uuid uuid)) with
+    | Some page -> eids_with_ref "block/page" page | None -> Seq.empty) in
+  let order_path eid page =
+    let rec collect seen path eid =
+      if eid = page || List.mem eid seen then path
+      else
+        let order = Option.value ~default:"" (Read.string_value (Read.value db eid "block/order")) in
+        let path = `String order :: path in
+        match Read.ref_eids db eid "block/parent" with
+        | parent :: _ -> collect (eid :: seen) path parent
+        | [] -> path in
+    collect [] [] eid in
   let candidates = Seq.filter_map (fun eid ->
     if Hashtbl.mem seen eid then None else (
       Hashtbl.add seen eid ();
@@ -106,7 +145,6 @@ let rows db today lookahead =
       let doing_qualifies = if scheduled_at = None && deadline_at = None then
           within_window (Lazy.force activity) <> None
         else earliest <> None in
-      if not doing_qualifies then None else
       let status = Read.status_for_eid identity db eid in
       let ident = Option.bind status (fun status -> status.Cache_model.ident) in
       let dated_section = match earliest, end_day with
@@ -119,29 +157,50 @@ let rows db today lookahead =
       let section = match ident, dated_section with
         | (Some "logseq.property/status.done" | Some "logseq.property/status.canceled"), _ -> None
         | _, Some (Overdue, _) -> dated_section
-        | Some ident, _ when ident = doing_ident ->
+        | Some ident, _ when ident = doing_ident && doing_qualifies ->
           Some (Doing, -(Option.value ~default:0 (Lazy.force activity)))
         | _, _ -> dated_section in
-      Option.bind section (fun (section, order) ->
-        if Read.recycled db eid then None
+      let dates = List.filter_map (Option.map Cache_model.journal_day_for_ms) [scheduled_at; deadline_at] in
+      let upcoming = Option.exists (fun last -> List.exists (fun day -> day >= first_upcoming && day <= last) dates)
+        upcoming_end in
+      let recent day = day >= first_today && day <= today in
+      let due = lookahead <> None && List.exists recent dates in
+      if Read.recycled db eid then None
         else match Read.ref_eids db eid "block/page" with
           | page :: _ ->
             let day = Read.int_value (Read.value db page "block/journal-day") in
-            if day = Some today then None else
+            let legacy = if day = Some today then None else section in
+            let visible = ident <> Some "logseq.property/status.canceled" in
+            let journal_task = dates = [] && status <> None && Option.exists recent day in
+            let recently_active = dates = [] && ident = Some doing_ident
+              && Option.exists (fun date -> recent (Cache_model.journal_day_for_ms date)) (Lazy.force activity) in
+            let past = (due && not (List.mem today dates)) || (journal_task && day <> Some today) in
+            let today_row = visible && (due || journal_task || recently_active) in
+            let upcoming_row = visible && upcoming && ident <> Some "logseq.property/status.done" in
+            if legacy = None && not today_row && not upcoming_row then None else
             Option.map (fun block ->
               let status = match status with Some _ -> status | None -> default_status in
               let render_block = {block with Cache_model.status} in
-              (order, block.uuid, section,
+              let title, created, updated = page_details page in
+              (legacy, today_row, upcoming_row, block.uuid,
                 `Assoc ["uuid", `String block.uuid; "block", decorate block.uuid (Rpc_encode.block_json render_block);
-                  "page", `String (page_title page); "pageJournalDay", json_int day;
+                  "page", `String title; "pageJournalDay", json_int day;
+                  "pageCreated", json_int created; "pageUpdated", json_int updated;
+                  "orderPath", `List (order_path eid page); "past", `Bool past;
+                  "repeat", Task_recurrence.recurrence_json db eid;
                   "scheduled", json_int scheduled_at; "deadline", json_int deadline_at]))
               (Read.block ~with_breadcrumbs:false identity db eid)
-          | _ -> None))) (Seq.append dated_eids doing_eids) in
-  let ordered = List.of_seq candidates |> List.sort (fun (a, u, _, _) (b, v, _, _) ->
-    compare (a, u) (b, v)) in
+          | _ -> None)) (Seq.concat (List.to_seq [dated_eids; doing_eids; recent_eids]))
+    |> List.of_seq
+    |> List.sort (fun (_, _, _, left, _) (_, _, _, right, _) -> String.compare left right) in
+  let legacy_rows = List.filter_map (fun (legacy, _, _, uuid, row) ->
+    Option.map (fun (bucket, order) -> (order, uuid, bucket, row)) legacy) candidates
+    |> List.sort (fun (a, u, _, _) (b, v, _, _) -> compare (a, u) (b, v)) in
   let json section = `List (List.filter_map (fun (_, _, bucket, row) ->
-    if bucket = section then Some row else None) ordered) in
-  json Overdue, json Doing, json Planned
+    if bucket = section then Some row else None) legacy_rows) in
+  let today = List.filter_map (fun (_, today, _, _, row) -> if today then Some row else None) candidates in
+  let upcoming = List.filter_map (fun (_, _, upcoming, _, row) -> if upcoming then Some row else None) candidates in
+  json Overdue, json Doing, json Planned, `List today, `List upcoming
 
 type cached_projection = {
   day : int;
@@ -166,8 +225,11 @@ let preserve_for_local_edit cache ~before ~after changes =
     | "logseq.property/status" -> true
     | _ -> false in
   let changed = Hashtbl.create 4 in
+  let hierarchy = Hashtbl.create 4 in
   if List.for_all (fun (d : Ds.datom) ->
     Hashtbl.replace changed d.e ();
+    if List.mem d.a ["block/order"; "block/page"; "block/parent"] then
+      Hashtbl.replace hierarchy d.e ();
     ordinary_attr d.a) changes then
     List.iter (fun (_, cached) ->
       if member "success" cached.result = `Bool true
@@ -176,7 +238,9 @@ let preserve_for_local_edit cache ~before ~after changes =
         let unreferenced db eid =
           List.for_all (fun attr -> Seq.is_empty (Datascript_value.datoms_by_ref db Ds.Aevt attr eid))
             ["block/refs"; "block/tags"; "logseq.property/status"; "logseq.property/priority";
-             "logseq.property/asset"; "logseq.property/order-list-type"] in
+             "logseq.property/asset"; "logseq.property/order-list-type"]
+          && (not (Hashtbl.mem hierarchy eid)
+              || Seq.is_empty (Datascript_value.datoms_by_ref db Ds.Aevt "block/parent" eid)) in
         let local_body db eid = match Read.uuid_for_eid db eid with
           | None -> Seq.is_empty (Ds.Db.datoms db Ds.Eavt ~e:eid ())
           | Some _ ->
@@ -185,11 +249,12 @@ let preserve_for_local_edit cache ~before ~after changes =
             && match Read.ref_eids db eid "block/page" with
             | [id] -> today before id && today after id
             | _ -> false in
-        (* Agenda rows omit today's body, but can render it through embeds or references. *)
+        (* Ordinary journal blocks can still render through embeds or references. *)
         let no_embeds db = Seq.is_empty (Ds.Db.datoms db Ds.Aevt ~a:"block/link" ()) in
         if no_embeds before && no_embeds after
            && Hashtbl.fold (fun eid () safe ->
              safe && local_body before eid && local_body after eid
+             && Read.status_for_eid identity before eid = None && Read.status_for_eid identity after eid = None
              && unreferenced before eid && unreferenced after eid) changed true
         then Weak.set cached.db 0 (Some after)
       end) !cache
@@ -214,17 +279,18 @@ let project ?(read_rows = rows) cache ~graph ~now ~force db =
       try
         let page = Option.value ~default:fallback_page (Read.journal_page_uuid db day) in
         let disabled, days = configuration db in
-        let overdue, doing, planned = read_rows db day (if disabled then None else Some days) in
+        let overdue, doing, planned, today, upcoming = read_rows db day (if disabled then None else Some days) in
         `Assoc ["graphId", `String graph; "page", `String page; "day", `Int day; "error", `Bool false; "success", `Bool true;
           "enabled", `Bool (not disabled || doing <> `List []); "retained", `Bool false;
-          "overdue", overdue; "doing", doing; "planned", planned]
+          "overdue", overdue; "doing", doing; "planned", planned; "today", today; "upcoming", upcoming]
       with error ->
         prerr_endline ("journal task query: " ^ Printexc.to_string error);
         let prior name = match previous with Some value -> member name value.result | None -> `List [] in
         let page = match previous with Some value -> member "page" value.result | None -> `String fallback_page in
         `Assoc ["graphId", `String graph; "page", page; "day", `Int day; "error", `Bool true;
           "enabled", `Bool true; "retained", `Bool (Option.exists (fun value -> member "success" value.result = `Bool true || member "retained" value.result = `Bool true) previous);
-          "overdue", prior "overdue"; "doing", prior "doing"; "planned", prior "planned"] in
+          "overdue", prior "overdue"; "doing", prior "doing"; "planned", prior "planned";
+          "today", prior "today"; "upcoming", prior "upcoming"] in
     let source = Weak.create 1 in
     Weak.set source 0 (Some db);
     remember {day; timezone; db = source; result}
@@ -240,7 +306,7 @@ let targets db uuids =
 let values db targets =
   if targets = [] then invalid_arg "Select a block";
   `Assoc ["targets", `List (List.map (fun (uuid, eid) ->
-    `Assoc (("uuid", `String uuid) :: List.map (fun (name, attr) ->
+    `Assoc (("uuid", `String uuid) :: ("repeat", Task_recurrence.recurrence_json db eid) :: List.map (fun (name, attr) ->
       name, json_int (date db eid attr)) fields)) targets)]
 
 let reschedule_on_day day current =
@@ -279,7 +345,8 @@ let mutation db input =
       let next = resolve current in
       if current = next then None else
         let value = Option.map (fun value -> Pending_ops.Int_value value) in
-        Some {Pending_ops.attr; expected = value current; value = value next}) edits in
+        Some {Pending_ops.attr; expected = value current; value = value next}) edits
+      @ Task_recurrence.repeat_changes db eid expected input in
     if changes = [] then None else Some (Pending_ops.Set_properties {uuid; updated_at = None; changes})) targets expected
     |> List.filter_map Fun.id in
   match writes with

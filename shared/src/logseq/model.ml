@@ -48,6 +48,24 @@ type sidebar_page =
 
 type node_deletion = PageToDelete of sidebar_page | BlockToDelete of sidebar_page
 
+type tasks_tab = TasksToday | TasksUpcoming
+type task_sort = ScheduledDate | DeadlineDate | PageOrder
+type task_page_sort = PageName | PageUpdated | PageCreated
+
+type tasks_view =
+  { tab : tasks_tab
+  ; group_by_page : bool
+  ; sort_tasks : task_sort
+  ; sort_pages : task_page_sort
+  ; compact : bool
+  ; show_completed : bool
+  ; show_past : bool
+  }
+
+let default_tasks_view =
+  {tab = TasksToday; group_by_page = true; sort_tasks = ScheduledDate;
+   sort_pages = PageUpdated; compact = false; show_completed = true; show_past = true}
+
 type ui_session =
   { graph_id : string option
   ; destination : primary_destination
@@ -61,6 +79,7 @@ type ui_session =
   ; selected_page_id : string option
   ; settings_open : bool
   ; recent_graph_ids : string list
+  ; tasks_view : tasks_view option
   }
 
 type graph =
@@ -414,6 +433,9 @@ type logseq_model =
   ; pending_sync_error : string option
   ; sync_details_open : bool
   ; destination : primary_destination
+  ; home_scroll_request : int
+  ; tasks_view : tasks_view
+  ; tasks_selection_mode : bool
   ; sidebar_open : bool
   ; viewport_width : int
   ; graph_menu_open : bool
@@ -431,6 +453,7 @@ type logseq_model =
   ; task_statuses : task_status list
   ; task_priorities : task_status list
   ; selected_task_status : task_status option
+  ; composer_task_defaulted : bool
   ; flashcards : flashcard list
   ; flashcard_decks_json : string
   ; flashcard_cloze_revealed : bool
@@ -622,7 +645,10 @@ type logseq_action =
   | SelectSidebarPage of string
   | OpenQuickAction of string
   | ShowJournals
+  | ScrollHomeToTop
   | ShowTasks
+  | SetTasksView of tasks_view
+  | SelectTasks
   | ShowFlashcards
   | FlashcardDeckAction of string
   | ShowGraphs
@@ -811,6 +837,9 @@ let initial () =
     pending_sync_error = None;
     sync_details_open = false;
     destination = JournalsDestination;
+    home_scroll_request = 0;
+    tasks_view = default_tasks_view;
+    tasks_selection_mode = false;
     sidebar_open = false;
     viewport_width = 0;
     graph_menu_open = false;
@@ -828,6 +857,7 @@ let initial () =
     task_statuses = built_in_task_statuses ();
     task_priorities = [];
     selected_task_status = None;
+    composer_task_defaulted = false;
     flashcards = [];
     flashcard_decks_json = "";
     flashcard_cloze_revealed = false;
@@ -1107,6 +1137,20 @@ let set_journal_tasks_collapsed (current : logseq_model) sections =
       if sections = [] then Lui_protocol.String_map.remove graph current.journal_task_disclosures
       else Lui_protocol.String_map.add graph (day, sections) current.journal_task_disclosures}
   | _ -> current
+
+let tasks_view_section = function TasksToday -> "today" | TasksUpcoming -> "upcoming"
+
+let tasks_selection_active current =
+  let selecting = function
+    | LongPressOutlinerBlockEffect _ -> true
+    | EditorOutlinerEventEffect (_, payload) ->
+      (match Yojson.Basic.from_string payload with
+       | `Assoc fields -> List.assoc_opt "type" fields = Some (`String "toggleBlockSelection")
+       | _ | exception Yojson.Json_error _ -> false)
+    | _ -> false in
+  current.destination = TasksDestination
+  && (current.tasks_selection_mode || current.outliner_selected_block_ids <> []
+      || List.exists selecting current.pending_effects || List.exists selecting current.in_flight_effects)
 
 let graph_refresh_active_ current = graph_effect_active_ current "refresh"
 let graph_create_active_ current = graph_effect_active_ current "create"
@@ -1426,6 +1470,7 @@ let clear_task_status (current : logseq_model) =
   {
     current with
     selected_task_status = None;
+    composer_task_defaulted = false;
     task_status_picker_open = false;
     composer_task_dates = [];
     composer_task_date_field = None;
@@ -1703,6 +1748,24 @@ let cancel_outliner_editing (current : logseq_model) =
       effect_error = None;
     }
   | None -> current
+
+let settle_hidden_task_editor ?(remount = false) current =
+  let options = current.tasks_view in
+  match current.destination, current.outliner_edit_scope with
+  | TasksDestination, Some (scope, uuid) when scope = "journal-task." ^ uuid ->
+    let visible = Journal_task_dates.task_is_visible current.journal_tasks
+      ~section:(tasks_view_section options.tab) ~collapsed:(journal_tasks_collapsed current)
+      ~group_by_page:options.group_by_page ~show_completed:options.show_completed
+      ~show_past:options.show_past uuid in
+    if remount || not visible then begin
+      let updated = { (cancel_outliner_editing current) with task_date_editor = None } in
+      (* An edit tap may still be queued when its row is removed from the Tasks list. *)
+      if current.outliner_editing = None then
+        enqueue_effect updated (CancelOutlinerEditingEffect updated.next_effect_id)
+      else updated
+    end
+    else current
+  | _ -> current
 
 let back_app_navigation (current : logseq_model) requested =
   if requested = 0 then
@@ -2116,9 +2179,13 @@ let ui_session (current : logseq_model) =
        | Some page -> Some page.uuid
        | None -> None);
     settings_open = current.settings_open;
+    tasks_view = Some current.tasks_view;
   }
 
 let restore_ui_session (current : logseq_model) (session : ui_session) =
+  let current = match session.tasks_view with
+    | None -> current
+    | Some preferences -> { current with tasks_view = { preferences with tab = current.tasks_view.tab } } in
   if session.graph_id = None || session.graph_id <> current.selected_graph_id then current
   else
     { current with
@@ -2262,11 +2329,13 @@ let rec update (current : logseq_model) action =
       | _ -> None in
     if field = "scheduled" || field = "deadline" then open_task_date_editor current [uuid] editing field
     else current
+  | ToggleJournalTaskSection _ when tasks_selection_active current -> current
   | ToggleJournalTaskSection section ->
     let collapsed = journal_tasks_collapsed current in
-    set_journal_tasks_collapsed current
+    let updated = set_journal_tasks_collapsed current
       (if List.mem section collapsed then List.filter ((<>) section) collapsed
-       else section :: collapsed)
+       else section :: collapsed) in
+    settle_hidden_task_editor updated
   | RetryJournalTasks ->
     let key = "journal-tasks.refresh" in
     let running = List.exists (function NodePropertyEffect (_, id, _) -> id = key | _ -> false)
@@ -2525,6 +2594,7 @@ let rec update (current : logseq_model) action =
     let updated =
       if action = "task" then
         { current with sync_state = editing_sync_state current }
+      else if action = "unselect" then { current with tasks_selection_mode = false }
       else current
     in
     let id = updated.next_effect_id in
@@ -2596,7 +2666,10 @@ let rec update (current : logseq_model) action =
   | RemoveComposerTag uuid ->
     {current with composer_tags = List.filter (fun (tag : sidebar_page) -> tag.uuid <> uuid) current.composer_tags}
   | ExpandComposer ->
-    { current with composer_expanded = true; composer_autofocus = true }
+    let opened = { current with composer_expanded = true; composer_autofocus = true } in
+    if current.destination = TasksDestination && current.selected_task_status = None then
+      { opened with selected_task_status = default_task_status current.task_statuses; composer_task_defaulted = true }
+    else opened
   | FocusComposer ->
     (* autofocus is an edge-triggered focus request: toggling guarantees a
        prop diff (and therefore a refocus edge) even when the flag already
@@ -2644,7 +2717,11 @@ let rec update (current : logseq_model) action =
   | DismissComposerReference ->
     {current with composer_reference_query = None; composer_reference_candidates = []}
   | DismissComposer ->
-    { current with composer_expanded = false; composer_autofocus = false }
+    let closed = { current with composer_expanded = false; composer_autofocus = false } in
+    if current.composer_task_defaulted && String_kit.is_blank current.composer_draft
+       && current.composer_assets = [] && current.composer_tags = [] && current.composer_task_dates = []
+    then clear_task_status closed
+    else closed
   | StageComposerAsset asset ->
     {
       current with
@@ -2847,6 +2924,7 @@ let rec update (current : logseq_model) action =
        {
          current with
          selected_task_status = Some status;
+         composer_task_defaulted = false;
          task_status_picker_open = false;
        }
      | None -> current)
@@ -3011,6 +3089,7 @@ let rec update (current : logseq_model) action =
           selected_task_status =
             (if kind = "task" then default_task_status current.task_statuses
              else current.selected_task_status);
+          composer_task_defaulted = kind <> "task" && current.composer_task_defaulted;
         }
       in
       let cleared =
@@ -3022,6 +3101,13 @@ let rec update (current : logseq_model) action =
           (PresentAttachmentEffect (cleared.next_effect_id, "audio"))
       else cleared
     end
+  | ScrollHomeToTop ->
+    let current =
+      if current.destination <> JournalsDestination || current.app_navigation_path <> []
+         || current.selected_page <> None then update current ShowJournals
+      else current
+    in
+    { current with home_scroll_request = current.home_scroll_request + 1 }
   | ShowJournals | ShowTasks ->
     let destination = if action = ShowTasks then TasksDestination else JournalsDestination in
     let updated =
@@ -3029,11 +3115,21 @@ let rec update (current : logseq_model) action =
         (cancel_outliner_editing (return_to_app_root current)) with
         sidebar_open = sidebar_after_navigation current;
         graph_menu_open = false;
+        tasks_selection_mode = false;
         destination;
       }
     in
     let id = updated.next_effect_id in
     enqueue_effect updated (ClearSelectedPageEffect id)
+  | SetTasksView _ when tasks_selection_active current -> current
+  | SetTasksView tasks_view ->
+    let updated = settle_hidden_task_editor ~remount:(current.tasks_view.tab <> tasks_view.tab)
+      { current with tasks_view } in
+    if { current.tasks_view with tab = tasks_view.tab } = tasks_view then updated
+    else update updated SaveUISession
+  | SelectTasks ->
+    { (cancel_outliner_editing current) with tasks_selection_mode = true }
+  | ShowFlashcards when not (List.mem "flashcards" current.sidebar_tabs) -> current
   | ShowFlashcards ->
     let updated =
       {
@@ -3047,8 +3143,10 @@ let rec update (current : logseq_model) action =
     let cleared =
       enqueue_effect updated (ClearSelectedPageEffect clear_id)
     in
-    let load_id = cleared.next_effect_id in
-    enqueue_effect cleared (LoadFlashcardsEffect load_id)
+    let loading = List.exists (function LoadFlashcardsEffect _ -> true | _ -> false)
+      (current.pending_effects @ current.in_flight_effects) in
+    if loading then cleared
+    else enqueue_effect cleared (LoadFlashcardsEffect cleared.next_effect_id)
   | ShowGraphs ->
     {
       (cancel_outliner_editing (return_to_app_root current)) with
@@ -3164,6 +3262,7 @@ let rec update (current : logseq_model) action =
     (match request with None -> updated
      | Some payload -> enqueue_effect updated (SignInEffect (updated.next_effect_id, payload)))
   | ApplySettingsSnapshot settings ->
+    let sidebar_tabs = normalize_sidebar_tabs settings.sidebar_tabs in
     {
       current with
       appearance = settings.appearance;
@@ -3172,7 +3271,9 @@ let rec update (current : logseq_model) action =
       system_language = Option.value ~default:current.system_language settings.system_language;
       spell_check = settings.spell_check;
       auto_correction = settings.auto_correction;
-      sidebar_tabs = normalize_sidebar_tabs settings.sidebar_tabs;
+      sidebar_tabs;
+      destination = (if current.destination = FlashcardsDestination && not (List.mem "flashcards" sidebar_tabs)
+        then JournalsDestination else current.destination);
       base_url = settings.base_url;
       base_url_draft = settings.base_url;
       version = settings.version;
@@ -3337,10 +3438,13 @@ let rec update (current : logseq_model) action =
     persist_settings_change current
       { current with auto_correction = enabled }
   | ToggleSidebarTab tab ->
+    let sidebar_tabs = toggle_sidebar_tab current.sidebar_tabs tab in
     persist_settings_change current
       {
         current with
-        sidebar_tabs = toggle_sidebar_tab current.sidebar_tabs tab;
+        sidebar_tabs;
+        destination = (if current.destination = FlashcardsDestination && not (List.mem "flashcards" sidebar_tabs)
+          then JournalsDestination else current.destination);
       }
   | MoveSidebarTab (tab, offset) ->
     persist_settings_change current
@@ -3691,7 +3795,8 @@ and apply_core_snapshot (current : logseq_model)
       let selected_group raw =
         try Yojson.Basic.Util.member "selectedUuid" (Yojson.Basic.from_string raw)
         with _ -> `Null in
-      first_flashcard_id current.flashcards
+      selected_graph_changed
+      || first_flashcard_id current.flashcards
       <> first_flashcard_id projection.flashcards
       || selected_group current.flashcard_decks_json
          <> selected_group projection.flashcard_decks_json
