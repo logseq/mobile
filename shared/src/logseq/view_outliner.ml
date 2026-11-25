@@ -932,7 +932,7 @@ let outliner_task_dates context model_source row_source send =
     (box ~padding_horizontal:8 [View_property.view ~compact:true ~task_completed ~render_block:(fun _ _ -> box [])
       model_source (Signal.map (fun (row : Model.outline_row) -> row.row_task_dates_json) row_source) send])
 
-let decorate_row context model_source row_source send body =
+let outliner_discussion context model_source row_source send =
   let target (row : Model.outline_row) = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
   let items name row = match metadata_member name row with `List values -> values | _ -> [] in
   let state = Signal.map2 (fun (model : Model.logseq_model) row ->
@@ -940,12 +940,11 @@ let decorate_row context model_source row_source send body =
     id, items "reactions" row, items "commentThreads" row,
     View_collaboration.ready model, List.mem id model.expanded_discussions)
     model_source row_source in
-  column ~gap:0 [body;
-    if_ ~test:(Signal.map (fun (_, reactions, threads, _, _) -> reactions <> [] || threads <> []) state)
-      (View_base.with_int_prop_signal PaddingLeft
-        (Signal.map (outliner_text_leading context) row_source)
-        (box [reactive (fun (target, reactions, threads, _, _) ->
-          View_collaboration.inline (Signal.sample model_source) send ~target ~reactions ~threads) state]))]
+  if_ ~test:(Signal.map (fun (_, reactions, threads, _, _) -> reactions <> [] || threads <> []) state)
+    (View_base.with_int_prop_signal PaddingLeft
+      (Signal.map (outliner_text_leading context) row_source)
+      (box [reactive (fun (target, reactions, threads, _, _) ->
+        View_collaboration.inline (Signal.sample model_source) send ~target ~reactions ~threads) state]))
 
 let with_embed_children model_source edit_scope row_source send render_row render_child : t =
   reactive (fun has_embed_children ->
@@ -996,9 +995,11 @@ let rec render_result_block_in_scope context model_source edit_scope row_source 
       if_ ~test:(Signal.map View_base.outliner_row_fallback_breadcrumb_ row_source)
         (text ~value:(reactive (Signal.map View_base.outliner_row_breadcrumb row_source))
           ~style_class:"caption" ~foreground:"muted-foreground" []);
-      (let body = decorate_row context model_source row_source send (outliner_row_body context model_source retained row_source send) in
+      (let body = outliner_row_body context model_source retained row_source send in
        if Lui_ui.host context = KotlinHost then outliner_continuation ~is_body:true row_source body else body);
-      outliner_continuation row_source (outliner_task_dates context model_source row_source send)])
+      outliner_continuation row_source (column ~gap:0 [
+        outliner_task_dates context model_source row_source send;
+        outliner_discussion context model_source row_source send])])
     (render_result_block_in_scope context model_source)
 
 let render_result_block context model_source row_source send =
@@ -1045,12 +1046,11 @@ let outliner_row ?(trailing_inset = 0) context model_source retained_row_source 
   let retained_row_source = Signal.map2 (fun (retained : View_rows.retained_row) value ->
     {retained with value}) retained_row_source row_source in
   let body = outliner_row_body ~trailing_inset context model_source retained_row_source row_source send in
-  let body = decorate_row context model_source row_source send body in
   let body = if Lui_ui.host context = KotlinHost then outliner_continuation ~is_body:true row_source body else body in
+  let discussion = outliner_discussion context model_source row_source send in
   let render_block = render_result_block context model_source in
   let bullet_inset = if Lui_ui.host context = KotlinHost then 12 else 20 in
   reactive (fun (has_query, has_properties, has_dates) ->
-    if not has_query && not has_properties && not has_dates then body else
     let dates = if has_properties || not has_dates then [] else [outliner_task_dates context model_source row_source send] in
     let properties = if not has_properties then [] else [
       View_base.with_int_prop_signal PaddingLeft
@@ -1064,7 +1064,7 @@ let outliner_row ?(trailing_inset = 0) context model_source retained_row_source 
           [View_query.view ~render_block model_source row_source send])] in
     column ~gap:0 [body;
       outliner_continuation row_source
-        (with_ios_trailing_padding trailing_inset (column ~gap:0 (dates @ properties @ query)))])
+        (with_ios_trailing_padding trailing_inset (column ~gap:0 (dates @ properties @ (discussion :: query))))])
     (Signal.map2 (fun (model : Model.logseq_model) (row : Model.outline_row) ->
       row.query_json <> "", (match View_base.active_node_projection model with
       | Some route -> route.node_uuid = row.row_uuid && route.node_uuid <> route.node_page_uuid
@@ -1902,12 +1902,12 @@ let journal_task_row ?(tasks_screen = false) context model_source task_source se
     let inset = 8 in
     with_ios_trailing_padding 0 (column ~gap:0 ~padding_horizontal:inset ~padding_vertical:1
       ~accessibility_identifier:(View_rows.journal_task_scope uuid) [
-        decorate_row context view_model source send_block
-          (outliner_row_body ~allow_drag:false ~trailing_inset:inset context view_model retained source send_block);
+        outliner_row_body ~allow_drag:false ~trailing_inset:inset context view_model retained source send_block;
         if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> not tasks_screen || not current.tasks_view.compact) model_source)
         (View_base.with_int_prop_signal PaddingLeft
           (Signal.map (outliner_task_date_leading context) source)
           (with_ios_trailing_padding inset (box [metadata])));
+        outliner_discussion context view_model source send_block;
       ])
 
 let task_heading ?page context model_source send section ~identifier label =
