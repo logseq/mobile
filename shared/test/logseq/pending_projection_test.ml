@@ -1413,9 +1413,22 @@ let discussion_writes_reuse_the_thread_and_preserve_reaction_ownership () =
   let db = apply_intent db (Ops.Set_reaction {target = "reply2"; actor = "member"; uuid = "comment-reaction";
     emoji = "heart"; active = true; created_at = 500}) in
   let open Yojson.Basic.Util in
-  let activity = List.find (fun event -> member "id" event = `String "comment-reaction") (C.inbox db ~actor:"owner") in
+  let known = "a0949d34-d5e7-49e4-afa8-1c0eb7862ce3" in
+  let missing = "e7a220c2-aebc-48c8-b6b9-b8b42912e85a" in
+  let db = with_tx db [add 1000 "block/uuid" (Ds.Uuid known); add 1000 "block/title" (Ds.String "Release plan");
+    add (eid "reply2") "block/title" (Ds.String ("**Please review** [[" ^ known ^ "]] and [[" ^ missing ^ "]]"))] in
+  let inbox since = C.inbox db ~actor:"owner" ~since ~preview:(Node_presentation.preview db) in
+  check_eq (inbox 501) [];
+  let activity = List.find (fun event -> member "id" event = `String "comment-reaction") (inbox 500) in
   check_eq (member "target" activity) (`String "block");
-  check_eq (member "opensDiscussion" activity) (`Bool true)
+  check_eq (member "opensDiscussion" activity) (`Bool true);
+  check_eq (activity |> member "preview" |> member "uuid") (`String "block");
+  let comment = member "commentPreview" activity in
+  check_eq (member "uuid" comment) (`String "reply2");
+  check_eq (member "displayTitle" comment) (`String "Please review Release plan and Unavailable reference");
+  let comment_markup = to_list (member "markup" comment) in
+  check (List.exists (fun node -> member "type" node = `String "emphasis") comment_markup);
+  check (List.exists (fun node -> member "type" node = `String "nodeReference" && member "uuid" node = `String known) comment_markup)
 
 let cases =
   [ case "discussion writes reuse threads and preserve reaction ownership"

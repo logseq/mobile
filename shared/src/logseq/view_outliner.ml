@@ -256,32 +256,10 @@ let handle_block_menu_event model_source row_source send = function
      | _ -> ())
   | input -> ignore (View_base.handle_outliner_block_content_event input model_source send)
 
-let outliner_rich_block_view ?(show_code_language = true) model_source title_source markup_source
-    youtube_target_source is_asset_source row_source asset_type_source
-    local_path_source send : t =
+let outliner_rich_block_view ?(show_code_language = true) model_source row_source send : t =
  custom @@ fun context parent ->
-   let node = Lui_ui.extension context "outliner-block-content" in
-   attach context parent node;
-   Lui_ui.extension_property context node "show-code-language" (BoolValue show_code_language);
-   Lui_ui.extension_property_signal context node "block-id"
-     (Signal.map View_base.outliner_row_id_wire_value row_source);
-   Lui_ui.extension_property_signal context node "title"
-     (Signal.map View_base.string_wire_value title_source);
-   Lui_ui.extension_property_signal context node "markup-json"
-     (Signal.map View_base.string_wire_value markup_source);
-   Lui_ui.extension_property_signal context node "youtube-target-url"
-     (Signal.map View_base.string_wire_value youtube_target_source);
-   Lui_ui.extension_property_signal context node "is-asset"
-     (Signal.map View_base.bool_wire_value is_asset_source);
-   Lui_ui.extension_property_signal context node "is-completed"
-     (Signal.map View_base.outliner_row_completed_wire_value row_source);
-   Lui_ui.extension_property_signal context node "asset-type"
-     (Signal.map View_base.string_wire_value asset_type_source);
-   Lui_ui.extension_property_signal context node "local-path"
-     (Signal.map View_base.string_wire_value local_path_source);
-   if Lui_ui.host context = KotlinHost then
-     Lui_ui.extension_property_signal context node "row-actions"
-       (Signal.map2 (fun current row ->
+   let row_actions = if Lui_ui.host context <> KotlinHost then None else Some (
+       Signal.map2 (fun current row ->
          let is_task = metadata_member "isTask" row = `Bool true in
          let statuses = if not is_task then [] else
            List.map (fun (status : Model.task_status) -> `Assoc [
@@ -298,9 +276,9 @@ let outliner_rich_block_view ?(show_code_language = true) model_source title_sou
            "statuses", `List statuses;
            "labels", block_menu_labels current;
            "reactionChoices", block_menu_reactions current row;
-         ]))) model_source row_source);
-   Lui_ui.on_event context node (handle_block_menu_event model_source row_source send);
-   node
+         ]))) model_source row_source) in
+   mount context ?parent (View_base.rich_block_content ~show_code_language ?row_actions
+     row_source ~on_event:(handle_block_menu_event model_source row_source send))
 
 let outliner_collapse_button (context : Lui_ui.ui_context) model_source row_source
     send : t =
@@ -617,13 +595,7 @@ let code_block_content model_source retained_source row_source send : t =
           Some (fun _ -> ignore (send (Model.LongPressOutlinerBlock (Signal.sample row_source).row_uuid))))
         [reactive (fun calculator -> if calculator then
           text ~value:(reactive source) ~font_family:"monospace" ~font_size:"17" ~padding:12 [] else
-          outliner_rich_block_view ~show_code_language:false model_source
-            (Signal.map View_base.outliner_row_title row_source)
-            (Signal.map (fun (row : Model.outline_row) -> row.markup_json) row_source)
-            (Signal.map View_base.outliner_row_youtube_target row_source)
-            (Signal.map (fun (row : Model.outline_row) -> row.is_asset) row_source) row_source
-            (Signal.map View_base.outliner_row_asset_type row_source)
-            (Signal.map View_base.outliner_row_local_path row_source) send) calculator]);
+          outliner_rich_block_view ~show_code_language:false model_source row_source send) calculator]);
   ] in
   mount context ?parent (column ~gap:0 ~cross:`stretch ~corner_radius:8
     ~background_signal:(Signal.map (fun retained ->
@@ -656,22 +628,6 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
   let current_row = Signal.sample row_source in
   let block_id_source =
     Signal.map View_base.outliner_row_uuid row_source
-  in
-  let title_source = Signal.map View_base.outliner_row_title row_source in
-  let markup_source =
-    Signal.map (fun (r : Model.outline_row) -> r.markup_json) row_source
-  in
-  let youtube_target_source =
-    Signal.map View_base.outliner_row_youtube_target row_source
-  in
-  let is_asset_source =
-    Signal.map (fun (r : Model.outline_row) -> r.is_asset) row_source
-  in
-  let asset_type_source =
-    Signal.map View_base.outliner_row_asset_type row_source
-  in
-  let local_path_source =
-    Signal.map View_base.outliner_row_local_path row_source
   in
   let editing_title_source =
     Signal.map View_rows.retained_row_editing_title retained_row_source
@@ -711,8 +667,7 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
               if_ ~test:editing_source
                 (outliner_editor_view model_source block_id_source editing_title_source editing_caret_source send);
               if_ ~test:not_editing_source
-                (outliner_rich_block_view model_source title_source markup_source youtube_target_source is_asset_source
-                  row_source asset_type_source local_path_source send)])
+                (outliner_rich_block_view model_source row_source send)])
             (Signal.map (fun (row : Model.outline_row) -> row.row_display_type = Some "code") row_source);
           if_ ~test:has_tags_source
             (row ~gap:6

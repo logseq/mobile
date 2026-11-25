@@ -34,6 +34,46 @@ import LogseqModel
     static func encoded(_ value: [String: Any]) -> String {
         String(decoding: try! JSONSerialization.data(withJSONObject: value), as: UTF8.self)
     }
+    static func recentNotifications(in directory: URL) throws -> [[String: Any]] {
+        let data = try Data(contentsOf: directory.appendingPathComponent("graphs/feedback/notifications.json"))
+        let templates = try JSONSerialization.jsonObject(with: data) as! [[String: Any]]
+        let now = Int(Date().timeIntervalSince1970 * 1_000)
+        let day = 24 * 60 * 60 * 1_000
+        let path = directory.appendingPathComponent("release-diagram.png")
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let diagram = UIGraphicsImageRenderer(size: CGSize(width: 320, height: 100), format: format).image { context in
+            UIColor(red: 0.09, green: 0.34, blue: 0.41, alpha: 1).setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 320, height: 100))
+            NSString(string: "Release diagram").draw(at: CGPoint(x: 22, y: 32), withAttributes: [
+                .font: UIFont.systemFont(ofSize: 27, weight: .medium),
+                .foregroundColor: UIColor(red: 0.61, green: 0.83, blue: 0.83, alpha: 1),
+            ])
+        }
+        try diagram.pngData()!.write(to: path)
+        return templates.map { template in
+            var item = template
+            item["createdAt"] = now - (item["ageDays"] as! Int) * day
+            if var preview = item["preview"] as? [String: Any], preview["isAsset"] as? Bool == true {
+                preview["localPath"] = path.path
+                item["preview"] = preview
+            }
+            return item
+        } + (0..<40).map { index in
+            ["id": "feed-follow-up-\(index)", "target": uuid(17), "actor": "Robin", "kind": "reaction",
+             "emoji": "thumbsup", "title": "Checklist follow-up \(index)", "createdAt": now - 8 * day - index]
+        }
+    }
+    static func withInbox(_ inbox: [[String: Any]]?, in response: String) -> String {
+        guard let inbox,
+              var envelope = (try? JSONSerialization.jsonObject(with: Data(response.utf8))) as? [String: Any],
+              var result = envelope["result"] as? [String: Any],
+              var collaboration = result["collaboration"] as? [String: Any] else { return response }
+        collaboration["inbox"] = inbox
+        result["collaboration"] = collaboration
+        envelope["result"] = result
+        return encoded(envelope)
+    }
     init() {
         setbuf(stdout, nil)
         UserDefaults.standard.set("feedback", forKey: "logseq.selectedGraphId")
@@ -66,13 +106,16 @@ import LogseqModel
         default: selected = 1
         }
         let response = Self.call("selectPage", Self.uuid(selected))
+        let inbox = scenario == "notifications" ? try! Self.recentNotifications(in: directory) : nil
         selectedSnapshot = response
         router = LGPlatformCommandRouter(setClipboardText: { _ in }, performHaptic: { _ in }, present: { _ in })
-        runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: LGCoreEffectExecutor(
+        runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: LGCoreEffectExecutor(callCore: { request in
+            Self.withInbox(inbox, in: await LogseqCore.callAsync(request))
+        },
             platformEffect: { _ in .init(succeeded: true, message: "", output: .discard) }),
             platformCommandHandler: router)
-        try! runtime.applyCoreResponse(opened)
-        try! runtime.applyCoreResponse(response)
+        try! runtime.applyCoreResponse(Self.withInbox(inbox, in: opened))
+        try! runtime.applyCoreResponse(Self.withInbox(inbox, in: response))
         try! runtime.applyHostUpdate(kind: "local-graph-ids", payload: #"["feedback"]"#)
         try! runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
         try! runtime.applyHostUpdate(kind: "graph-loading", payload: "false")
@@ -195,6 +238,7 @@ import LogseqModel
                     return markup.contains { $0["type"] as? String == "video" }
                 }
             case "comments":
+                let draft = "I'll add the **checklist**."
                 observations["starts-collapsed"] = find("outliner.comment." + Self.uuid(19)) == nil
                 try press("comments.toggle." + Self.uuid(17))
                 await pause()
@@ -207,7 +251,7 @@ import LogseqModel
                 if let node = find("field.comment") {
                     observations["empty-send-disabled"] = find("button.comment.post")
                         .flatMap { backend.model(id: $0) }?.isEnabled == false
-                    try backend.performTextChange(node: node, text: "I'll add the checklist.")
+                    try backend.performTextChange(node: node, text: draft)
                     try await Task.sleep(for: .milliseconds(400))
                     try extensionEvent("native-navigation-stack", "dismiss-composer", [:])
                     await pause()
@@ -215,12 +259,16 @@ import LogseqModel
                     await pause()
                     observations["draft-restored"] = find("field.comment").flatMap {
                         backend.model(id: $0)?.property(.text)?.stringValue
-                    } == "I'll add the checklist."
+                    } == draft
                     try press("button.comment.post")
                     await pause()
                 }
                 observations["posted-inline"] = backend.rootIDs.flatMap(descendants).contains {
-                    backend.model(id: $0)?.property(.text)?.stringValue == "I'll add the checklist."
+                    guard let block = backend.extensionModel(id: $0), block.identifier == "outliner-block-content",
+                          case .string("read-only") = block.property("interaction"),
+                          case let .string(title) = block.property("title"), title == draft,
+                          case let .string(markup) = block.property("markup-json") else { return false }
+                    return markup.contains("\"emphasis\"") && markup.contains("checklist")
                 }
             case "reactions":
                 observations["reaction"] = find("reaction.block." + Self.uuid(17) + ".+1") != nil
@@ -240,16 +288,54 @@ import LogseqModel
                 observations["tab-unread"] = tabLabel()?.contains("Unread notifications") == true
                 try press(tab)
                 await pause()
-                observations["activity-list"] = find("notification." + Self.uuid(20)) != nil
+                let list = find("screen.notifications")
+                observations["activity-list"] = find("notification.feed-asset") != nil
+                observations["two-week-window"] = find("notification.feed-old") == nil
+                observations["virtual-window"] = find("notification.feed-follow-up-39") == nil
+                observations["rich-comment"] = find("notification.comment.feed-comment") != nil
+                let metadata = find("notification.meta.feed-comment").flatMap { backend.model(id: $0) }
+                let caption = metadata?.property(.text)?.stringValue ?? ""
+                observations["compact-metadata"] = caption.hasPrefix("Robin · ") && !caption.contains("Commented")
+                    && metadata?.property(.textAlignment)?.stringValue == "start"
+                let preview = find("notification.preview.feed-asset")
+                observations["asset-renderer"] = preview.map { descendants($0).contains {
+                    backend.extensionModel(id: $0)?.identifier == "outliner-block-content"
+                } } == true
                 try press("button.notifications.read-all")
                 await pause()
                 observations["tab-read"] = tabLabel() == "Notifications"
-                try press("notification." + Self.uuid(19))
+                try press("notification.feed-comment")
                 await pause()
                 observations["opened-inline"] = find("outliner.comment." + Self.uuid(19)) != nil
                 try extensionEvent("native-navigation-stack", "back", ["count": .int(1)])
                 await pause()
-                observations["returned-to-inbox"] = find("notification." + Self.uuid(20)) != nil
+                observations["returned-to-inbox"] = find("notification.feed-asset") != nil
+                try press("notification.feed-page")
+                await pause()
+                observations["opened-page"] = find("screen.node") != nil && find("sheet.comments") == nil
+                try extensionEvent("native-navigation-stack", "back", ["count": .int(1)])
+                await pause()
+                func inboxScrollView() -> UIScrollView? {
+                    func scrollViews(_ view: UIView) -> [UIScrollView] {
+                        let selfView = (view as? UIScrollView).map { [$0] } ?? []
+                        return selfView + view.subviews.flatMap(scrollViews)
+                    }
+                    let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
+                    return windows.filter(\.isKeyWindow).flatMap(scrollViews).first {
+                        $0.bounds.height > 250 && $0.contentSize.height > $0.bounds.height * 2 && $0.isScrollEnabled
+                    }
+                }
+                let scroll = inboxScrollView()
+                scroll?.setContentOffset(CGPoint(x: 0, y: 1_680), animated: false)
+                await pause()
+                let offset = scroll?.contentOffset.y ?? 0
+                observations["scrolled-inbox"] = offset > 700
+                try press("tab.bottom.home")
+                await pause()
+                try press(tab)
+                await pause()
+                observations["retained-list"] = list != nil && find("screen.notifications") == list
+                observations["retained-offset"] = abs((inboxScrollView()?.contentOffset.y ?? 0) - offset) < 6
             default: break
             }
             await pause()

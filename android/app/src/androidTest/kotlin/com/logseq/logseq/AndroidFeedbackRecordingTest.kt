@@ -51,6 +51,7 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
     private lateinit var filter: LuiPatchFilter
     private lateinit var loader: AndroidGraphAssetLoader
     private var selectedSnapshot = ""
+    private var notificationFixture: JSONArray? = null
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val args get() = InstrumentationRegistry.getArguments()
     private val verify get() = args.getString("feedbackPhase") != "before"
@@ -63,7 +64,15 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
             .put("params", JSONObject().apply { action?.let { put("action", it) }; payload?.let { put("payload", it) }; path?.let { put("path", it) } }).toString())
     }
     private fun apply(response: String) = ui.runOnIdle {
-        bridge.applySnapshot(response).takeIf { it.isNotEmpty() }?.let(filter::applyJson)
+        val projected = notificationFixture?.let { inbox ->
+            val envelope = JSONObject(response)
+            val collaboration = envelope.optJSONObject("result")?.optJSONObject("collaboration")
+            if (collaboration == null) response else {
+                collaboration.put("inbox", inbox)
+                envelope.toString()
+            }
+        } ?: response
+        bridge.applySnapshot(projected).takeIf { it.isNotEmpty() }?.let(filter::applyJson)
     }
     private fun host(kind: String, payload: String) = ui.runOnIdle {
         bridge.applyHostUpdate(kind, payload).takeIf { it.isNotEmpty() }?.let(filter::applyJson)
@@ -105,6 +114,7 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
     private fun mount(page: Int, dark: Boolean = false) {
         val directory = File(context.cacheDir, "feedback-recording").apply { deleteRecursively(); mkdirs() }
         graph = File(directory, "graphs/feedback").apply { mkdirs() }
+        if (scenario == "notifications") notificationFixture = recentNotifications(directory)
         for (name in listOf("graph.sqlite", "sync.checkpoint")) {
             instrumentation.context.assets.open("feedback/$name").use { input -> File(graph, name).outputStream().use(input::copyTo) }
         }
@@ -140,6 +150,31 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
             }
         } }
         pause()
+    }
+    private fun recentNotifications(directory: File): JSONArray {
+        val now = System.currentTimeMillis()
+        val day = 24 * 60 * 60 * 1000L
+        val inbox = JSONArray(instrumentation.context.assets.open("feedback/notifications.json")
+            .bufferedReader().use { it.readText() })
+        val path = File(directory, "release-diagram.png")
+        val diagram = Bitmap.createBitmap(320, 100, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(diagram)
+        canvas.drawColor(android.graphics.Color.rgb(24, 87, 105))
+        val paint = Paint().apply { color = android.graphics.Color.rgb(155, 211, 212); textSize = 28f }
+        canvas.drawText("Release diagram", 24f, 60f, paint)
+        path.outputStream().use { diagram.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        diagram.recycle()
+        for (index in 0 until inbox.length()) {
+            val item = inbox.getJSONObject(index)
+            item.put("createdAt", now - item.getInt("ageDays") * day)
+            item.optJSONObject("preview")?.takeIf { it.optBoolean("isAsset") }?.put("localPath", path.path)
+        }
+        repeat(40) { index ->
+            inbox.put(JSONObject().put("id", "feed-follow-up-$index").put("target", uuid(17))
+                .put("actor", "Robin").put("kind", "reaction").put("emoji", "thumbsup")
+                .put("title", "Checklist follow-up $index").put("createdAt", now - 8 * day - index))
+        }
+        return inbox
     }
     private fun mountProjection(projection: JSONObject) {
         lateinit var native: LogseqNativeBridge
@@ -505,15 +540,16 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 ui.onNodeWithTag("button.outliner.selection.$action").performClick()
                 pause()
                 if (scenario == "comments") {
+                    val draft = "I'll add the **checklist**."
                     ui.onNodeWithTag("button.comment.post").assertIsNotEnabled()
                     val field = ui.onNodeWithTag("field.comment")
-                    field.performTextInput("I'll add the checklist.")
+                    field.performTextInput(draft)
                     ui.onNodeWithTag("surface.composer.dismiss").performClick()
                     pause()
                     field.assertDoesNotExist()
                     ui.onNodeWithTag("button.outliner.selection.comment").performClick()
                     pause()
-                    field.assertTextEquals("I'll add the checklist.")
+                    field.assertTextEquals(draft)
                     ui.onNodeWithTag("button.comment.post").performClick()
                     pause()
                     ui.onNodeWithText("I'll add the checklist.").assertIsDisplayed()
@@ -543,12 +579,27 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 pause()
                 notifications.assertIsSelected()
                 ui.onNodeWithTag("screen.notifications").assertIsDisplayed()
-                ui.onNodeWithTag("notification." + uuid(20)).assertIsDisplayed()
+                ui.onNodeWithTag("notification.feed-old").assertDoesNotExist()
+                ui.onNodeWithTag("notification.feed-follow-up-39").assertDoesNotExist()
+                ui.onNodeWithTag("asset.preview.image", useUnmergedTree = true).assertIsDisplayed()
+                ui.onNodeWithText("Release plan", substring = true, useUnmergedTree = true).assertIsDisplayed()
+                ui.onNodeWithText("f0000000-0000-4000-8000", substring = true, useUnmergedTree = true).assertDoesNotExist()
+                ui.onNodeWithText("The checklist is ready.", useUnmergedTree = true).assertIsDisplayed()
+                ui.onNodeWithText("Reacted", substring = true, useUnmergedTree = true).assertDoesNotExist()
+                ui.onNodeWithText("Commented", substring = true, useUnmergedTree = true).assertDoesNotExist()
+                val author = ui.onNodeWithTag("notification.meta.feed-comment", useUnmergedTree = true).getUnclippedBoundsInRoot()
+                val content = ui.onNodeWithTag("notification.preview.feed-comment", useUnmergedTree = true).getUnclippedBoundsInRoot()
+                assertTrue("Author metadata sits above the preview", author.bottom <= content.top)
+                ui.onNodeWithTag("asset.preview.image", useUnmergedTree = true).performTouchInput { click(center) }
+                pause()
+                ui.onNodeWithTag("screen.node").assertIsDisplayed()
+                ui.onNodeWithTag("button.navigation.back").performClick()
+                pause()
                 ui.onNodeWithTag("button.notifications.more").performClick()
                 ui.onNodeWithText("Mark all as read").assertIsDisplayed()
                 ui.onNodeWithText("Mark all as read").performClick()
                 pause()
-                ui.onNodeWithTag("notification." + uuid(19)).performClick()
+                ui.onNodeWithTag("notification.feed-comment").performClick()
                 pause()
                 ui.onNode(hasTestTag("outliner.comment." + uuid(19)) and
                     hasAnyAncestor(hasTestTag("screen.node"))).assertIsDisplayed()
@@ -561,16 +612,22 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 ui.onNodeWithTag("screen.notifications").assertIsDisplayed()
                 notifications.assertIsSelected()
                 ui.onNodeWithTag("notifications.unread-dot", useUnmergedTree = true).assertDoesNotExist()
+                ui.onNodeWithTag("notification.feed-page").performClick()
+                pause()
+                ui.onNodeWithTag("screen.node").assertIsDisplayed()
+                ui.onNodeWithTag("sheet.comments").assertDoesNotExist()
+                ui.onNodeWithTag("button.navigation.back").performClick()
+                pause()
+                val list = ui.onNodeWithTag("screen.notifications")
+                list.performScrollToIndex(30)
+                val retainedRow = ui.onNodeWithTag("notification.feed-follow-up-26").assertIsDisplayed()
+                val before = retainedRow.getUnclippedBoundsInRoot().top
                 ui.onNodeWithTag("tab.bottom.home").performClick()
                 pause()
-                ui.onNodeWithTag("button.sidebar").performClick()
-                val graphs = ui.onNodeWithTag("link.sidebar.graphs").getUnclippedBoundsInRoot()
-                val flashcards = ui.onNodeWithTag("link.sidebar.flashcards")
-                assertTrue("Graphs appears above Flashcards", graphs.bottom <= flashcards.getUnclippedBoundsInRoot().top)
-                captureFrame()
-                flashcards.performClick()
+                notifications.performClick()
                 pause()
-                ui.onNodeWithTag("screen.flashcards").assertIsDisplayed()
+                assertEquals("Switching tabs keeps the same scroll position", before.value,
+                    retainedRow.assertIsDisplayed().getUnclippedBoundsInRoot().top.value, 2f)
             }
             "journal-layout" -> {
                 val imagePath = File(context.cacheDir, "journal-layout.png")

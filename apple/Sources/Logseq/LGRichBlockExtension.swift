@@ -110,7 +110,7 @@ struct OutlinerRowDropDelegate: DropDelegate {
 @MainActor
 private enum LGRichBlockExtension {
     static let identifier = "outliner-block-content"
-    static let fingerprint = "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,11:row-actions:string:optional:none,12:is-completed:bool:required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],11:menu-action[7:payload:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
+    static let fingerprint = "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:interaction:string:optional:none,11:markup-json:string:required:none,11:row-actions:string:optional:none,12:is-completed:bool:required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],11:menu-action[7:payload:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
 
     static func register(
         in registry: LUIAppleExtensionRegistry,
@@ -131,6 +131,7 @@ private enum LGRichBlockExtension {
                     .init(name: "asset-type", kind: .string, isRequired: true),
                     .init(name: "local-path", kind: .string, isRequired: true),
                     .init(name: "row-actions", kind: .string),
+                    .init(name: "interaction", kind: .string),
                 ],
                 events: [
                     .init(name: "drag-start", fields: [
@@ -168,10 +169,14 @@ private struct LGRichBlock: View {
     let playback: LGYouTubePlaybackState
     @State private var dropGeometry = OutlinerRowDropGeometry()
     @Environment(\.lgPropertyValue) private var propertyValue
+    private var interaction: String { stringProperty("interaction") }
+    private var isPreview: Bool { interaction == "preview" }
 
     var body: some View {
         #if os(iOS)
-        if insideNativeOutlinerRow {
+        if isPreview {
+            content.lineLimit(5).allowsHitTesting(false).accessibilityHidden(true)
+        } else if interaction == "read-only" || insideNativeOutlinerRow {
             content
         } else {
             content
@@ -217,7 +222,7 @@ private struct LGRichBlock: View {
                     title: stringProperty("title"),
                     assetType: stringProperty("asset-type"),
                     localPath: stringProperty("local-path"),
-                    allowsInteraction: { context.isUserInteractionEnabled }
+                    allowsInteraction: { context.isUserInteractionEnabled && !isPreview }
                 )
             } else {
                 OutlinerMixedRichMarkupContent(
@@ -227,14 +232,14 @@ private struct LGRichBlock: View {
                     onSeekYouTube: { url, seconds in
                         playback.starts[url] = seconds
                     },
-                    allowsLinkInteraction: { context.isUserInteractionEnabled },
+                    allowsLinkInteraction: { context.isUserInteractionEnabled && !isPreview },
                     onOpenMarkupLink: { link in
                         switch link {
                         case .node(let uuid):
                             emitOpenNode(uuid)
                         }
                     },
-                    onEdit: emitEdit
+                    onEdit: editAction
                 )
                 .padding(.vertical, titleVerticalInset)
                 .environment(\.lgShowCodeLanguage, {
@@ -256,6 +261,11 @@ private struct LGRichBlock: View {
 
     private var blockID: String {
         stringProperty("block-id")
+    }
+
+    private var editAction: (() -> Void)? {
+        guard interaction.isEmpty else { return nil }
+        return { emitEdit() }
     }
 
     private var titleVerticalInset: CGFloat {

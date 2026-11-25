@@ -423,6 +423,11 @@ val with_float_prop_signal :
   float Signal.signal -> Lui_elements.t -> Lui_elements.t
 
 val with_liquid_glass : string -> Lui_elements.t -> Lui_elements.t
+val rich_block_content :
+  ?show_code_language:bool -> ?interaction:string ->
+  ?row_actions:Lui_protocol.wire_value Signal.signal -> Model.outline_row Signal.signal ->
+  on_event:(Lui_protocol.event -> unit) -> Lui_elements.t
+
 val with_reading_insets : Lui_elements.t -> Lui_elements.t
 val icon_of_wire_name : string -> Lui_elements.icon
 val active_node_result_views : Model.logseq_model -> string

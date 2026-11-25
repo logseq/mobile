@@ -109,23 +109,26 @@ let reaction_summaries db ~actor target =
   |> List.map (fun (id, (count, selected)) ->
     ["id", `String id; "count", `Int count; "selected", `Bool selected])
 
-let item db ~actor eid =
+let item db ~actor ~preview eid =
   Option.map (fun uuid -> `Assoc [
     "id", `String uuid; "text", `String (title db eid);
+    "preview", preview eid;
     "actor", (match actor_name db eid with Some name -> `String name | None -> `Null);
     "createdAt", `Int (created_at db eid);
     "isComment", `Bool (is_comment db eid);
     "reactions", `List (List.map (fun fields -> `Assoc fields) (reaction_summaries db ~actor eid));
   ]) (Read.uuid_for_eid db eid)
 
-let comment_threads db ~actor target =
+let comment_threads ?(preview = fun _ -> `Null) db ~actor target =
   threads db target |> List.filter_map (fun thread ->
-    let rows = comments db thread |> List.filter_map (item db ~actor) in
+    let rows = comments db thread |> List.filter_map (item db ~actor ~preview) in
     match Read.uuid_for_eid db thread, rows with
     | Some uuid, _ :: _ -> Some (`Assoc ["id", `String uuid; "comments", `List rows])
     | _ -> None)
 
-let inbox db ~actor =
+let inbox_cutoff now = now - (14 * 24 * 60 * 60 * 1000)
+
+let inbox ?(since = 0) ?(preview = fun _ -> `Null) db ~actor =
   match entity db actor with
   | None -> []
   | Some actor ->
@@ -138,7 +141,8 @@ let inbox db ~actor =
         |> Option.iter (fun target -> Hashtbl.replace thread_targets thread target)) discussions) authored;
     let events = Hashtbl.create 32 in
     let add target event kind =
-      if live db target && author db event <> None && not (owns db actor event) then
+      let time = created_at db event in
+      if time >= since && live db target && author db event <> None && not (owns db actor event) then
         let route_target, opens_discussion =
           match thread_of_comment db target with
           | Some thread when kind = "reaction" ->
@@ -147,10 +151,12 @@ let inbox db ~actor =
         match Read.uuid_for_eid db event, route_target with
         | Some uuid, Some route ->
           Option.iter (fun target_uuid ->
-            let time = created_at db event in
             Hashtbl.replace events uuid (time, uuid, `Assoc [
               "id", `String uuid; "target", `String target_uuid; "kind", `String kind;
               "title", `String (title db target);
+              "preview", preview route;
+              "commentPreview", (if kind = "comment" then preview event
+                else if opens_discussion then preview target else `Null);
               "opensDiscussion", `Bool opens_discussion;
               "isPage", `Bool (Read.value db route "block/name" <> None);
               "emoji", (match text db event reaction_emoji with Some id -> `String id | None -> `Null);
@@ -164,11 +170,11 @@ let inbox db ~actor =
     List.iter (fun target -> List.iter (fun event -> add target event "reaction") (reactions db target)) authored;
     Hashtbl.to_seq_values events |> List.of_seq
     |> List.sort (fun (a, x, _) (b, y, _) -> compare (b, y) (a, x))
-    |> List.take 100 |> List.map (fun (_, _, event) -> event)
+    |> List.map (fun (_, _, event) -> event)
 
-let discussion db ~actor ~target =
+let discussion ?(preview = fun _ -> `Null) db ~actor ~target =
   let ( let* ) = Option.bind in
   let* target = write_target db target in
-  let* subject = item db ~actor:(Some actor) target in
-  let related = threads db target |> List.concat_map (comments db) |> List.filter_map (item db ~actor:(Some actor)) in
+  let* subject = item db ~actor:(Some actor) ~preview target in
+  let related = threads db target |> List.concat_map (comments db) |> List.filter_map (item db ~actor:(Some actor) ~preview) in
   Some (`Assoc ["subject", subject; "comments", `List related])

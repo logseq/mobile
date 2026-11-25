@@ -104,6 +104,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -186,6 +187,9 @@ internal fun OutlinerBlockContent(
     val actionsJson = context.string("row-actions")
     val actions = remember(actionsJson) { actionsJson?.let { runCatching { JSONObject(it) }.getOrNull() } }
     val selectionMode = actions?.optBoolean("selectionMode") == true
+    val interaction = context.string("interaction")
+    val readOnly = interaction != null
+    val preview = interaction == "preview"
     val currentContext by rememberUpdatedState(context)
     var menuOpen by remember(uuid) { mutableStateOf(false) }
     val pressBlock: () -> Unit = { currentContext.emit(if (selectionMode) "toggle-selection" else "edit", "uuid" to uuid) }
@@ -262,6 +266,7 @@ internal fun OutlinerBlockContent(
             }
             .background(hoverColor, RoundedCornerShape(8.dp))
             .then(when {
+                readOnly -> Modifier
                 linkOnly && !selectionMode && actions == null -> Modifier
                 linkOnly && !selectionMode -> Modifier.pointerInput(uuid) {
                     awaitEachGesture {
@@ -276,10 +281,10 @@ internal fun OutlinerBlockContent(
                     detectTapGestures(onTap = { pressBlock() }, onLongPress = { holdBlock() })
                 }
             })
-            .dragAndDropTarget(
+            .then(if (readOnly) Modifier else Modifier.dragAndDropTarget(
                 shouldStartDragAndDrop = { true },
                 target = dropTarget,
-            )
+            ))
             .testTag("outliner-block-content-$uuid")
     Box(
         modifier = rowModifier,
@@ -292,16 +297,18 @@ internal fun OutlinerBlockContent(
                     title = title,
                     assetType = context.string("asset-type") ?: "",
                     localPath = resolveAssetPath(context.string("local-path") ?: ""),
-                    onPreview = if (selectionMode) ({ _ -> pressBlock() }) else onOpenImage?.let { open ->
+                    preview = preview,
+                    onPreview = if (preview) null else if (selectionMode) ({ _ -> pressBlock() }) else onOpenImage?.let { open ->
                         { path -> open(uuid, path) }
                     },
-                    onLongPress = holdBlock,
+                    onLongPress = if (readOnly) null else holdBlock,
                 )
             } else {
                 CompositionLocalProvider(
                     LocalShowCodeLanguage provides (context.bool("show-code-language") ?: true),
-                    LocalOutlinerBlockActions provides (actions != null),
-                    LocalOutlinerSelection provides selectionMode,
+                    LocalOutlinerBlockActions provides (actions != null || readOnly),
+                    LocalOutlinerSelection provides (selectionMode || preview),
+                    LocalOutlinerInteraction provides interaction,
                 ) {
                     ProjectedMarkup(
                         youtubeStarts = youtubeStarts,
@@ -402,6 +409,7 @@ internal fun OutlinerRowSwipeSurface(context: LuiExtensionContext) {
 
 private val LocalOutlinerBlockActions = compositionLocalOf { false }
 private val LocalOutlinerSelection = compositionLocalOf { false }
+private val LocalOutlinerInteraction = compositionLocalOf<String?> { null }
 
 @Composable
 private fun AndroidBlockActionMenu(
@@ -563,6 +571,8 @@ private fun ProjectedMarkup(
             style = outlinerBodyStyle.copy(
                 textDecoration = completedDecoration
             ),
+            maxLines = if (LocalOutlinerInteraction.current == "preview") 5 else Int.MAX_VALUE,
+            overflow = TextOverflow.Ellipsis,
         )
         return
     }
@@ -778,6 +788,7 @@ private fun MarkupInlineText(
     val linkColor = luiThemeColor("link", foreground = true) ?: MaterialTheme.colorScheme.primary
     val selectionMode = LocalOutlinerSelection.current
     val usesBlockMenu = LocalOutlinerBlockActions.current
+    val interaction = LocalOutlinerInteraction.current
     val mathSources = remember(mathNodes) { inlineMathSources(mathNodes) }
     var paragraphWidth by remember { mutableIntStateOf(0) }
     val mathLayout = if (mathSources.isEmpty()) Modifier else
@@ -828,8 +839,12 @@ private fun MarkupInlineText(
                 }
             })
             .semantics {
-                onClick(label = "Edit block") { onTapFallback(); true }
+                if (interaction == null) {
+                    onClick(label = "Edit block") { onTapFallback(); true }
+                }
             },
+        maxLines = if (interaction == "preview") 5 else Int.MAX_VALUE,
+        overflow = TextOverflow.Ellipsis,
     )
 }
 
@@ -1013,13 +1028,14 @@ private fun AndroidLinkedImage(url: String, alt: String) {
 private fun ProjectedAsset(
     uuid: String, title: String, assetType: String, localPath: String,
     loadImage: (suspend (String, String) -> String)?, onPreview: ((String) -> Unit)?,
-    onLongPress: () -> Unit,
+    preview: Boolean, onLongPress: (() -> Unit)?,
 ) {
     when {
-        assetType.lowercase() in listOf("pdf", "application/pdf") || localPath.endsWith(".pdf", ignoreCase = true) ->
-            PdfAssetButton(uuid, title, assetType, localPath, loadImage)
         isImageAsset(assetType, localPath) ->
             GraphImagePreview(uuid, title, assetType, localPath, loadImage, onPreview, onLongPress)
+        preview -> AssetFallback(title)
+        assetType.lowercase() in listOf("pdf", "application/pdf") || localPath.endsWith(".pdf", ignoreCase = true) ->
+            PdfAssetButton(uuid, title, assetType, localPath, loadImage)
         localPath.isNotEmpty() && isAudioAsset(assetType, localPath) ->
             AndroidAudioPlaybackRow(title = title, path = localPath)
         else -> AssetFallback(title)

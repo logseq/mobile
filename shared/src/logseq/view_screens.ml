@@ -556,8 +556,8 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
            ~uses_header:(uses_ios_native_header context || Lui_ui.host context = KotlinHost)
            ~bottom_spacing:(if uses_ios_native_header context then 64 else 24)
            model_source send);
-      if_ ~test:(Signal.map View_collaboration.notification_root model_source)
-        (View_collaboration.notification_screen ~bottom_spacing:(if uses_ios_native_header context then 72 else 80) model_source send);
+      View_collaboration.notification_screen
+        ~bottom_spacing:(if uses_ios_native_header context then 72 else 80) model_source send;
       if_
         ~test:(Signal.map View_base.graphs_destination_ model_source)
         (View_graphs.graphs_screen context model_source send);

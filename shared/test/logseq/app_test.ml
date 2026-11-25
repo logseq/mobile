@@ -2258,7 +2258,7 @@ let outliner_editor_extension_contract_is_pinned () =
 let outliner_block_content_extension_contract_is_pinned () =
   check_eq ~msg:"the rich block renderer must match the LG wire schema"
     (Lui_extension.fingerprint (View.outliner_block_content_schema ()))
-    "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,11:row-actions:string:optional:none,12:is-completed:bool:required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],11:menu-action[7:payload:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
+    "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:interaction:string:optional:none,11:markup-json:string:required:none,11:row-actions:string:optional:none,12:is-completed:bool:required:none,18:show-code-language:bool:optional:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],11:menu-action[7:payload:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
 
 let native_navigation_stack_extension_contract_is_pinned () =
   let schema =
@@ -5227,16 +5227,23 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   swipe_to 3;
   check_eq (App.model application).destination Model.TasksDestination;
   let root = Lui_app.root_node application in
+  let inbox () = descendant_with_identifier renderer root "screen.notifications" in
+  let retained_inbox = inbox () in
+  check_eq (node renderer retained_inbox) (Some Lui_protocol.VirtualList);
+  check (not (selected retained_inbox));
   swipe_to 2;
   check_eq (App.model application).destination Model.NotificationsDestination;
   check (selected (tab "notifications"));
-  check (descendant_with_identifier renderer root "screen.notifications" <> -1);
+  check_eq (inbox ()) retained_inbox;
+  check (selected retained_inbox);
   check_eq (tab "flashcards") (-1);
   send application Model.OpenSidebar;
   flush application;
   dispatch application (Lui_protocol.Press (descendant_with_identifier renderer root "link.sidebar.flashcards"));
   flush application;
   check_eq (App.model application).destination Model.FlashcardsDestination;
+  check_eq (inbox ()) retained_inbox;
+  check (not (selected retained_inbox));
   check_eq (extension_property application strip "selected-index") (Some (Lui_protocol.IntValue (-1)));
   dispatch application (Lui_protocol.Press capture);
   flush application;

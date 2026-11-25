@@ -56,6 +56,43 @@ let reaction_row actions = row ~gap:4 ~cross:`center ~flex_wrap:`wrap actions
 let reaction_buttons current send item =
   reaction_row (reaction_actions current send (string "id" item) (list "reactions" item))
 
+let fallback_title current title =
+  if String_kit.is_blank title || Ref_text.is_uuid (String.trim title) then copy current "Untitled"
+  else
+    let missing name = if Ref_text.is_uuid name then Some (copy current "Unavailable reference") else None in
+    Ref_text.to_text missing missing title
+
+let preview_title current preview fallback =
+  match field "displayTitle" preview with
+  | `String title -> if String_kit.is_blank title then copy current "Untitled" else title
+  | _ -> Markup.plain_text (Markup.parse [] [] (fallback_title current fallback))
+
+let block_preview current send ~interaction ~id ~fallback preview : t =
+  let row = match Response_snapshot.related_row preview with
+    | Some row -> {row with Model.row_title = fallback_title current row.row_title}
+    | None ->
+      let title = fallback_title current fallback in
+      Option.get (Response_snapshot.related_row (`Assoc ["uuid", `String id; "title", `String title;
+        "markup", Markup.to_yojson (Markup.parse [] [] title)])) in
+  custom (fun context parent ->
+    let content = if List.mem (Lui_ui.host context) [Lui_protocol.KotlinHost; SwiftUIHost] then
+      let on_event = function
+        | Lui_protocol.ExtensionEvent (_, _, "open-node", values) when interaction = "read-only" ->
+          (match Lui_protocol.String_map.find_opt "uuid" values with
+           | Some (Lui_protocol.StringValue uuid) ->
+             if current.Model.discussion_target <> None then ignore (send Model.CloseDiscussion);
+             ignore (send (View_base.request_node_action current uuid))
+           | _ -> ())
+        | _ -> () in
+      View_base.rich_block_content ~interaction ~show_code_language:false
+        (Signal.constant context.ui_scheduler row) ~on_event
+    else text ~value:(preview_title current preview fallback) ~foreground:"foreground" [] in
+    mount context ?parent content)
+
+let discussion_body current send item =
+  block_preview current send ~interaction:"read-only" ~id:(string "id" item)
+    ~fallback:(string "text" item) (field "preview" item)
+
 let comment current send item =
   let target = string "id" item in
   let actions = reaction_actions current send target (list "reactions" item) in
@@ -64,7 +101,7 @@ let comment current send item =
     ([column ~gap:3 [
       text ~value:(let actor = string "actor" item in if actor = "" then copy current "Graph member" else actor)
         ~foreground:"muted-foreground" ~style_class:"caption" [];
-      text ~value:(string "text" item) ~foreground:"foreground" [];
+      discussion_body current send item;
     ]] @ if actions = [] then [] else [reaction_row actions])
 
 let inline current send ~target ~reactions ~threads =
@@ -233,7 +270,7 @@ let thread_sheet source send =
     | subject ->
       column ~gap:12 [
         column ~gap:4 ~margin_bottom:12 [
-          text ~value:(string "text" subject) ~style_class:"headline" ~foreground:"foreground" [];
+          discussion_body current send subject;
           reaction_buttons current send subject;
         ];
         (match list "comments" discussion with
@@ -304,9 +341,15 @@ let notification_screen ~bottom_spacing source send =
   let items = Signal.map Model.notification_items source in
   let current = Signal.sample source in
   let show_error = Signal.map (fun (current : Model.logseq_model) -> current.push_error) source in
+  let visible = Signal.map notification_root source in
+  let account_graph = Signal.map (fun (current : Model.logseq_model) ->
+    [Option.value ~default:"local" current.selected_graph_id]) source in
   View_base.with_reading_insets
-    (scroll ~grow:1.0 ~accessibility_identifier:"screen.notifications" [
-      column ~gap:0 ~margin_bottom:bottom_spacing [
+    (box ~grow:1.0 [keyed ~source:account_graph ~key:Fun.id ~cmp:String.compare ~mount:(fun graph ->
+      View_base.with_selected_signal visible
+      (virtual_list ~grow:1.0 ~gap:0 ~style_class:"retained-pane"
+        ~data_attrs:["data-scroll-identity", "notifications:" ^ Signal.sample graph]
+        ~accessibility_identifier:"screen.notifications" [
         box ~padding_horizontal:16 ~padding_vertical:12 [
           heading ~value:(copy current "Notifications") ~level:`h1 ~style_class:"semibold" ~foreground:"foreground"
             ~accessibility_identifier:"title.notifications" [];
@@ -323,39 +366,56 @@ let notification_screen ~bottom_spacing source send =
                 ~foreground:"muted-foreground" [];
             ];
           ]);
-        keyed ~source:items ~key:(string "id") ~cmp:String.compare ~mount:(fun item ->
+        View_rows.windowed_keyed ~window_size:24 ~item_extent:82 ~identifier:"notifications.window"
+          ~source:items ~key:(string "id") ~cmp:String.compare ~mount:(fun item ->
           let id = string "id" (Signal.sample item) in
           let read = Signal.map (fun current -> Model.notification_read current id) source in
           let caption item =
-            let action = if string "kind" item = "comment" then "Commented" else "Reacted" in
             let author = string "actor" item in
             let author = if author = "" then copy current "Graph member" else author in
-            let reaction = string "emoji" item in
-            author ^ " · " ^ copy current action ^ (if reaction = "" then "" else " " ^ emoji reaction) in
-          let title item =
-            let title = string "title" item in
-            if String.trim title = "" then copy current "Untitled" else title in
+            author ^ " · " ^ date current item in
           let label = Signal.map2 (fun read item ->
-            (if read then "" else copy current "Unread" ^ ", ") ^ caption item ^ ", " ^ title item) read item in
+            let action = if string "kind" item = "comment" then "Commented" else "Reacted" in
+            let comment = string "displayTitle" (field "commentPreview" item) in
+            let reaction = Option.fold ~none:"" ~some:(fun (entry : Reaction_emoji.emoji) -> ", " ^ entry.name)
+              (Reaction_emoji.find (string "emoji" item)) in
+            (if read then "" else copy current "Unread" ^ ", ") ^ caption item ^ ", " ^ copy current action ^ reaction ^ ", "
+            ^ preview_title current (field "preview" item) (string "title" item)
+            ^ (if comment = "" then "" else ", " ^ comment)) read item in
+          let activity_icon item =
+            match Reaction_emoji.find (string "emoji" item) with
+            | Some entry -> text ~value:entry.glyph ~font_size:"17" []
+            | None -> icon ~name:(`app (if string "kind" item = "comment" then "discussion-comment" else "reaction-add"))
+                ~width:16 ~height:16 ~point_size:16 ~foreground:"muted-foreground" [] in
+          let preview item =
+            let show ~fallback value = block_preview current send ~interaction:"preview" ~id
+              ~fallback value in
+            let block = show ~fallback:(string "title" item) (field "preview" item) in
+            match field "commentPreview" item with
+            | `Null -> block
+            | comment -> column ~gap:4 ~cross:`stretch [
+                block;
+                box ~padding_horizontal:8 ~padding_vertical:4 ~corner_radius:6 ~background:"muted"
+                  ~accessibility_identifier:("notification.comment." ^ id) [show ~fallback:"" comment];
+              ] in
           View_base.with_label_signal label
-            (list_item ~separator:`hidden ~min_height:66 ~padding_horizontal:16
+            (list_item ~separator:`hidden ~min_height:48 ~padding:0
               ~accessibility_identifier:("notification." ^ id)
               ~on_press:(send_event send (Model.ReadNotification id))
-              [row ~grow:1.0 ~gap:12 ~cross:`center [
-                box ~width:30 ~height:34 ~main:`center ~cross:`center [
-                  icon ~name:(`app (if string "kind" (Signal.sample item) = "comment"
-                    then "discussion-comment" else "reaction-add"))
-                    ~point_size:21 ~foreground:"muted-foreground" [];
+              [row ~grow:1.0 ~gap:8 ~cross:`start ~padding_horizontal:16 ~padding_vertical:7 [
+                box ~width:20 ~height:20 ~main:`center ~cross:`center [
+                  reactive activity_icon item;
                 ];
-                column ~grow:1.0 ~gap:4 [
-                  text ~value:(reactive (Signal.map title item)) ~line_clamp:2 ~foreground:"foreground" [];
-                  text ~value:(reactive (Signal.map (fun item -> caption item ^ " · " ^ date current item) item))
-                    ~line_clamp:2 ~style_class:"caption" ~foreground:"muted-foreground" [];
+                column ~grow:1.0 ~gap:2 ~cross:`stretch [
+                  row ~gap:6 ~min_height:20 ~cross:`center [
+                    text ~value:(reactive (Signal.map caption item)) ~grow:1.0 ~line_clamp:1
+                      ~style_class:"caption single-line" ~text_alignment:`start ~foreground:"muted-foreground"
+                      ~accessibility_identifier:("notification.meta." ^ id) [];
+                    if_ ~test:(Signal.map not read)
+                      (box ~width:6 ~height:6 ~corner_radius:3 ~background:"link" []);
+                  ];
+                  box ~accessibility_identifier:("notification.preview." ^ id) [reactive preview item];
                 ];
-                box ~width:12 ~height:20 ~main:`center ~cross:`center [
-                  if_ ~test:(Signal.map not read)
-                    (box ~width:6 ~height:6 ~corner_radius:3 ~background:"link" []);
-                ];
-              ]]));
-      ];
-    ])
+              ]])) ();
+        box ~height:bottom_spacing [];
+      ]))])
