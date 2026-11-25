@@ -30,21 +30,34 @@ import UIKit
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
         let tabsID = try node("group.bottom.tabs")
+        let chromeID = try node("row.bottom.capture")
         let actionsID = try node("group.bottom.actions")
         let searchID = try node("button.search")
         let captureID = try node("button.composer.expand")
+        func views(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(views) }
+        func tabsFrame() -> CGRect? {
+            if #available(iOS 26, *) {
+                guard let bar = views(window).compactMap({ $0 as? UITabBar }).first,
+                      bar.items?.map(\.accessibilityIdentifier) == ["tab.bottom.home", "tab.bottom.tasks", "tab.bottom.flashcards"]
+                else { return nil }
+                return bar.convert(bar.bounds, to: window)
+            }
+            return frames[tabsID]
+        }
         for _ in 0..<100 {
-            if [tabsID, actionsID, searchID, captureID].allSatisfy({ frames[$0] != nil }) { break }
+            if tabsFrame() != nil, [chromeID, actionsID, searchID, captureID].allSatisfy({ frames[$0] != nil }) { break }
             try await Task.sleep(for: .milliseconds(20))
         }
-        guard let tabs = frames[tabsID], let actions = frames[actionsID],
+        guard let tabs = tabsFrame(), let actions = frames[actionsID],
+              let chrome = frames[chromeID],
               let search = frames[searchID], let capture = frames[captureID] else {
             throw failure("Missing rendered bottom controls")
         }
         print("BOTTOM_CHROME tabs=\(tabs) actions=\(actions) search=\(search) capture=\(capture)")
-        guard abs(tabs.height - 58) <= 1, abs(actions.height - 58) <= 1,
-              abs(search.midY - capture.midY) <= 1, abs(tabs.midY - actions.midY) <= 1,
-              abs(tabs.minX - 16) <= 1, abs(window.bounds.width - actions.maxX - 16) <= 1,
+        // The native tab bar's view includes the margins around its floating items.
+        guard tabs.height >= 44, abs(actions.height - 58) <= 1,
+              abs(search.midY - capture.midY) <= 1, tabs.minY <= chrome.midY, tabs.maxY >= chrome.midY,
+              tabs.minX <= chrome.minX + 1, abs(window.bounds.width - actions.maxX - 16) <= 1,
               tabs.maxX < actions.minX, actions.contains(search), actions.contains(capture),
               search.maxX <= capture.minX else {
             throw failure("The tab and action groups must be aligned at opposite edges with Search before Capture")

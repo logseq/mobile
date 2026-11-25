@@ -1793,7 +1793,7 @@ let placeholder_block context model_source (value : View_rows.placeholder) show_
         node);
       page_title_spacer (); placeholder]
 
-let journal_task_row context model_source task_source send =
+let journal_task_row ?(tasks_screen = false) context model_source task_source send =
   let decode task = Option.map (fun row -> {row with Model.row_list_number = None})
     (Response_snapshot.related_row (journal_task_field "block" task)) in
   match decode (Signal.sample task_source) with
@@ -1844,21 +1844,15 @@ let journal_task_row context model_source task_source send =
     with_ios_trailing_padding 0 (column ~gap:0 ~padding_horizontal:inset ~padding_vertical:1
       ~accessibility_identifier:(View_rows.journal_task_scope uuid) [
         outliner_row_body ~allow_drag:false ~trailing_inset:inset context view_model retained source send_block;
-        View_base.with_int_prop_signal PaddingLeft
+        if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> not tasks_screen || not current.tasks_view.compact) model_source)
+        (View_base.with_int_prop_signal PaddingLeft
           (Signal.map (outliner_task_date_leading context) source)
-          (with_ios_trailing_padding inset (box [metadata]));
+          (with_ios_trailing_padding inset (box [metadata])));
       ])
 
-let journal_task_entry context model_source send = function
-  | View_rows.Journal_task_gap -> box ~height:80 []
-  | View_rows.Journal_task_heading section ->
-    let label = match section with
-      | "overdue" -> "Overdue"
-      | "doing" -> "Doing"
-      | _ -> "Planned" in
+let task_heading context model_source send section ~identifier label =
     let collapsed = Signal.map (fun (model : Model.logseq_model) ->
       List.mem section (Model.journal_tasks_collapsed model)) model_source in
-    let label = View_base.tr (Signal.sample model_source) label in
     let title = text ~value:label ~style_class:"semibold" ~foreground:"muted-foreground" [] in
     let chevron =
       if Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost then
@@ -1880,9 +1874,19 @@ let journal_task_entry context model_source send = function
       separator [];
       button ~variant:`ghost ~padding_horizontal:0 ~foreground:"muted-foreground"
         ~min_height:44 ~text_alignment:`start ~text:label ~label
-        ~accessibility_identifier:("journal-tasks." ^ section)
+        ~accessibility_identifier:identifier
         ~on_press:(fun _ -> ignore (send (Model.ToggleJournalTaskSection section))) contents;
     ]
+
+let journal_task_entry context model_source send = function
+  | View_rows.Journal_task_gap -> box ~height:80 []
+  | View_rows.Journal_task_heading section ->
+    let label = match section with
+      | "overdue" -> "Overdue"
+      | "doing" -> "Doing"
+      | _ -> "Planned" in
+    task_heading context model_source send section ~identifier:("journal-tasks." ^ section)
+      (View_base.tr (Signal.sample model_source) label)
   | View_rows.Journal_task_error ->
     let reason (current : Model.logseq_model) =
       if journal_task_field "retained" current.journal_tasks = `Bool true
@@ -1910,11 +1914,14 @@ let with_journal_task_transition model_source content =
       node
     | _ -> mount context ?parent content
 
-let mount_journal_task_entry context model_source send entry_source =
+let mount_journal_task_entry ?tasks_screen context model_source send entry_source =
   match Signal.sample entry_source with
   | View_rows.Journal_task_row (initial, _) ->
-    journal_task_row context model_source (Signal.map (function
+    journal_task_row ?tasks_screen context model_source (Signal.map (function
       | View_rows.Journal_task_row (task, _) -> task | _ -> initial) entry_source) send
+  | View_rows.Tasks_page_heading (section, initial) ->
+    reactive (task_heading context model_source send section ~identifier:section)
+      (Signal.map (function View_rows.Tasks_page_heading (_, title) -> title | _ -> initial) entry_source)
   | entry -> journal_task_entry context model_source send entry
 
 let outliner_bottom_spacer () =
@@ -1928,26 +1935,112 @@ let outliner_bottom_spacer () =
       node
     | _ -> mount context ?parent (box ~height [])
 
+let update_tasks_view model_source send change =
+  let current : Model.logseq_model = Signal.sample model_source in
+  ignore (send (Model.SetTasksView (change current.tasks_view)))
+
+let tasks_menu model_source send =
+  let current = Signal.sample model_source in
+  let tr = View_base.tr current in
+  let option read = Signal.map (fun (current : Model.logseq_model) -> read current.tasks_view) model_source in
+  let item id label selected change =
+    dropdown_menu_item ~text:(tr label) ~selected_signal:(option selected)
+      ~accessibility_identifier:("tasks.menu." ^ id)
+      ~on_press:(fun _ -> update_tasks_view model_source send change) [] in
+  let choice id label read write value =
+    item id label (fun options -> read options = value) (fun options -> write options value) in
+  let toggle id label read write =
+    item id label read (fun options -> write options (not (read options))) in
+  box ~width:44 ~height:44 [
+    menu ~icon:(`app "more-horiz") ~style_class:"capsule"
+      ~label:(tr "Task options") ~accessibility_identifier:"button.tasks.more" [
+        dropdown_menu_item ~icon:`check_circle ~text:(tr "Select")
+          ~accessibility_identifier:"tasks.menu.select"
+          ~on_press:(fun _ -> ignore (send Model.SelectTasks)) [];
+        dropdown_menu_submenu ~icon:(`app "view-group") ~text:(tr "Group by")
+          (List.map (fun (id, label, value) ->
+            choice id label (fun options -> options.Model.group_by_page)
+              (fun options group_by_page -> { options with Model.group_by_page }) value)
+            ["ungrouped", "None", false; "group-page", "Page", true]);
+        dropdown_menu_submenu ~icon:`file_text ~text:(tr "Sort pages")
+          ~disabled_signal:(option (fun options -> not options.Model.group_by_page))
+          (List.map (fun (id, label, value) ->
+            choice id label (fun options -> options.Model.sort_pages)
+              (fun options sort_pages -> { options with Model.sort_pages }) value)
+            ["page-name", "Name", Model.PageName; "page-updated", "Updated date", Model.PageUpdated;
+             "page-created", "Created date", Model.PageCreated]);
+        dropdown_menu_submenu ~icon:(`app "view-sort") ~text:(tr "Sort tasks")
+          (List.map (fun (id, label, value) ->
+            choice id label (fun options -> options.Model.sort_tasks)
+              (fun options sort_tasks -> { options with Model.sort_tasks }) value)
+            ["scheduled", "Scheduled date", Model.ScheduledDate; "deadline", "Deadline", Model.DeadlineDate;
+             "page-order", "Page order", Model.PageOrder]);
+        dropdown_menu_submenu ~icon:(`app "view-display") ~text:(tr "Display")
+          (List.map (fun (id, label, value) ->
+            choice id label (fun options -> options.Model.compact)
+              (fun options compact -> { options with Model.compact }) value)
+            ["compact", "Compact", true; "expanded", "Expanded", false]);
+        dropdown_menu_separator [];
+        if_dropdown_menu_item ~test:(option (fun options -> options.Model.tab = Model.TasksToday))
+          (toggle "completed" "Show completed tasks" (fun options -> options.Model.show_completed)
+             (fun options show_completed -> { options with Model.show_completed }));
+        if_dropdown_menu_item ~test:(option (fun options -> options.Model.tab = Model.TasksToday))
+          (toggle "past" "Show past-dated tasks" (fun options -> options.Model.show_past)
+             (fun options show_past -> { options with Model.show_past }));
+      ]
+  ]
+
 let tasks_screen context model_source send : t = custom @@ fun mount_context parent ->
-  let entries = Signal.own_signal mount_context.ui_scope (Signal.map View_rows.task_rows model_source) in
+  let own signal = Signal.own_signal mount_context.ui_scope signal in
+  let tab = own (Signal.map (fun (current : Model.logseq_model) -> current.tasks_view.tab) model_source) in
+  let entries = own (Signal.map View_rows.tasks_view_rows model_source) in
+  let tab_button id name image value =
+    let label = View_base.tr (Signal.sample model_source) name in
+    let selected = own (Signal.map ((=) value) tab) in
+    let background = own (Signal.map (fun selected ->
+      if selected then "task-tab-selected-background" else "task-tab-background") selected) in
+    View_base.with_string_prop_signal BackgroundValue background (box ~corner_radius:22 [
+      button ~text:label ~label ~icon:(`app image) ~variant:`ghost ~min_height:44
+        ~padding_horizontal:15 ~corner_radius:22 ~selected_signal:selected
+        ~foreground_signal:(own (Signal.map (fun selected -> if selected then "link" else "foreground") selected))
+        ~accessibility_identifier:("tasks.tab." ^ id)
+        ~on_press:(fun _ -> update_tasks_view model_source send (fun options -> { options with tab = value })) [];
+    ]) in
   mount mount_context ?parent (View_base.with_reading_insets
     (column ~grow:1.0 ~accessibility_identifier:"screen.tasks" [
-      if_ ~test:(Signal.map ((=) []) entries)
-        (column ~grow:1.0 ~main:`center ~cross:`center
-          [text ~value:(reactive (fun current -> View_base.tr current "No tasks to show") model_source)
-             ~foreground:"muted-foreground" ~accessibility_identifier:"tasks.empty" []]);
-      if_ ~test:(Signal.map ((<>) []) entries)
-        (with_journal_task_transition model_source
-           (virtual_list ~grow:1.0 ~gap:0 ~accessibility_identifier:"list.tasks" [
-             box ~height:16 [];
-             View_rows.windowed_keyed ~identifier:"tasks.window" ~source:entries ~key:View_rows.page_entry_identifier ~cmp:compare
-               ~is_pinned:View_rows.page_entry_pinned_
-               ~mount:(fun entry -> box [mount_journal_task_entry context model_source send entry]) ();
-             outliner_bottom_spacer ();
-           ]));
+      column ~gap:12 ~padding_horizontal:16 ~padding_vertical:12 [
+        heading ~value:(View_base.tr (Signal.sample model_source) "Tasks")
+          ~level:`h1 ~style_class:"semibold" ~accessibility_identifier:"tasks.title" [];
+        row ~gap:8 ~cross:`center [
+          tab_button "today" "Today" "tasks-today" Model.TasksToday;
+          tab_button "upcoming" "Upcoming" "calendar" Model.TasksUpcoming;
+        ];
+      ];
+      keyed ~source:(own (Signal.map (fun tab -> [tab]) tab)) ~key:Fun.id ~cmp:compare
+        ~mount:(fun source ->
+          let active_tab = Signal.sample source in
+          column ~grow:1.0 [
+          if_ ~test:(Signal.map ((=) []) entries)
+            (column ~grow:1.0 ~gap:10 ~main:`center ~cross:`center [
+              icon ~name:(`app (if active_tab = Model.TasksToday then "tasks-today" else "calendar"))
+                ~width:25 ~height:25 ~foreground:"muted-foreground" [];
+              text ~value:(View_base.tr (Signal.sample model_source)
+                (if active_tab = Model.TasksToday then "No tasks to show" else "No upcoming tasks"))
+                ~foreground:"muted-foreground" ~accessibility_identifier:"tasks.empty" [];
+            ]);
+          if_ ~test:(Signal.map ((<>) []) entries)
+            (with_journal_task_transition model_source
+               (virtual_list ~grow:1.0 ~gap:0 ~accessibility_identifier:"list.tasks" [
+                 box ~height:16 [];
+                 View_rows.windowed_keyed ~identifier:"tasks.window" ~source:entries ~key:View_rows.page_entry_identifier ~cmp:compare
+                   ~is_pinned:View_rows.page_entry_pinned_
+                   ~mount:(fun entry -> box [mount_journal_task_entry ~tasks_screen:true context model_source send entry]) ();
+                 outliner_bottom_spacer ();
+               ]));
+        ]);
     ]))
 
-let outliner_entries ?prefetch_history context model_source ~source send : t =
+let outliner_entries ?prefetch_history ?reset_key context model_source ~source send : t =
  custom @@ fun mount_context parent ->
   let previous_pin = ref None in
   let ios = Lui_ui.platform mount_context = IOS && Lui_ui.host mount_context = SwiftUIHost in
@@ -1991,7 +2084,7 @@ let outliner_entries ?prefetch_history context model_source ~source send : t =
       match View_base.active_node_projection current with
       | Some route -> Option.map (fun uuid -> "outline." ^ uuid) route.Model.node_scroll_target | None -> None) model_source) in
   mount mount_context ?parent
-    (View_rows.windowed_keyed ~scroll_target ~first_section ~on_window ~on_visible_range
+    (View_rows.windowed_keyed ~scroll_target ?reset_key ~first_section ~on_window ~on_visible_range
       ~on_prefetch ~is_pinned:View_rows.page_entry_pinned_ ~source:entries
       ~key:View_rows.page_entry_identifier ~cmp:compare
       ~mount:(fun entry_source ->
@@ -2007,7 +2100,7 @@ let outliner_entries ?prefetch_history context model_source ~source send : t =
         | View_rows.Reference_entry _ ->
           reference_entry context model_source
             (Signal.map View_rows.page_entry_reference entry_source) send
-        | View_rows.Journal_task_gap | View_rows.Journal_task_heading _
+        | View_rows.Journal_task_gap | View_rows.Journal_task_heading _ | View_rows.Tasks_page_heading _
         | View_rows.Journal_task_error | View_rows.Journal_task_row _ ->
           mount_journal_task_entry context model_source send entry_source in
         box ~padding:0

@@ -5186,8 +5186,10 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   let tab name = descendant_with_identifier renderer tabs ("tab.bottom." ^ name) in
   let selected id = property_bool renderer id Lui_protocol.Selected in
   let strip = descendant_with_extension renderer application row "bottom-tab-strip" in
+  let current_strip () =
+    descendant_with_extension renderer application (native_bottom_chrome renderer application) "bottom-tab-strip" in
   let swipe_to index =
-    dispatch application (Lui_protocol.ExtensionEvent (strip, "bottom-tab-strip", "select",
+    dispatch application (Lui_protocol.ExtensionEvent (current_strip (), "bottom-tab-strip", "select",
       Lui_protocol.String_map.singleton "index" (Lui_protocol.IntValue index)));
     flush application in
   check_eq (children renderer tabs) (List.map tab ["home"; "tasks"; "flashcards"]);
@@ -5224,7 +5226,25 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   check_eq ~msg:"iOS keeps main's compact native-navigation inset"
     (property_int renderer top_inset Lui_protocol.HeightValue)
     16;
-  ()
+  let double_home () =
+    dispatch application (Lui_protocol.ExtensionEvent (current_strip (), "bottom-tab-strip", "home-double-tap",
+      Lui_protocol.String_map.empty));
+    flush application in
+  check_eq (App.model application).home_scroll_request 0;
+  double_home ();
+  swipe_to 1;
+  send application Model.ExpandComposer;
+  flush application;
+  check ~msg:"Capture defaults to a task on Tasks" ((App.model application).selected_task_status <> None);
+  send application Model.DismissComposer;
+  flush application;
+  double_home ();
+  check_eq (App.model application).home_scroll_request 2;
+  check_eq (App.model application).destination Model.JournalsDestination;
+  send application Model.ExpandComposer;
+  flush application;
+  check_eq ~msg:"Dismissing an empty task capture preserves normal capture on Home"
+    (App.model application).selected_task_status None
 
 let composer_dismissal_preserves_an_unsent_draft () =
   let expanded = Model.update (Model.initial ()) Model.ExpandComposer in

@@ -48,6 +48,20 @@ type sidebar_page =
 
 type node_deletion = PageToDelete of sidebar_page | BlockToDelete of sidebar_page
 
+type tasks_tab = TasksToday | TasksUpcoming
+type task_sort = ScheduledDate | DeadlineDate | PageOrder
+type task_page_sort = PageName | PageUpdated | PageCreated
+
+type tasks_view =
+  { tab : tasks_tab
+  ; group_by_page : bool
+  ; sort_tasks : task_sort
+  ; sort_pages : task_page_sort
+  ; compact : bool
+  ; show_completed : bool
+  ; show_past : bool
+  }
+
 type ui_session =
   { graph_id : string option
   ; destination : primary_destination
@@ -414,6 +428,9 @@ type logseq_model =
   ; pending_sync_error : string option
   ; sync_details_open : bool
   ; destination : primary_destination
+  ; home_scroll_request : int
+  ; tasks_view : tasks_view
+  ; tasks_selection_mode : bool
   ; sidebar_open : bool
   ; viewport_width : int
   ; graph_menu_open : bool
@@ -431,6 +448,7 @@ type logseq_model =
   ; task_statuses : task_status list
   ; task_priorities : task_status list
   ; selected_task_status : task_status option
+  ; composer_task_defaulted : bool
   ; flashcards : flashcard list
   ; flashcard_decks_json : string
   ; flashcard_cloze_revealed : bool
@@ -622,7 +640,10 @@ type logseq_action =
   | SelectSidebarPage of string
   | OpenQuickAction of string
   | ShowJournals
+  | ScrollHomeToTop
   | ShowTasks
+  | SetTasksView of tasks_view
+  | SelectTasks
   | ShowFlashcards
   | FlashcardDeckAction of string
   | ShowGraphs
@@ -811,6 +832,10 @@ let initial () =
     pending_sync_error = None;
     sync_details_open = false;
     destination = JournalsDestination;
+    home_scroll_request = 0;
+    tasks_view = {tab = TasksToday; group_by_page = true; sort_tasks = ScheduledDate;
+      sort_pages = PageUpdated; compact = false; show_completed = true; show_past = true};
+    tasks_selection_mode = false;
     sidebar_open = false;
     viewport_width = 0;
     graph_menu_open = false;
@@ -828,6 +853,7 @@ let initial () =
     task_statuses = built_in_task_statuses ();
     task_priorities = [];
     selected_task_status = None;
+    composer_task_defaulted = false;
     flashcards = [];
     flashcard_decks_json = "";
     flashcard_cloze_revealed = false;
@@ -1426,6 +1452,7 @@ let clear_task_status (current : logseq_model) =
   {
     current with
     selected_task_status = None;
+    composer_task_defaulted = false;
     task_status_picker_open = false;
     composer_task_dates = [];
     composer_task_date_field = None;
@@ -2525,6 +2552,7 @@ let rec update (current : logseq_model) action =
     let updated =
       if action = "task" then
         { current with sync_state = editing_sync_state current }
+      else if action = "unselect" then { current with tasks_selection_mode = false }
       else current
     in
     let id = updated.next_effect_id in
@@ -2596,7 +2624,10 @@ let rec update (current : logseq_model) action =
   | RemoveComposerTag uuid ->
     {current with composer_tags = List.filter (fun (tag : sidebar_page) -> tag.uuid <> uuid) current.composer_tags}
   | ExpandComposer ->
-    { current with composer_expanded = true; composer_autofocus = true }
+    let opened = { current with composer_expanded = true; composer_autofocus = true } in
+    if current.destination = TasksDestination && current.selected_task_status = None then
+      { opened with selected_task_status = default_task_status current.task_statuses; composer_task_defaulted = true }
+    else opened
   | FocusComposer ->
     (* autofocus is an edge-triggered focus request: toggling guarantees a
        prop diff (and therefore a refocus edge) even when the flag already
@@ -2644,7 +2675,11 @@ let rec update (current : logseq_model) action =
   | DismissComposerReference ->
     {current with composer_reference_query = None; composer_reference_candidates = []}
   | DismissComposer ->
-    { current with composer_expanded = false; composer_autofocus = false }
+    let closed = { current with composer_expanded = false; composer_autofocus = false } in
+    if current.composer_task_defaulted && String_kit.is_blank current.composer_draft
+       && current.composer_assets = [] && current.composer_tags = [] && current.composer_task_dates = []
+    then clear_task_status closed
+    else closed
   | StageComposerAsset asset ->
     {
       current with
@@ -2847,6 +2882,7 @@ let rec update (current : logseq_model) action =
        {
          current with
          selected_task_status = Some status;
+         composer_task_defaulted = false;
          task_status_picker_open = false;
        }
      | None -> current)
@@ -3011,6 +3047,7 @@ let rec update (current : logseq_model) action =
           selected_task_status =
             (if kind = "task" then default_task_status current.task_statuses
              else current.selected_task_status);
+          composer_task_defaulted = kind <> "task" && current.composer_task_defaulted;
         }
       in
       let cleared =
@@ -3022,6 +3059,13 @@ let rec update (current : logseq_model) action =
           (PresentAttachmentEffect (cleared.next_effect_id, "audio"))
       else cleared
     end
+  | ScrollHomeToTop ->
+    let current =
+      if current.destination <> JournalsDestination || current.app_navigation_path <> []
+         || current.selected_page <> None then update current ShowJournals
+      else current
+    in
+    { current with home_scroll_request = current.home_scroll_request + 1 }
   | ShowJournals | ShowTasks ->
     let destination = if action = ShowTasks then TasksDestination else JournalsDestination in
     let updated =
@@ -3029,11 +3073,15 @@ let rec update (current : logseq_model) action =
         (cancel_outliner_editing (return_to_app_root current)) with
         sidebar_open = sidebar_after_navigation current;
         graph_menu_open = false;
+        tasks_selection_mode = false;
         destination;
       }
     in
     let id = updated.next_effect_id in
     enqueue_effect updated (ClearSelectedPageEffect id)
+  | SetTasksView tasks_view -> { current with tasks_view }
+  | SelectTasks ->
+    { (cancel_outliner_editing current) with tasks_selection_mode = true }
   | ShowFlashcards ->
     let updated =
       {

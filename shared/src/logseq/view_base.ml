@@ -585,9 +585,10 @@ let row_selected_ (current : Model.logseq_model) (row : Model.outline_row) =
 
 let outliner_selection_active_ (current : Model.logseq_model) =
   current.outliner_selected_block_ids <> []
+  || (current.destination = TasksDestination && current.tasks_selection_mode)
 
 let outliner_selection_inactive_ (current : Model.logseq_model) =
-  current.outliner_selected_block_ids = []
+  not (outliner_selection_active_ current)
 
 let outliner_editor_active_ (current : Model.logseq_model) =
   outliner_selection_inactive_ current && current.outliner_editing <> None

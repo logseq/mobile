@@ -14,6 +14,7 @@ val main_bottom_chrome :
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val root_outliner_view :
+  ?scroll_to_top:string Signal.signal ->
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   bool Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t

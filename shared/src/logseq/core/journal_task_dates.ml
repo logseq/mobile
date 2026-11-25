@@ -43,9 +43,6 @@ let rows db today lookahead =
   let first_day = offset_day (-week_days) in
   let last_day = offset_day week_days in
   let end_day = Option.map offset_day lookahead in
-  let midnight = Dev_query.Date_time_util.journal_day_to_local_ms in
-  let start = midnight first_day in
-  let stop = Int64.pred (midnight (offset_day (week_days + 1))) in
   let within_window = function
     | Some timestamp as value ->
       let day = Cache_model.journal_day_for_ms timestamp in
@@ -59,18 +56,21 @@ let rows db today lookahead =
     | Some _ as updated -> updated
     | None -> activity "block/created-at" in
   let seen = Hashtbl.create 32 in
-  let page_titles = Hashtbl.create 16 in
+  let pages = Hashtbl.create 16 in
   let decorate = Node_presentation.decorate db in
   let default_status_eid = Read.default_task_status_eid db in
   let default_status = Option.bind default_status_eid (Read.choice_metadata identity db) in
-  let page_title page =
-    match Hashtbl.find_opt page_titles page with
-    | Some title -> title
+  let page_details page =
+    match Hashtbl.find_opt pages page with
+    | Some details -> details
     | None ->
       let title = match Read.entity_summary identity db page with
         | Some summary -> summary.title | None -> "" in
-      Hashtbl.add page_titles page title;
-      title in
+      let created = Read.int_value (Read.value db page "block/created-at") in
+      let updated = Read.int_value (Read.value db page "block/updated-at") in
+      let details = title, created, (if updated = None then created else updated) in
+      Hashtbl.add pages page details;
+      details in
   let eids_with_ref attr value =
     Datascript_value.datoms_by_ref db Ds.Aevt attr value |> Seq.map (fun datom -> datom.Ds.e) in
   let doing_eids = match Ds.entid db "db/ident" (Ds.Keyword doing_ident) with
@@ -83,16 +83,28 @@ let rows db today lookahead =
           | Some task -> Read.class_descendants db task
           | None -> [] in
         Seq.append explicit (List.to_seq classes |> Seq.flat_map (eids_with_ref "block/tags")) in
-  let dated_eids = match end_day with
-    | None -> Seq.empty
-    | Some _ -> List.to_seq fields |> Seq.flat_map (fun (_, attr) ->
+  let dated_eids = List.to_seq fields |> Seq.flat_map (fun (_, attr) ->
       let datoms = if Ds.Schema.schema_attr_is_avet_accessible (Ds.schema db) attr then
-          Ds.index_range db attr ~start:(Ds.Int64 start) ~stop:(Ds.Int64 stop) ()
+          Ds.index_range db attr ~start:(Ds.Int64 (-62135596800000L)) ~stop:(Ds.Int64 253402300799999L) ()
         else Ds.Db.datoms db Ds.Aevt ~a:attr () in
       Seq.filter_map (fun (datom : Ds.datom) ->
         match datom.v with
-        | Ds.Int64 time | Ds.Instant time when time >= start && time <= stop -> Some datom.e
+        | Ds.Int64 time | Ds.Instant time when time >= -62135596800000L && time <= 253402300799999L -> Some datom.e
         | _ -> None) datoms) in
+  let today_eids = match Option.bind (Read.journal_page_uuid db today)
+    (fun uuid -> Ds.entid db "block/uuid" (Ds.Uuid uuid)) with
+    | Some page -> eids_with_ref "block/page" page
+    | None -> Seq.empty in
+  let order_path eid page =
+    let rec collect seen path eid =
+      if eid = page || List.mem eid seen then path
+      else
+        let order = Option.value ~default:"" (Read.string_value (Read.value db eid "block/order")) in
+        let path = `String order :: path in
+        match Read.ref_eids db eid "block/parent" with
+        | parent :: _ -> collect (eid :: seen) path parent
+        | [] -> path in
+    collect [] [] eid in
   let candidates = Seq.filter_map (fun eid ->
     if Hashtbl.mem seen eid then None else (
       Hashtbl.add seen eid ();
@@ -106,7 +118,6 @@ let rows db today lookahead =
       let doing_qualifies = if scheduled_at = None && deadline_at = None then
           within_window (Lazy.force activity) <> None
         else earliest <> None in
-      if not doing_qualifies then None else
       let status = Read.status_for_eid identity db eid in
       let ident = Option.bind status (fun status -> status.Cache_model.ident) in
       let dated_section = match earliest, end_day with
@@ -119,29 +130,44 @@ let rows db today lookahead =
       let section = match ident, dated_section with
         | (Some "logseq.property/status.done" | Some "logseq.property/status.canceled"), _ -> None
         | _, Some (Overdue, _) -> dated_section
-        | Some ident, _ when ident = doing_ident ->
+        | Some ident, _ when ident = doing_ident && doing_qualifies ->
           Some (Doing, -(Option.value ~default:0 (Lazy.force activity)))
         | _, _ -> dated_section in
-      Option.bind section (fun (section, order) ->
-        if Read.recycled db eid then None
+      let dates = List.filter_map (Option.map Cache_model.journal_day_for_ms) [scheduled_at; deadline_at] in
+      let upcoming = List.exists (fun day -> day > today) dates in
+      let due = List.exists (fun day -> day <= today) dates in
+      let past = due && not (List.mem today dates) in
+      if Read.recycled db eid then None
         else match Read.ref_eids db eid "block/page" with
           | page :: _ ->
             let day = Read.int_value (Read.value db page "block/journal-day") in
-            if day = Some today then None else
+            let legacy = if day = Some today then None else section in
+            let visible = ident <> Some "logseq.property/status.canceled" in
+            let today_row = visible && (due || (dates = [] && (
+              (day = Some today && status <> None) || (ident = Some doing_ident && doing_qualifies)))) in
+            let upcoming_row = visible && upcoming && ident <> Some "logseq.property/status.done" in
+            if legacy = None && not today_row && not upcoming_row then None else
             Option.map (fun block ->
               let status = match status with Some _ -> status | None -> default_status in
               let render_block = {block with Cache_model.status} in
-              (order, block.uuid, section,
+              let title, created, updated = page_details page in
+              (legacy, today_row, upcoming_row, block.uuid,
                 `Assoc ["uuid", `String block.uuid; "block", decorate block.uuid (Rpc_encode.block_json render_block);
-                  "page", `String (page_title page); "pageJournalDay", json_int day;
+                  "page", `String title; "pageJournalDay", json_int day;
+                  "pageCreated", json_int created; "pageUpdated", json_int updated;
+                  "orderPath", `List (order_path eid page); "past", `Bool past;
                   "scheduled", json_int scheduled_at; "deadline", json_int deadline_at]))
               (Read.block ~with_breadcrumbs:false identity db eid)
-          | _ -> None))) (Seq.append dated_eids doing_eids) in
-  let ordered = List.of_seq candidates |> List.sort (fun (a, u, _, _) (b, v, _, _) ->
-    compare (a, u) (b, v)) in
+          | _ -> None)) (Seq.concat (List.to_seq [dated_eids; doing_eids; today_eids]))
+    |> List.of_seq in
+  let legacy_rows = List.filter_map (fun (legacy, _, _, uuid, row) ->
+    Option.map (fun (bucket, order) -> (order, uuid, bucket, row)) legacy) candidates
+    |> List.sort (fun (a, u, _, _) (b, v, _, _) -> compare (a, u) (b, v)) in
   let json section = `List (List.filter_map (fun (_, _, bucket, row) ->
-    if bucket = section then Some row else None) ordered) in
-  json Overdue, json Doing, json Planned
+    if bucket = section then Some row else None) legacy_rows) in
+  let today = List.filter_map (fun (_, today, _, _, row) -> if today then Some row else None) candidates in
+  let upcoming = List.filter_map (fun (_, _, upcoming, _, row) -> if upcoming then Some row else None) candidates in
+  json Overdue, json Doing, json Planned, `List today, `List upcoming
 
 type cached_projection = {
   day : int;
@@ -185,11 +211,12 @@ let preserve_for_local_edit cache ~before ~after changes =
             && match Read.ref_eids db eid "block/page" with
             | [id] -> today before id && today after id
             | _ -> false in
-        (* Agenda rows omit today's body, but can render it through embeds or references. *)
+        (* Ordinary journal blocks can still render through embeds or references. *)
         let no_embeds db = Seq.is_empty (Ds.Db.datoms db Ds.Aevt ~a:"block/link" ()) in
         if no_embeds before && no_embeds after
            && Hashtbl.fold (fun eid () safe ->
              safe && local_body before eid && local_body after eid
+             && Read.status_for_eid identity before eid = None && Read.status_for_eid identity after eid = None
              && unreferenced before eid && unreferenced after eid) changed true
         then Weak.set cached.db 0 (Some after)
       end) !cache
@@ -214,17 +241,18 @@ let project ?(read_rows = rows) cache ~graph ~now ~force db =
       try
         let page = Option.value ~default:fallback_page (Read.journal_page_uuid db day) in
         let disabled, days = configuration db in
-        let overdue, doing, planned = read_rows db day (if disabled then None else Some days) in
+        let overdue, doing, planned, today, upcoming = read_rows db day (if disabled then None else Some days) in
         `Assoc ["graphId", `String graph; "page", `String page; "day", `Int day; "error", `Bool false; "success", `Bool true;
           "enabled", `Bool (not disabled || doing <> `List []); "retained", `Bool false;
-          "overdue", overdue; "doing", doing; "planned", planned]
+          "overdue", overdue; "doing", doing; "planned", planned; "today", today; "upcoming", upcoming]
       with error ->
         prerr_endline ("journal task query: " ^ Printexc.to_string error);
         let prior name = match previous with Some value -> member name value.result | None -> `List [] in
         let page = match previous with Some value -> member "page" value.result | None -> `String fallback_page in
         `Assoc ["graphId", `String graph; "page", page; "day", `Int day; "error", `Bool true;
           "enabled", `Bool true; "retained", `Bool (Option.exists (fun value -> member "success" value.result = `Bool true || member "retained" value.result = `Bool true) previous);
-          "overdue", prior "overdue"; "doing", prior "doing"; "planned", prior "planned"] in
+          "overdue", prior "overdue"; "doing", prior "doing"; "planned", prior "planned";
+          "today", prior "today"; "upcoming", prior "upcoming"] in
     let source = Weak.create 1 in
     Weak.set source 0 (Some db);
     remember {day; timezone; db = source; result}

@@ -33,6 +33,10 @@ let logseq_theme_tokens ui_context dark_theme : (string * Lui_ui.theme_token_val
   surfaces @ text_colors @ task_colors @ [
     ("link", Adaptive { light = "#1B6898"; dark = View_base.dark_accent });
     ("bottom-tab-selected", Adaptive { light = "#14243314"; dark = "#00000055" });
+    ("task-tab-background", Adaptive { light = "#EFEFF0";
+      dark = if dark_theme = "black" then "#202022" else "#19394D" });
+    ("task-tab-selected-background", Adaptive { light = "#DFEDF2";
+      dark = if dark_theme = "black" then "#163136" else "#254855" });
     ("deadline-overdue", Adaptive { light = "#B42318"; dark = "#FF6961" });
     ( "autocomplete-row-background",
       Adaptive { light = "#6F6F6F1A"; dark = "#9BD3D41A" } );
@@ -419,8 +423,9 @@ let extension_registry () =
   Lui_extension.register_component registry (let open Lui_protocol in
     let open Lui_extension in
     component "bottom-tab-strip" [profile IOS SwiftUIHost] true []
-      [property "inset" IntScalar true None; property "selected-index" IntScalar true None]
-      [event "select" [event_field "index" IntScalar true]]);
+      [property "inset" IntScalar true None; property "selected-index" IntScalar true None;
+       property "items" StringScalar true None]
+      [event "select" [event_field "index" IntScalar true]; event "home-double-tap" []]);
   Lui_extension.register_component registry
     (Lui_extension.component "native-flashcards-toolbar"
        [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]

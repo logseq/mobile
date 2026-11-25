@@ -89,9 +89,9 @@ import SwiftUI
         guard let mainNavigation = controllers(window.rootViewController!).compactMap({ $0 as? UINavigationController }).first else {
             throw failure("Missing the main navigation controller")
         }
-        guard let tabsID = find("group.bottom.tabs") else { throw failure("Missing bottom tabs") }
-        try await wait("The bottom tabs must be laid out") { frames[tabsID] != nil }
-        let tabsBeforeSearch = frames[tabsID]!
+        guard let chromeID = find("row.bottom.capture") else { throw failure("Missing bottom controls") }
+        try await wait("The bottom controls must be laid out") { frames[chromeID] != nil }
+        let chromeBeforeSearch = frames[chromeID]!
 
         if #available(iOS 26.0, *) {
             let outliners = views(window).compactMap { $0 as? UIScrollView }.filter {
@@ -173,8 +173,8 @@ import SwiftUI
             guard searchNavigation.view.window === window else {
                 throw failure("Cancelling search must let the system controller finish its keyboard transition without tearing down its navigation host")
             }
-            guard let tabs = frames[tabsID], abs(tabs.minY - tabsBeforeSearch.minY) < 2 else {
-                throw failure("The bottom tabs must remain in place while the system keyboard closes; initial=\(tabsBeforeSearch), current=\(String(describing: frames[tabsID]))")
+            guard let chrome = frames[chromeID], abs(chrome.minY - chromeBeforeSearch.minY) < 2 else {
+                throw failure("The bottom controls must remain in place while the system keyboard closes; initial=\(chromeBeforeSearch), current=\(String(describing: frames[chromeID]))")
             }
             guard journal.window === window, journal.isDescendant(of: mainNavigation.view) else {
                 throw failure("System bar transitions must retain the journal content")

@@ -50,12 +50,14 @@ type page_entry = Outline_entry of retained_row | Reference_entry of reference_e
   | Placeholder_entry of placeholder
   | Journal_task_gap
   | Journal_task_heading of string
+  | Tasks_page_heading of string * string
   | Journal_task_row of Yojson.Basic.t * bool
   | Journal_task_error
 val task_field : string -> Yojson.Basic.t -> Yojson.Basic.t
 val journal_task_scope : string -> string
 val journal_task_editing_row : Model.logseq_model -> Model.outline_row option
 val task_rows : Model.logseq_model -> page_entry list
+val tasks_view_rows : Model.logseq_model -> page_entry list
 val page_entries : ?include_tasks:bool -> retained_row list -> Model.logseq_model -> page_entry list
 val page_entry_identifier : page_entry -> string
 val page_entry_outline : page_entry -> retained_row

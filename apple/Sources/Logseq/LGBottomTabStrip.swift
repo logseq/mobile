@@ -1,5 +1,8 @@
 import LUIAppleBackend
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 @MainActor
 struct LGBottomTabStrip: View {
@@ -16,24 +19,49 @@ struct LGBottomTabStrip: View {
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(LUIAppleExtension(
             identifier: "bottom-tab-strip",
-            fingerprint: "lui-extension-v1|16:bottom-tab-strip|profiles:ios/swiftui|standard-children:1|children:|properties:14:selected-index:int:required:none,5:inset:int:required:none|events:6:select[5:index:int:required]",
+            fingerprint: "lui-extension-v1|16:bottom-tab-strip|profiles:ios/swiftui|standard-children:1|children:|properties:14:selected-index:int:required:none,5:inset:int:required:none,5:items:string:required:none|events:15:home-double-tap[],6:select[5:index:int:required]",
             acceptsStandardChildren: true,
             properties: [
                 .init(name: "selected-index", kind: .int, isRequired: true),
                 .init(name: "inset", kind: .int, isRequired: true),
+                .init(name: "items", kind: .string, isRequired: true),
             ],
-            events: [.init(name: "select", fields: [.init(name: "index", kind: .int, isRequired: true)])]
+            events: [
+                .init(name: "select", fields: [.init(name: "index", kind: .int, isRequired: true)]),
+                .init(name: "home-double-tap", fields: []),
+            ]
         ) { AnyView(LGBottomTabStrip(context: $0)) })
     }
 
-    var body: some View {
+    @ViewBuilder var body: some View {
         let _ = context.revision
+        #if os(iOS)
+        if #available(iOS 26.0, *), let items = nativeItems {
+            LGNativeBottomTabBar(
+                items: items, selectedIndex: selectedIndex,
+                tint: colors["link"], layoutDirection: layoutDirection, context: context
+            )
+            // UITabBar reserves horizontal margins around its floating capsule.
+            .frame(width: CGFloat(items.count) * 50 + inset * 2 + 42, height: 58)
+            .padding(.horizontal, -21)
+            .background(LGSidebarPanExclusion())
+            // Align the floating items within UITabBar with the trailing actions.
+            .offset(y: 11)
+        } else {
+            fallbackStrip
+        }
+        #else
+        fallbackStrip
+        #endif
+    }
+
+    private var fallbackStrip: some View {
         let count = context.childIDs.first.map { context.childIDs(of: $0).count } ?? 0
         let selected = selectedIndex
         let inset = inset
         let cellWidth = (size.width - 2 * inset) / CGFloat(max(1, count))
         let position = dragPosition ?? (pendingSelection ?? selected).map { CGFloat($0) }
-        context.content
+        return context.content
             .background {
                 if let position, count > 0, cellWidth > 0 {
                     let center = inset + (position + 0.5) * cellWidth
@@ -49,12 +77,24 @@ struct LGBottomTabStrip: View {
             .onGeometryChange(for: CGSize.self, of: \.size) { size = $0 }
             .contentShape(Capsule())
             .highPriorityGesture(tabDrag(count: count, cellWidth: cellWidth, inset: inset))
+            .simultaneousGesture(SpatialTapGesture(count: 2).onEnded { tap in
+                guard cellWidth > 0, horizontalPosition(tap.location.x) < inset + cellWidth,
+                      context.isUserInteractionEnabled else { return }
+                try? context.emit(name: "home-double-tap")
+            })
             .onChange(of: selected) { pendingSelection = nil }
             #if os(iOS)
             .background(LGSidebarPanExclusion())
             #endif
             .modifier(LGBottomBarGlass(surface: .capture))
     }
+
+    #if os(iOS)
+    private var nativeItems: [LGNativeBottomTabBar.Item]? {
+        guard case let .string(json) = context.property("items") else { return nil }
+        return try? JSONDecoder().decode([LGNativeBottomTabBar.Item].self, from: Data(json.utf8))
+    }
+    #endif
 
     private var selectedIndex: Int? {
         guard case let .int(index) = context.property("selected-index"), index >= 0 else { return nil }
@@ -109,3 +149,100 @@ struct LGBottomTabStrip: View {
             }
     }
 }
+
+#if os(iOS)
+private struct LGNativeBottomTabBar: UIViewRepresentable {
+    struct Item: Decodable, Equatable {
+        let title: String
+        let name: String
+        let image: String
+        let selectedImage: String
+
+        func tabBarItem(tag: Int) -> UITabBarItem {
+            let item = UITabBarItem(title: nil, image: icon(image), selectedImage: icon(selectedImage))
+            item.tag = tag
+            item.accessibilityLabel = title
+            item.accessibilityIdentifier = "tab.bottom.\(name)"
+            return item
+        }
+
+        private func icon(_ name: String) -> UIImage? {
+            switch LGIconPolicy.icons[name] {
+            case let .systemName(symbol): UIImage(systemName: symbol)
+            case let .assetName(asset): UIImage(named: asset, in: .module, compatibleWith: nil)
+            default: nil
+            }
+        }
+    }
+
+    let items: [Item]
+    let selectedIndex: Int?
+    let tint: Color?
+    let layoutDirection: LayoutDirection
+    let context: LUIAppleExtensionViewContext
+
+    func makeCoordinator() -> Coordinator { Coordinator(context: context) }
+
+    func makeUIView(context: Context) -> UITabBar {
+        let bar = UITabBar()
+        bar.delegate = context.coordinator
+        let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.doubleTapHome))
+        doubleTap.numberOfTapsRequired = 2
+        doubleTap.cancelsTouchesInView = false
+        doubleTap.delaysTouchesEnded = false
+        doubleTap.delegate = context.coordinator
+        bar.addGestureRecognizer(doubleTap)
+        return bar
+    }
+
+    func updateUIView(_ bar: UITabBar, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.context = self.context
+        if coordinator.items != items {
+            bar.items = items.enumerated().map { $0.element.tabBarItem(tag: $0.offset) }
+            coordinator.items = items
+        }
+        coordinator.selectedIndex = selectedIndex
+        if bar.selectedItem?.tag != selectedIndex {
+            bar.selectedItem = bar.items?.first(where: { $0.tag == selectedIndex })
+        }
+        bar.tintColor = tint.map { UIColor($0) }
+        bar.semanticContentAttribute = layoutDirection == .rightToLeft ? .forceRightToLeft : .forceLeftToRight
+    }
+
+    @MainActor final class Coordinator: NSObject, UITabBarDelegate, UIGestureRecognizerDelegate {
+        var context: LUIAppleExtensionViewContext
+        var items: [Item] = []
+        var selectedIndex: Int?
+
+        init(context: LUIAppleExtensionViewContext) { self.context = context }
+
+        func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
+            if context.isUserInteractionEnabled {
+                try? context.emit(name: "select", values: ["index": .int(item.tag)])
+            } else {
+                tabBar.selectedItem = tabBar.items?.first(where: { $0.tag == selectedIndex })
+            }
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            var view = touch.view
+            while let candidate = view, candidate !== gestureRecognizer.view {
+                if candidate.accessibilityIdentifier == "tab.bottom.home" { return true }
+                view = candidate.superview
+            }
+            return false
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            true
+        }
+
+        @objc func doubleTapHome() {
+            guard context.isUserInteractionEnabled else { return }
+            try? context.emit(name: "home-double-tap")
+        }
+    }
+}
+#endif

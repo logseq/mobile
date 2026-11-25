@@ -1504,13 +1504,17 @@ let journal_task_dates_partition_and_recover () = R.with_runtime (fun _ runtime 
   let uuids section response = List.map (member "uuid") (items section response) in
   check_eq (uuids "overdue" successful) [`String Q.alpha];
   check_eq (uuids "planned" successful) [`String Q.beta];
+  check_eq (uuids "today" successful) [`String Q.alpha];
+  check_eq (List.sort compare (uuids "upcoming" successful))
+    (List.sort compare [`String Q.alpha; `String Q.beta]);
   let display = member "block" (List.hd (items "overdue" successful)) in
   check_eq (member "uuid" display) (`String Q.alpha);
   check ~msg:"agenda retains rich block markup"
     (List.exists (fun part -> member "type" part = `String "emphasis") (items "markup" display));
   check ~msg:"dated blocks without status still render the graph's default status"
     (member "status" display <> `Null);
-  let other_graph = project ~graph:"other" ~read_rows:(fun _ _ _ -> `List [], `List [], `List []) () in
+  let other_graph = project ~graph:"other"
+    ~read_rows:(fun _ _ _ -> `List [], `List [], `List [], `List [], `List []) () in
   check_eq (uuids "overdue" other_graph) [];
   check_eq ~msg:"revisiting an unchanged resident graph reuses its task projection"
     (project ~read_rows:(fun _ _ _ -> failwith "cache miss") ()) successful;
@@ -1518,6 +1522,7 @@ let journal_task_dates_partition_and_recover () = R.with_runtime (fun _ runtime 
   check_eq (member "error" broken) (`Bool true);
   check_eq (member "retained" broken) (`Bool true);
   check_eq (member "planned" broken) (member "planned" successful);
+  check_eq (member "upcoming" broken) (member "upcoming" successful);
   let other = project ~graph:"unvisited" ~read_rows:(fun _ _ _ -> failwith "injected initial failure") () in
   check_eq (member "retained" other) (`Bool false);
   check_eq (uuids "planned" other) [];

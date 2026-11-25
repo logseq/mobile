@@ -173,7 +173,13 @@ let bottom_tab_row model_source send : t =
     let selected = Signal.map (fun (current : Model.logseq_model) ->
       List.find_index (fun (destination, _, _, _, _, _) -> current.destination = destination)
         destinations |> Option.value ~default:(-1)) model_source in
+    let items = Signal.map (fun current ->
+      `List (List.map (fun (_, title, name, image, selected_image, _) ->
+        `Assoc ["title", `String (View_base.tr current title); "name", `String name;
+                "image", `String image; "selectedImage", `String selected_image])
+        destinations) |> Yojson.Safe.to_string) model_source in
     Lui_ui.extension_property context node "inset" (IntValue inset);
+    Lui_ui.extension_property_signal context node "items" (Signal.map View_base.string_wire_value items);
     Lui_ui.extension_property_signal context node "selected-index" (Signal.map View_base.int_wire_value selected);
     Lui_ui.on_event context node (function
       | ExtensionEvent (_, _, "select", values) ->
@@ -182,6 +188,8 @@ let bottom_tab_row model_source send : t =
            Option.iter (fun (destination, _, _, _, _, action) -> navigate destination action)
              (List.nth_opt destinations index)
          | _ -> ())
+      | ExtensionEvent (_, _, "home-double-tap", _) ->
+        ignore (send Model.ScrollHomeToTop)
       | _ -> ());
     ignore (mount context ~parent:node (group "tabs" (List.map tab destinations)));
     attach context parent node;
@@ -333,7 +341,7 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
              ]);
       ]
 
-let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
+let root_outliner_view ?scroll_to_top (context : Lui_ui.ui_context) model_source visible_source
     send : t =
   let prefetch_history () =
     Signal.sample visible_source
@@ -360,6 +368,9 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
            ~accessibility_identifier:"list.outliner"
         [
           box ~height:16 ~accessibility_identifier:"spacer.outliner.top"
+            ?data_attrs_signal:(Option.map (Signal.map (function
+              | "" -> []
+              | key -> ["data-scroll-key", key; "data-scroll-index", "0"])) scroll_to_top)
             [];
           if_
             ~test:
@@ -380,7 +391,7 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
                    (Signal.map (fun (model : Model.logseq_model) -> View_property.has_properties model.properties_json) model_source);
                ]);
           View_outliner.node_properties ~root:true context model_source send;
-          View_outliner.outliner_entries ~prefetch_history context model_source
+          View_outliner.outliner_entries ~prefetch_history ?reset_key:scroll_to_top context model_source
             ~source:
               (Signal.map View_rows.retained_outliner_rows
                  model_source)
@@ -408,8 +419,14 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
 
 let retained_journal_pane (context : Lui_ui.ui_context) model_source send
     : t =
+  let scroll_to_top =
+    if uses_ios_native_header context then
+      Some (Signal.map (fun (current : Model.logseq_model) ->
+        if current.home_scroll_request = 0 then ""
+        else "home-top-" ^ string_of_int current.home_scroll_request) model_source)
+    else None in
   let content =
-    root_outliner_view context
+    root_outliner_view ?scroll_to_top context
       (Signal.map View_base.journal_navigation_model model_source)
       (Signal.map
          (fun (current : Model.logseq_model) ->
@@ -776,11 +793,12 @@ let main_header_connection model_source send : t = custom @@ fun context parent 
                       ~accessibility_identifier:"button.graph-add" ~on_press:(press send Model.OpenCreateGraph) [])
                 else if_ ~test:(Signal.map View_base.connection_settings_visible_ model_source)
                   (journal_calendar_control model_source send));
-               if_ ~test:(Signal.map (fun current ->
-                 ios_journal_header context current
-                 || (uses_ios_native_header context && View_base.tasks_destination_ current
-                     && View_base.node_navigation_inactive_ current)) model_source)
+               if_ ~test:(Signal.map (ios_journal_header context) model_source)
                  (journal_overflow_menu model_source send);
+               if_ ~test:(Signal.map (fun current ->
+                 uses_ios_native_header context && View_base.tasks_destination_ current
+                 && View_base.node_navigation_inactive_ current) model_source)
+                 (View_outliner.tasks_menu model_source send);
                if_ ~test:(Signal.map View_base.active_page_actions_visible_ model_source)
                  (active_overflow_menu model_source send)]));
     ] in
@@ -971,7 +989,8 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
      Signal.map
        (fun current ->
          let current = main_header_model context current in
-         if View_base.journals_destination_ current && View_base.selected_page_content_title_visible_ current then ""
+         if (uses_ios_native_header context && View_base.tasks_destination_ current)
+           || (View_base.journals_destination_ current && View_base.selected_page_content_title_visible_ current) then ""
          else View_base.main_title current)
        model_source
    in
