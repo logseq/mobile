@@ -2,10 +2,9 @@ import ImageIO
 import LogseqModel
 import SwiftUI
 
-struct LGImageDimensions: Codable, Equatable, Sendable {
-    let width: Int
-    let height: Int
+typealias LGImageDimensions = LogseqImageDimensions
 
+extension LogseqImageDimensions {
     var previewSize: CGSize? {
         guard width > 0, height > 0 else { return nil }
         let width = CGFloat(width)
