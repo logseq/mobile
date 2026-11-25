@@ -82,7 +82,7 @@ internal class LogseqRuntime(
         if (!hasAuthenticatedSession || !hasOpenGraph) return
         val payload = pendingDiscussionPush ?: return
         pendingDiscussionPush = null
-        applyPatch(bridge.applyHostUpdate("open-pushed-discussion", payload))
+        hostUpdateAsync("open-pushed-discussion", payload)
         scope.launch { effectDrain?.drain(scope) }
     }
 
@@ -330,7 +330,7 @@ internal class LogseqRuntime(
             deliverDiscussionPush()
             if (discussionPush.preferences.enabled) scope.launch {
                 runCatching { authentication.apiToken()?.let { discussionPush.refresh(storageBaseUrl, it) } }
-                applyPatch(bridge.applyHostUpdate("push-preference", discussionPush.preferences.json().toString()))
+                hostUpdate("push-preference", discussionPush.preferences.json().toString())
             }
         }
         journalDayJob?.cancel()
@@ -368,6 +368,10 @@ internal class LogseqRuntime(
     /** Apply a host update on the core thread and queue its patch for the main thread. */
     private suspend fun hostUpdate(kind: String, payload: String) =
         onCore { deliverPatch(bridge.applyHostUpdate(kind, payload)) }
+
+    private fun hostUpdateAsync(kind: String, payload: String) {
+        NativeCoreThread.execute { deliverPatch(bridge.applyHostUpdate(kind, payload)) }
+    }
 
     // Core thread: hand a dequeued effect's patch to deliverPatch in this same core
     // task, so later events cannot overtake it. The drain sees an empty patch.
@@ -648,7 +652,7 @@ internal class LogseqRuntime(
 
     fun closeAccountProfile() {
         accountProfileOpen = false
-        scope.launch { applyPatch(bridge.applyHostUpdate("resume-settings", "null")) }
+        scope.launch { hostUpdate("resume-settings", "null") }
     }
 
     suspend fun refreshAccountProfileToken() {
@@ -847,9 +851,9 @@ internal class LogseqRuntime(
             hasOpenGraph = restored.graphResponse != null
             restored.graphResponse?.let { applyCoreResponse(it) }
             uiSession.getString("session", null)?.let { session ->
-                applyPatch(bridge.applyHostUpdate("restore-ui-session", session))
+                hostUpdate("restore-ui-session", session)
             }
-            applyPatch(bridge.applyHostUpdate("push-preference", discussionPush.preferences.json().toString()))
+            hostUpdate("push-preference", discussionPush.preferences.json().toString())
             deliverDiscussionPush()
             if (isOpeningInitialWidgetBlock) {
                 try {
