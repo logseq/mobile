@@ -5197,6 +5197,8 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
     check_eq (property_int renderer id Lui_protocol.HeightValue) 50)
     (children renderer tabs @ children renderer actions);
   check_eq (property_string renderer capture Lui_protocol.InlineIconName) "app:capture-circle";
+  let flashcard_icon () = property_string renderer (tab "flashcards") Lui_protocol.InlineIconName in
+  check_eq (flashcard_icon ()) "app:flashcards";
   check_eq (selected (tab "home")) true;
   swipe_to 1;
   check_eq (selected (tab "tasks")) true;
@@ -5209,6 +5211,7 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   flush application;
   check_eq (App.model application).destination Model.FlashcardsDestination;
   check_eq (selected (tab "flashcards")) true;
+  check_eq (flashcard_icon ()) "app:flashcards";
   dispatch application (Lui_protocol.Press capture);
   flush application;
   check (App.model application).composer_expanded;

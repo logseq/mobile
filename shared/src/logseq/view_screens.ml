@@ -142,7 +142,7 @@ let bottom_tab_row model_source send : t =
   let destinations = [
     Model.JournalsDestination, "Home", "home", "tab-home", "tab-home-selected", Model.ShowJournals;
     Model.TasksDestination, "Tasks", "tasks", "tab-tasks", "tab-tasks-selected", Model.ShowTasks;
-    Model.FlashcardsDestination, "Flashcards", "flashcards", "tab-flashcards", "tab-flashcards-selected", Model.ShowFlashcards;
+    Model.FlashcardsDestination, "Flashcards", "flashcards", "flashcards", "flashcards", Model.ShowFlashcards;
   ] in
   let navigate destination action =
     let current : Model.logseq_model = Signal.sample model_source in

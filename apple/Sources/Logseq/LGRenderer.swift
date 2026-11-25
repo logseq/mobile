@@ -78,8 +78,6 @@ enum LGIconPolicy {
             "tab-home-selected": .systemName("house.fill"),
             "tab-tasks": .systemName("checkmark.square"),
             "tab-tasks-selected": .systemName("checkmark.square.fill"),
-            "tab-flashcards": .systemName("rectangle.portrait.on.rectangle.portrait"),
-            "tab-flashcards-selected": .systemName("rectangle.portrait.on.rectangle.portrait.fill"),
             "composer-file": .systemName("doc"),
             "arrow-up": .systemName("arrow.up"),
             "close": .assetName("close"),
