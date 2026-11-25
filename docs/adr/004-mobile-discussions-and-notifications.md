@@ -16,13 +16,14 @@ can read and update the same discussions, including in encrypted graphs.
 
 ### Comments and reactions
 
-- Open one target at a time from its Comments action. A target can be a page or an ordinary block.
-  Read existing threads linked by `:logseq.property.comments/blocks`, including range threads that
-  contain the target, and recognize older comment areas attached directly to the target. Post into
-  the single-target thread so a comment made on one block does not appear to address other blocks.
-- Use the existing `:logseq.class/Comments` and `:logseq.class/Comment` entities, ordered like other
-  outliner children. Create a thread and its first comment atomically. Preserve the draft on a
-  recoverable write failure. Keep thread actions available independently of the editor selection.
+- Show reaction chips and a collapsed comment count beneath the target block. Expand comments
+  inline and reply in the chosen thread. Place Add comment and Add reaction in the block selection
+  toolbar and the block context menu. Page comments remain reachable from the page menu.
+- Use the existing `:logseq.class/Comments` and `:logseq.class/Comment` entities. Store a
+  single-block discussion as a child of its target and a multi-block discussion as a sibling
+  after the last selected block. Reference all targets with `:logseq.property.comments/blocks`.
+  Recognize legacy areas attached directly to a target. Create an area and its first comment
+  atomically, and preserve the draft on a recoverable error.
 - Store reactions as graph entities using `:logseq.property.reaction/target` and
   `:logseq.property.reaction/emoji-id`. A user can add or remove their own reaction to a block or
   comment. Use the authenticated graph actor in `:logseq.property/created-by-ref`. Show counts and
@@ -38,7 +39,9 @@ can read and update the same discussions, including in encrypted graphs.
   when another graph member comments on an owned page or block, replies in a thread the viewer
   participates in, or reacts to their block or comment. Exclude the viewer's own activity.
 - Derive the inbox from the synced graph, keyed by the stable event entity UUID, and list recent
-  activity newest first. A notification opens its graph and originating block or comment thread.
+  activity newest first. A block comment notification opens the block and expands its inline
+  discussion. Page comments open the page thread. The header menu contains mark-all-as-read and
+  the system notification preference.
   A missing target leaves the inbox usable and shows that the activity is unavailable.
 - Scope unread state to the signed-in account and graph. Persist read markers locally and support
   marking individual items or all visible items as read. Display the active graph’s notifications

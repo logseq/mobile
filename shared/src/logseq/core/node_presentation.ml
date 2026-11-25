@@ -18,11 +18,8 @@ let calculator source =
     (String.split_on_char '\n' source) (calculator_results source) |> String.concat "\n"
 
 let discussion_kind db eid =
-  let tagged eid ident = List.exists (fun tag ->
-    Read.value db tag "db/ident" = Some (Ds.Keyword ident)) (Read.ref_eids db eid "block/tags") in
-  if tagged eid "logseq.class/Comments" then "thread"
-  else if tagged eid "logseq.class/Comment" || List.exists (fun parent -> tagged parent "logseq.class/Comments")
-    (Read.ref_eids db eid "block/parent") then "comment"
+  if Read.is_comments_area db eid then "thread"
+  else if Read.is_comment db eid then "comment"
   else ""
 
 let reaction_emoji id =
@@ -35,18 +32,19 @@ let reaction_emoji id =
   | "white_check_mark" -> "✅" | "clap" -> "👏"
   | _ -> id
 
-let reactions db eid =
-  let counts = Hashtbl.create 8 in
-  Seq.iter (fun (datom : Ds.datom) ->
-    if Read.value db datom.e "logseq.property/deleted-at" = None then
-      match Read.string_value (Read.value db datom.e "logseq.property.reaction/emoji-id") with
-      | Some id -> Hashtbl.replace counts id (1 + Option.value ~default:0 (Hashtbl.find_opt counts id))
-      | None -> ()) (Datascript_value.datoms_by_ref db Ds.Aevt "logseq.property.reaction/target" eid);
-  Hashtbl.fold (fun id count acc -> (id, count) :: acc) counts []
-  |> List.sort (fun (a, x) (b, y) -> let order = compare y x in if order = 0 then String.compare a b else order)
-  |> List.map (fun (id, count) -> `Assoc ["id", `String id; "emoji", `String (reaction_emoji id); "count", `Int count])
-
-let decorate db =
+let decorate ?actor db =
+  let discussions = Hashtbl.create 16 in
+  let discussion eid = match Hashtbl.find_opt discussions eid with
+    | Some fields -> fields
+    | None ->
+      let reactions = Collaboration.reaction_summaries db ~actor eid |> List.map (fun fields ->
+        let id = match List.assoc_opt "id" fields with Some (`String id) -> id | _ -> "" in
+        `Assoc (("emoji", `String (reaction_emoji id)) :: fields)) in
+      let threads = Collaboration.comment_threads db ~actor eid in
+      let fields = (if reactions = [] then [] else ["reactions", `List reactions])
+        @ (if threads = [] then [] else ["commentThreads", `List threads]) in
+      Hashtbl.add discussions eid fields;
+      fields in
   let numbers = Hashtbl.create 8 in
   let dates = Hashtbl.create 16 in
   let task_dates uuid eid = match Hashtbl.find_opt dates uuid with
@@ -149,8 +147,8 @@ let decorate db =
       let fields = match Pdf_annotation.reference db uuid with
         | Some reference -> ("pdfAnnotation", reference) :: fields | None -> fields in
       `Assoc (("discussionKind", `String (discussion_kind db eid))
-        :: ("reactions", `List (reactions db eid))
         :: ("isTask", `Bool (Read.entity_is_instance_of db eid "logseq.class/Task"))
-        :: ("isEmbed", `Bool embedded) :: ("taskDates", task_dates uuid eid) :: (match list_number eid with Some n -> ["listNumber", `Int n] | None -> []) @ fields)
+        :: ("isEmbed", `Bool embedded) :: ("taskDates", task_dates uuid eid) :: (match list_number eid with Some n -> ["listNumber", `Int n] | None -> [])
+         @ discussion body @ fields)
     | _ -> encoded in
   decorate [] 128 false

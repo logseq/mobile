@@ -540,6 +540,8 @@ type logseq_model =
   ; push_error : string option
   ; pending_push_route : (string * string) option
   ; discussion_target : string option
+  ; discussion_composition : (string list * string option) option
+  ; expanded_discussions : string list
   ; discussion_draft : string
   ; discussion_error : string option
   ; reaction_picker : string option
@@ -655,6 +657,8 @@ type logseq_action =
   | ApplyPushPreference of bool
   | OpenPushedDiscussion of string * string
   | OpenDiscussion of string
+  | ComposeDiscussion of string list * string option
+  | ToggleInlineComments of string
   | CloseDiscussion
   | EditDiscussionDraft of string
   | PostDiscussionComment

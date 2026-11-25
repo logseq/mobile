@@ -558,8 +558,7 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
            ~bottom_spacing:(if uses_ios_native_header context then 64 else 24)
            model_source send);
       if_
-        ~test:(Signal.map (fun (current : Model.logseq_model) ->
-          current.destination = Model.NotificationsDestination && current.app_navigation_path = []) model_source)
+        ~test:(Signal.map View_collaboration.notification_root model_source)
         (View_collaboration.notification_screen ~bottom_spacing:(if uses_ios_native_header context then 72 else 80) model_source send);
       if_
         ~test:(Signal.map View_base.graphs_destination_ model_source)
@@ -628,7 +627,8 @@ let main_header_title (context : Lui_ui.ui_context) model_source : t =
       (reactive
          (fun current ->
            let title = View_base.main_title (main_header_model context current) in
-           if android then View_base.ellipsize_middle title 16 else title)
+           if View_collaboration.notification_root current then ""
+           else if android then View_base.ellipsize_middle title 16 else title)
          model_source)
     ~style_class:"headline navigation-title" ~accessibility_identifier:"title.main" []
 
@@ -666,7 +666,8 @@ let main_header_primary_action (context : Lui_ui.ui_context) model_source send :
     else
       if_
         ~test:
-          (Signal.map View_base.connection_control_visible_ model_source)
+          (Signal.map (fun current -> View_base.connection_control_visible_ current
+            && not (View_collaboration.notification_root current)) model_source)
         (View_base.with_label_signal
            (Signal.map View_base.sync_indicator_label model_source)
            (icon_button ~label:(View_base.tr (Signal.sample model_source) "Sync status")
@@ -836,6 +837,9 @@ let main_header_connection model_source send : t = custom @@ fun context parent 
   let selecting = Signal.map header_selection_active model_source in
   let controls = stack
     [
+      if_ ~test:(Signal.map (fun current -> View_collaboration.notification_root current
+        && View_collaboration.ready current) model_source)
+        (View_collaboration.notification_menu ~android:(Lui_ui.host context = KotlinHost) model_source send);
       if_
         ~test:
           (Signal.map (fun (current : Model.logseq_model) ->
@@ -1049,7 +1053,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
        (fun current ->
          let current = main_header_model context current in
          if (uses_ios_native_header context && View_base.tasks_destination_ current)
-           || current.destination = Model.NotificationsDestination
+           || View_collaboration.notification_root current
            || (View_base.journals_destination_ current && View_base.selected_page_content_title_visible_ current) then ""
          else View_base.main_title current)
        model_source

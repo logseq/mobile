@@ -1590,14 +1590,11 @@ let app_navigation_depth (current : Model.logseq_model) =
    extra for editing, selection, or a non-journal pane so shell-edge back
    reaches BackAppNavigation instead of leaving the app. *)
 let app_back_depth (current : Model.logseq_model) =
-  app_navigation_depth current
-  +
-  if
-    current.destination = JournalsDestination
-    && current.outliner_selected_block_ids = []
-    && current.outliner_editing = None
-  then 0
-  else 1
+  let depth = app_navigation_depth current in
+  if (depth = 0 && current.destination <> JournalsDestination)
+     || current.outliner_selected_block_ids <> []
+     || current.outliner_editing <> None
+  then depth + 1 else depth
 
 let search_navigation_depth (current : Model.logseq_model) =
   navigation_path_depth current.search_navigation_path

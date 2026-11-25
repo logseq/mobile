@@ -65,7 +65,7 @@ internal fun extensionText(values: Map<String, Any?>): String {
 }
 
 internal fun extensionValue(values: Map<String, Any?>): Long {
-    for (key in listOf("caret-utf16-offset", "selection-length", "count", "width")) {
+    for (key in listOf("caret-utf16-offset", "selection-length", "count", "width", "index")) {
         (values[key] as? Number)?.let { return it.toLong() }
     }
     return when (values["placement"]) {

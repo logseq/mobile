@@ -156,8 +156,13 @@ let search_hit_json db (hit : Search_index.indexed_search_hit) =
   let json = Rpc.search_hit_json ~summary_json:(summary_with_journal_day db) hit in
   if hit.is_page then with_journal_day db hit.uuid json else json
 
-let result_block_encoder db =
-  let presentation = Node_presentation.decorate db in
+let collaboration_identity session =
+  Option.bind (state session).config (fun config ->
+    Option.map (fun (actor : Created_by.identity) -> config.Api.graph_id, actor.uuid)
+      (Created_by.of_token config.Api.token))
+
+let result_block_encoder session db =
+  let presentation = Node_presentation.decorate ?actor:(Option.map snd (collaboration_identity session)) db in
   let children = Hashtbl.create 32 in
   let encoded = Hashtbl.create 32 in
   let encode_tree block =
@@ -190,7 +195,7 @@ let query_for session db uuid =
     | Some route -> Some (current_summary (Some db) route.Types.page).title
     | None -> Option.map (fun (page : Model.entity_summary) -> (current_summary (Some db) page).title)
         (state session).selected_sidebar_page in
-  let encode_tree = result_block_encoder db in
+  let encode_tree = result_block_encoder session db in
   Query_block.render ?current_page db uuid
   |> Option.map (fun result ->
       try
@@ -208,7 +213,7 @@ let object_views_for session owner is_tag is_property =
   | None -> `Null
   | Some db ->
     let feature = if is_tag then "class-objects" else "property-objects" in
-    match Result_view.render ~cache:session.result_view_cache ~include_values:false ~window:Result_view.initial_window db ~owner ~feature ~encode_block:(result_block_encoder db) with
+    match Result_view.render ~cache:session.result_view_cache ~include_values:false ~window:Result_view.initial_window db ~owner ~feature ~encode_block:(result_block_encoder session db) with
     | Ok value -> value
     | Error message -> `Assoc ["ownerUuid", `String owner; "featureType", `String feature;
         "views", `List [`Assoc ["uuid", `String (owner ^ ":default"); "name", `String "All";
@@ -232,7 +237,7 @@ let with_queries session result =
   | None -> result
   | Some db ->
     let cache = Hashtbl.create 8 in
-    let presentation = Node_presentation.decorate db in
+    let presentation = Node_presentation.decorate ?actor:(Option.map snd (collaboration_identity session)) db in
     let query uuid = match Hashtbl.find_opt cache uuid with
       | Some value -> value
       | None -> let value = query_projection session db uuid in
@@ -292,11 +297,6 @@ let with_pdf_update session result =
      | _ -> result)
   | Some _, _ -> session.pdf_workspace := None; result
   | _ -> result
-
-let collaboration_identity session =
-  Option.bind (state session).config (fun config ->
-    Option.map (fun (actor : Created_by.identity) -> config.Api.graph_id, actor.uuid)
-      (Created_by.of_token config.Api.token))
 
 let collaboration_json session =
   match collaboration_identity session, query_db session with
@@ -376,7 +376,7 @@ let route_breadcrumbs context (route : Types.node_route) =
 let node_properties_for session uuid =
   match query_db session with
   | None -> `Null
-  | Some db -> (match Node_property.render ~defer_values:true db ~owner:uuid ~encode_block:(result_block_encoder db) with
+  | Some db -> (match Node_property.render ~defer_values:true db ~owner:uuid ~encode_block:(result_block_encoder session db) with
       | Ok value -> value | Error _ -> `Null)
 
 let reference_blocks_json session current serialize blocks =
@@ -2601,7 +2601,7 @@ let rec dispatch session action payload =
              limit = min 64 (max 1 (integer "limit" 12))} in
            let search = match member "input" input with `String value -> value | _ -> "" in
            match Result_view.render ~cache:session.result_view_cache ~input:search ~include_values:false ~window db ~owner ~feature
-             ~encode_block:(result_block_encoder db) with
+             ~encode_block:(result_block_encoder session db) with
            | Error message -> Rpc.failure "invalid_view" message
            | Ok result -> (match member "views" result with
              | `List [view] -> Rpc.success (Rpc.with_node_icons (node_icon session) (with_local_assets session
@@ -2629,14 +2629,14 @@ let rec dispatch session action payload =
              Result_view.filter_values db ~owner ~feature:(required "featureType" input) ~attr
            else if attr = "block/title" || attr = "block/tags" || String.starts_with ~prefix:"user.property/" attr
              || String.starts_with ~prefix:"logseq.property/" attr then
-             Result_view.property_json db ~owner ~attr ~encode_block:(result_block_encoder db)
+             Result_view.property_json db ~owner ~attr ~encode_block:(result_block_encoder session db)
            else invalid_arg "This property is unavailable" in
            Rpc.success (`Assoc ["isQueryPatch", `Bool true; "propertyValues", `Assoc ["key", `String key; "column", column]])
        with error -> Rpc.failure "invalid_property" (Printexc.to_string error))
      | _ -> Rpc.failure "graph_unavailable" "No graph is open")
   | "nodeProperties" ->
     (match payload, query_db session with
-     | Some owner, Some db -> (match Node_property.render db ~owner ~encode_block:(result_block_encoder db) with
+     | Some owner, Some db -> (match Node_property.render db ~owner ~encode_block:(result_block_encoder session db) with
          | Ok value -> success session (`Assoc ["nodeProperties", value])
          | Error message -> Rpc.failure "invalid_property" message)
      | _ -> Rpc.failure "graph_unavailable" "No graph is open")
@@ -2664,7 +2664,10 @@ let rec dispatch session action payload =
                | Ok cursor ->
                  let uuid = fresh_squuid () and created_at = now_ms () in
                  let intent = if action = "comment" then
-                   Ops.Add_comment {target; thread = fresh_squuid (); uuid;
+                   let targets = match member "targets" input with
+                     | `Null -> [target] | value -> List.map to_string (to_list value) in
+                   let reply_to = member "replyTo" input |> to_string_option in
+                   Ops.Add_comment {targets; thread = fresh_squuid (); reply_to; uuid;
                      text = String.trim (str "text"); created_at}
                  else
                    let emoji = str "emoji" in

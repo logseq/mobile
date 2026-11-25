@@ -115,7 +115,13 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
         bridge = LogseqNativeBridge(onPatch = { if (it.isNotEmpty()) filter.applyJson(it) })
         loader = AndroidGraphAssetLoader(File(context.cacheDir, "feedback-downloads"), bridge::callCore)
         request(null, path = File(directory, "logseq.sqlite").path)
-        request("configure", """{"graphId":"feedback","baseUrl":"http://127.0.0.1:1","token":""}""")
+        val actor = JSONObject().put("sub", uuid(31)).put("cognito:username", "Taylor")
+        val flags = android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
+        val token = if (scenario in setOf("comments", "reactions", "notifications")) {
+            "offline." + android.util.Base64.encodeToString(actor.toString().toByteArray(), flags) + ".fixture"
+        } else ""
+        request("configure", JSONObject().put("graphId", "feedback")
+            .put("baseUrl", "http://127.0.0.1:1").put("token", token).toString())
         val opened = request("openGraph", JSONObject().put("graphId", "feedback").put("activePath", File(graph, "graph.sqlite").path)
             .put("checkpointPath", File(graph, "sync.checkpoint").path).put("isEncrypted", false).toString())
         check(JSONObject(opened).optBoolean("ok")) { opened }
@@ -448,11 +454,51 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 if (verify) ui.onNodeWithText("设置").assertExists()
             }
             "comments", "reactions" -> {
-                mount(7); pause()
-                if (verify) {
-                    if (scenario == "comments") ui.onNodeWithTag("outliner.comment." + uuid(19)).assertExists()
-                    else ui.onNodeWithText("👍 1").assertIsDisplayed()
+                mount(7, dark = true)
+                val comment = ui.onNodeWithTag("outliner.comment." + uuid(19))
+                if (scenario == "comments") {
+                    comment.assertDoesNotExist()
+                    ui.onNodeWithTag("comments.toggle." + uuid(17)).performClick()
+                    pause()
+                    comment.assertExists()
+                    ui.onNodeWithTag("comments.toggle." + uuid(17)).performClick()
+                } else ui.onNodeWithText("👍 1").assertIsDisplayed()
+                ui.onNodeWithText("A note with a discussion").performTouchInput { longClick() }
+                ui.onNodeWithText("Select").performClick()
+                pause()
+                val action = if (scenario == "comments") "comment" else "reaction"
+                ui.onNodeWithTag("button.outliner.selection.$action").performClick()
+                pause()
+                if (scenario == "comments") {
+                    ui.onNodeWithTag("field.comment").performTextInput("I'll add the checklist.")
+                    ui.onNodeWithTag("button.comment.post").performClick()
+                    pause()
+                    ui.onNodeWithText("I'll add the checklist.").assertIsDisplayed()
+                } else {
+                    ui.onNodeWithTag("reaction.heart").performClick()
+                    pause()
+                    ui.onNodeWithText("❤️ 1").assertIsDisplayed()
                 }
+            }
+            "notifications" -> {
+                mount(7, dark = true)
+                ui.onNodeWithTag("tab.bottom.notifications").performClick()
+                pause()
+                ui.onNodeWithTag("notification." + uuid(20)).assertIsDisplayed()
+                ui.onNodeWithTag("button.notifications.more").performClick()
+                ui.onNodeWithText("Mark all as read").assertIsDisplayed()
+                ui.onNodeWithText("Mark all as read").performClick()
+                pause()
+                ui.onNodeWithTag("notification." + uuid(19)).performClick()
+                pause()
+                ui.onNodeWithTag("outliner.comment." + uuid(19)).assertExists()
+                instrumentation.runOnMainSync {
+                    val activity = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                        .single() as androidx.activity.ComponentActivity
+                    activity.onBackPressedDispatcher.onBackPressed()
+                }
+                pause()
+                ui.onNodeWithTag("title.notifications").assertIsDisplayed()
             }
             "youtube" -> {
                 mount(4); pause()

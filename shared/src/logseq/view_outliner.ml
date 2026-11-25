@@ -210,7 +210,7 @@ let metadata_member key row =
 
 let block_menu_labels current =
   `Assoc (List.map (fun label -> label, `String (View_base.tr current label))
-    ["Open block"; "Comments"; "Add reaction"; "Edit"; "Scheduled"; "Deadline"; "Status"; "Copy"; "Cut"; "Copy reference"; "Copy URL";
+    ["Open block"; "Add comment"; "Add reaction"; "Edit"; "Scheduled"; "Deadline"; "Status"; "Copy"; "Cut"; "Copy reference"; "Copy URL";
      "Move"; "Move up"; "Move down"; "Outdent"; "Indent"; "Delete"; "Select"; "Unselect"])
 
 let handle_block_menu_event model_source row_source send = function
@@ -220,9 +220,10 @@ let handle_block_menu_event model_source row_source send = function
      | Some (StringValue "open") ->
        let uuid = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
        ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))
+     | Some (StringValue "select") -> ignore (send (Model.ToggleOutlinerSelection row.row_uuid))
      | Some (StringValue ("comments" | "reaction" as action)) ->
        let uuid = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
-       if action = "comments" then ignore (send (Model.OpenDiscussion uuid))
+       if action = "comments" then ignore (send (Model.ComposeDiscussion ([uuid], None)))
        else ignore (send (Model.ShowReactionPicker (Some uuid)))
      | Some (StringValue ("scheduled" | "deadline" as field)) ->
        if metadata_member "isTask" row = `Bool true then
@@ -273,6 +274,7 @@ let outliner_rich_block_view ?(show_code_language = true) model_source title_sou
            ]) current.Model.task_statuses in
          StringValue (Yojson.Basic.to_string (`Assoc [
            "selectionMode", `Bool (View_base.outliner_selection_active_ current);
+           "selectionMember", `Bool (View_base.row_selected_ current row);
            "isTask", `Bool is_task;
            "discussionsAvailable", `Bool (current.collaboration <> `Null && metadata_member "discussionKind" row <> `String "thread");
            "isComment", `Bool (metadata_member "discussionKind" row = `String "comment");
@@ -955,42 +957,19 @@ let outliner_task_dates context model_source row_source send =
     (box ~padding_horizontal:8 [View_property.view ~compact:true ~task_completed ~render_block:(fun _ _ -> box [])
       model_source (Signal.map (fun (row : Model.outline_row) -> row.row_task_dates_json) row_source) send])
 
-let discussion_body model_source row_source body : t =
-  let row = Signal.sample row_source in
-  reactive (fun kind ->
-    if kind = "thread" || kind = "comment" then
-      column ~gap:4 ~padding_vertical:6 ~padding_horizontal:8 ~corner_radius:6
-        ~background:"surface-container-low" ~border_width:1 ~border_color:"border"
-        ~accessibility_identifier:("outliner.comment." ^ row.Model.row_uuid)
-        [text ~value:(View_base.tr (Signal.sample model_source) (if kind = "thread" then "Comments" else "Comment"))
-           ~style_class:"caption" ~foreground:"muted-foreground" []; body]
-    else body)
-    (Signal.map (fun row -> match metadata_member "discussionKind" row with `String value -> value | _ -> "") row_source)
-
-let reaction_strip model_source row_source send : t =
-  let reactions = Signal.map (fun row -> match metadata_member "reactions" row with
-    | `List values -> values | _ -> []) row_source in
-  if_ ~test:(Signal.map (fun values -> values <> []) reactions)
-    (row ~gap:6 ~padding_horizontal:32 ~padding_vertical:4
-      [keyed ~source:reactions ~key:(fun value -> Yojson.Basic.Util.member "emoji" value) ~cmp:compare
-        ~mount:(fun source ->
-          let value = Signal.map (fun value ->
-            let emoji = Model.collaboration_string "emoji" value in
-            let count = match Model.collaboration_field "count" value with `Int count -> count | _ -> 0 in
-            emoji ^ " " ^ string_of_int count) source in
-          let readonly = Signal.map (fun (current : Model.logseq_model) -> current.collaboration = `Null) model_source in
-          reactive (fun readonly ->
-            if readonly then text ~value:(reactive value) ~padding_horizontal:8 ~padding_vertical:4
-              ~corner_radius:8 ~background:"muted" ~style_class:"caption" []
-            else button ~text:(Signal.sample value) ~text_signal:value ~variant:`secondary
-              ~on_press:(fun _ ->
-                let row : Model.outline_row = Signal.sample row_source in
-                let uuid = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
-                let emoji = Model.collaboration_string "id" (Signal.sample source) in
-                ignore (send (Model.ToggleDiscussionReaction (uuid, emoji)))) []) readonly)])
-
-let decorate_row model_source row_source send body =
-  column ~gap:0 [discussion_body model_source row_source body; reaction_strip model_source row_source send]
+let decorate_row context model_source row_source send body =
+  let target (row : Model.outline_row) = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
+  let items name row = match metadata_member name row with `List values -> values | _ -> [] in
+  let state = Signal.map2 (fun (model : Model.logseq_model) row ->
+    let id = target row in
+    id, items "reactions" row, items "commentThreads" row,
+    View_collaboration.ready model, List.mem id model.expanded_discussions)
+    model_source row_source in
+  column ~gap:0 [body;
+    View_base.with_int_prop_signal PaddingLeft
+      (Signal.map (outliner_text_leading context) row_source)
+      (reactive (fun (target, reactions, threads, _, _) ->
+        View_collaboration.inline (Signal.sample model_source) send ~target ~reactions ~threads) state)]
 
 let with_embed_children model_source edit_scope row_source send render_row render_child : t =
   reactive (fun has_embed_children ->
@@ -1041,7 +1020,7 @@ let rec render_result_block_in_scope context model_source edit_scope row_source 
       if_ ~test:(Signal.map View_base.outliner_row_fallback_breadcrumb_ row_source)
         (text ~value:(reactive (Signal.map View_base.outliner_row_breadcrumb row_source))
           ~style_class:"caption" ~foreground:"muted-foreground" []);
-      (let body = decorate_row model_source row_source send (outliner_row_body context model_source retained row_source send) in
+      (let body = decorate_row context model_source row_source send (outliner_row_body context model_source retained row_source send) in
        if Lui_ui.host context = KotlinHost then outliner_continuation ~is_body:true row_source body else body);
       outliner_continuation row_source (outliner_task_dates context model_source row_source send)])
     (render_result_block_in_scope context model_source)
@@ -1090,7 +1069,7 @@ let outliner_row ?(trailing_inset = 0) context model_source retained_row_source 
   let retained_row_source = Signal.map2 (fun (retained : View_rows.retained_row) value ->
     {retained with value}) retained_row_source row_source in
   let body = outliner_row_body ~trailing_inset context model_source retained_row_source row_source send in
-  let body = decorate_row model_source row_source send body in
+  let body = decorate_row context model_source row_source send body in
   let body = if Lui_ui.host context = KotlinHost then outliner_continuation ~is_body:true row_source body else body in
   let render_block = render_result_block context model_source in
   let bullet_inset = if Lui_ui.host context = KotlinHost then 12 else 20 in
@@ -1339,7 +1318,30 @@ let outliner_selection_toolbar ?(retain_task_actions = false) model_source send 
           "toolbar-copy-url", "Copy URL", "copyURL", false;
           "toolbar-delete", "Delete", "delete", true;
         ] in
+      let can_comment = Signal.map (fun (current : Model.logseq_model) ->
+        View_collaboration.ready current && current.outliner_selected_block_ids <> []) model_source in
+      let can_react = Signal.map (fun (current : Model.logseq_model) ->
+        View_collaboration.ready current && List.length current.outliner_selected_block_ids = 1) model_source in
+      let selected () =
+        let current : Model.logseq_model = Signal.sample model_source in
+        let blocks = current.outliner_selected_block_ids in
+        let pending = Hashtbl.create (List.length blocks) in
+        List.iter (fun uuid -> Hashtbl.add pending uuid ()) blocks;
+        let ordered = List.filter_map (fun (row : Model.outline_row) ->
+          if not (Hashtbl.mem pending row.row_uuid) then None else (
+            Hashtbl.remove pending row.row_uuid;
+            Some (Option.value ~default:row.row_uuid row.row_embed_source_uuid)))
+          current.outliner_rows in
+        List.filter (Hashtbl.mem pending) blocks @ ordered in
+      let add_comment () = ignore (send (Model.ComposeDiscussion (selected (), None))) in
+      let add_reaction () = match selected () with
+        | [target] -> ignore (send (Model.ShowReactionPicker (Some target)))
+        | _ -> () in
       let actions = [
+        if_toolbar ~test:can_comment (quick_button ~on_press:add_comment (`app "discussion-comment")
+          "Add comment" "button.outliner.selection.comment" "");
+        if_toolbar ~test:can_react (quick_button ~on_press:add_reaction (`app "reaction-add")
+          "Add reaction" "button.outliner.selection.reaction" "");
         status_menu;
         quick_button (`app "toolbar-outdent") "Outdent" "button.outliner.selection.outdent" "outdent";
         quick_button (`app "toolbar-indent") "Indent" "button.outliner.selection.indent" "indent";

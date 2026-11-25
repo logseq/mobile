@@ -433,9 +433,13 @@ private fun AndroidBlockActionMenu(
             else -> {
                 BlockActionItem(label("Open block"), "external-link") { perform("open") }
                 if (canEdit) BlockActionItem(label("Edit"), "edit") { perform("edit") }
+                if (canCut) {
+                    val selected = actions.optBoolean("selectionMember")
+                    BlockActionItem(label(if (selected) "Unselect" else "Select"), "selected") { perform("select") }
+                }
                 if (actions.optBoolean("discussionsAvailable")) {
                     if (!actions.optBoolean("isComment")) {
-                        BlockActionItem(label("Comments"), "discussion-comment") { perform("comments") }
+                        BlockActionItem(label("Add comment"), "discussion-comment") { perform("comments") }
                     }
                     BlockActionItem(label("Add reaction"), "reaction-add") { perform("reaction") }
                 }

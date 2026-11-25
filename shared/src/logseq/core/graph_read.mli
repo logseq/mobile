@@ -16,6 +16,8 @@ val uuid_for_eid : Datascript.db -> int -> string option
 val has_ref : Datascript.db -> int -> string -> int -> bool
 val ref_eids : Datascript.db -> int -> string -> int list
 val recycled : Datascript.db -> int -> bool
+val is_comments_area : Datascript.db -> int -> bool
+val is_comment : Datascript.db -> int -> bool
 val block_classes_provide_property : Datascript.db -> int -> string -> bool
 val class_descendants : Datascript.db -> int -> int list
 val entity_is_instance_of : Datascript.db -> int -> string -> bool

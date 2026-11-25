@@ -33,6 +33,8 @@ let () =
     make_page photo_page "Photo capture"; make_page video_page "YouTube link";
     make_page math_page "LaTeX regression"; make_page formula_page "Formula";
     make_page discussion_page "Comments and reactions";
+    make_page "f0000000-0000-4000-8000-000000000031" "Taylor";
+    make_page "f0000000-0000-4000-8000-000000000032" "Robin";
     entity template_page [text "block/title" "Daily standup"; text "block/name" "daily standup";
       tags ["logseq.class/Page"; "logseq.class/Template"]];
     block "f0000000-0000-4000-8000-000000000063" template_page "a0" "Yesterday / Today / Blockers" [];
@@ -48,14 +50,21 @@ let () =
     block "f0000000-0000-4000-8000-000000000016" math_page "a1"
       "\\underbrace{a-b}_{\\text{ear drift}} + \\underbrace{c-a}_{\\text{organ divergence}}"
       ["logseq.property.node/display-type", Ds.One_value (Ds.Keyword "math")];
-    block "f0000000-0000-4000-8000-000000000017" discussion_page "a0" "A note with a discussion" [];
-    block "f0000000-0000-4000-8000-000000000018" discussion_page "a1" "Discussion" [tag "logseq.class/Comments"];
+    block "f0000000-0000-4000-8000-000000000017" discussion_page "a0" "A note with a discussion"
+      [reference "logseq.property/created-by-ref" "f0000000-0000-4000-8000-000000000031"];
+    entity "f0000000-0000-4000-8000-000000000018" [
+      text "block/title" "Comments"; reference "block/page" discussion_page;
+      reference "block/parent" "f0000000-0000-4000-8000-000000000017"; text "block/order" "a0";
+      "logseq.property.comments/blocks", Ds.Many_values [Ds.Ref_to (ref_uuid "f0000000-0000-4000-8000-000000000017")];
+      tag "logseq.class/Comments"];
     entity "f0000000-0000-4000-8000-000000000019"
       [text "block/title" "This is a comment, separate from the note.";
        reference "block/page" discussion_page; reference "block/parent" "f0000000-0000-4000-8000-000000000018";
-       text "block/order" "a0"; tag "logseq.class/Comment"];
+       text "block/order" "a0"; tag "logseq.class/Comment";
+       reference "logseq.property/created-by-ref" "f0000000-0000-4000-8000-000000000032"];
     entity "f0000000-0000-4000-8000-000000000020"
       [reference "logseq.property.reaction/target" "f0000000-0000-4000-8000-000000000017";
+       reference "logseq.property/created-by-ref" "f0000000-0000-4000-8000-000000000032";
        text "logseq.property.reaction/emoji-id" "+1"];
   ] db in
   Result.get_ok (Graph_store.begin_import path);
