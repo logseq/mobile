@@ -1281,7 +1281,7 @@ private struct LGNavigationContent: View {
                 if selectionActive {
                     headerConnectionSlot(context, at: childID(at: index + 3), selecting: true)
                 } else if let id = primary.first {
-                    context.content(for: id)
+                    context.nodeView(of: id)
                 } else if let final {
                     final
                 }
@@ -1315,7 +1315,7 @@ private struct LGNavigationContent: View {
             } else {
                 layout {
                     ForEach(primary, id: \.self) { id in
-                        context.content(for: id).frame(width: size, height: size)
+                        context.nodeView(of: id).frame(width: size, height: size)
                     }
                     final.frame(width: size, height: size)
                 }
