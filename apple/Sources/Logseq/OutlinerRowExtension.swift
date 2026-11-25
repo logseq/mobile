@@ -338,10 +338,14 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
                 emit("open-node", uuid: row.embedSourceUuid)
             }
         ]
+        if !propertyValue {
+            let selectionTitle = row.selectionMember == true ? "Unselect" : "Select"
+            items.append(menuAction(selectionTitle, icon: "checkmark.circle", action: "select"))
+        }
         if row.discussionsAvailable == true {
             var collaboration = [menuAction("Add reaction", icon: "face.smiling", action: "reaction")]
             if row.isComment != true {
-                collaboration.insert(menuAction("Comments", icon: "bubble", action: "comments"), at: 0)
+                collaboration.insert(menuAction("Add comment", icon: "bubble.left", action: "comments"), at: 0)
             }
             items.append(UIMenu(options: .displayInline, children: collaboration))
         }

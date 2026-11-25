@@ -486,35 +486,60 @@ let compile_comment db (write : Collaboration.comment_write) =
   if C.entity db write.uuid <> None then Ok []
   else if String_kit.is_blank write.text || String.length write.text > 32_768 then Error "Enter a comment up to 32 KB"
   else
-  let* target = required "Comment target no longer exists" (C.write_target db write.target) in
-  if C.thread_of_comment db target <> None then Error "Reply in the original thread"
-  else
-  let is_page = Graph_read.value db target "block/name" <> None in
-  let* page = if is_page then Ok write.target else
-    required "Comment page no longer exists"
-      (List.find_map (Graph_read.uuid_for_eid db) (C.refs db target "block/page")) in
+  let seen = Hashtbl.create 8 in
+  let targets = List.filter_map (fun uuid ->
+    match C.write_target db uuid with
+    | Some eid when not (C.is_comment db eid) && not (Hashtbl.mem seen eid) ->
+      Hashtbl.add seen eid (); Some eid
+    | _ -> None) write.targets in
+  let* anchor = required "Comment target no longer exists" (List.nth_opt (List.rev targets) 0) in
+  let* anchor_uuid = required "Missing comment target ID" (Graph_read.uuid_for_eid db anchor) in
   let end_order parent = Fractional_order.between (Graph_read.last_order db "block/parent" parent) None in
-  let link = Ds.Ref_to (Ds.Entity_id target) in
-  let* thread_uuid, comment_order, thread_tx =
-    match C.existing_thread db target with
+  let related = match write.reply_to with
+    | None -> Ok (C.existing_thread db targets)
+    | Some uuid ->
+      (match C.entity db uuid with
+       | Some thread when List.mem thread (C.threads db anchor) -> Ok (Some thread)
+       | _ -> Error "This discussion is unavailable") in
+  let* existing = related in
+  let page_of eid =
+    if Graph_read.value db eid "block/name" <> None then Graph_read.uuid_for_eid db eid
+    else List.find_map (Graph_read.uuid_for_eid db) (C.refs db eid "block/page") in
+  let* thread_uuid, page, comment_order, thread_tx = match existing with
     | Some thread ->
       let* uuid = required "Missing discussion ID" (Graph_read.uuid_for_eid db thread) in
+      let* page = required "Comment page no longer exists" (page_of thread) in
       let* order = end_order thread in
       let tx = if C.refs db thread C.thread_targets = [] then
-        [Ds.Add (Ds.Entity_id thread, C.thread_targets, link)] else [] in
-      Ok (uuid, order, tx)
+        [Ds.Add (Ds.Entity_id thread, C.thread_targets, Ds.Ref_to (Ds.Entity_id anchor))] else [] in
+      Ok (uuid, page, order, tx)
     | None ->
-      let* order = if is_page then
-        let first = C.referring db "block/parent" target
-          |> List.filter_map (fun child -> C.text db child "block/order")
-          |> List.sort String.compare |> (function first :: _ -> Some first | [] -> None) in
-        Fractional_order.between None first
-      else end_order target in
+      let* page = required "Comment page no longer exists" (page_of anchor) in
+      let is_page = Graph_read.value db anchor "block/name" <> None in
+      let shared = List.length targets > 1 && not is_page in
+      let sibling_orders parent =
+        C.referring db "block/parent" parent |> List.filter_map (fun child -> C.text db child "block/order")
+        |> List.sort String.compare in
+      let* parent, order =
+        if shared then
+          let* parent = required "Comment parent no longer exists"
+            (List.nth_opt (C.refs db anchor "block/parent") 0) in
+          let* parent_uuid = required "Missing comment parent ID" (Graph_read.uuid_for_eid db parent) in
+          let previous = C.text db anchor "block/order" in
+          let next = Option.bind previous (fun previous ->
+            List.find_opt (fun order -> String.compare order previous > 0) (sibling_orders parent)) in
+          let* order = Fractional_order.between previous next in
+          Ok (parent_uuid, order)
+        else
+          let* order = if is_page then Fractional_order.between None (List.nth_opt (sibling_orders anchor) 0)
+            else end_order anchor in
+          Ok (anchor_uuid, order) in
       let* comment_order = Fractional_order.between None None in
-      let title = if is_page then "Comments on this page" else "Comments" in
-      let tx = discussion_block_tx ~uuid:write.thread ~title ~page ~parent:write.target
-        ~order ~created_at:write.created_at ~tag:C.thread_class [C.thread_targets, Ds.Many_values [link]] in
-      Ok (write.thread, comment_order, [tx]) in
+      let title = if is_page && List.length targets = 1 then "Comments on this page" else "Comments" in
+      let links = List.map (fun eid -> Ds.Ref_to (Ds.Entity_id eid)) targets in
+      let tx = discussion_block_tx ~uuid:write.thread ~title ~page ~parent
+        ~order ~created_at:write.created_at ~tag:C.thread_class [C.thread_targets, Ds.Many_values links] in
+      Ok (write.thread, page, comment_order, [tx]) in
   Ok (thread_tx @ [discussion_block_tx ~uuid:write.uuid ~title:write.text ~page ~parent:thread_uuid
     ~order:comment_order ~created_at:write.created_at ~tag:C.comment_class []])
 

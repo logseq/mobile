@@ -354,7 +354,7 @@ let search_visible_property attr =
 let rec affected_uuids db intent =
   match intent with
   | Atomic intents -> List.concat_map (affected_uuids db) intents |> List.sort_uniq String.compare
-  | Add_comment write -> [write.target; write.thread; write.uuid]
+  | Add_comment write -> write.thread :: write.uuid :: write.targets
   | Set_reaction _ | Set_key_value _ -> []
   | Set_property value -> if search_visible_property value.attr then [ value.uuid ] else []
   | Set_properties value ->
@@ -618,7 +618,8 @@ let rec intent_json intent =
     match intent with
     | Atomic intents -> ("atomic", ["intents", `List (List.map intent_json intents)])
     | Add_comment write -> ("add-comment", [
-        "target", `String write.target; "thread", `String write.thread;
+        "targets", `List (List.map (fun uuid -> `String uuid) write.targets);
+        "thread", `String write.thread; "replyTo", option_json (fun uuid -> `String uuid) write.reply_to;
         "uuid", `String write.uuid; "text", `String write.text; "createdAt", `Int write.created_at])
     | Set_reaction write -> ("set-reaction", [
         "target", `String write.target; "actor", `String write.actor; "uuid", `String write.uuid;
@@ -755,7 +756,12 @@ let rec intent_of_json input =
   let fields = object_fields input "pending intent must be an object" in
   match string_field fields "type" with
   | "atomic" -> Atomic (List.map intent_of_json (array_field fields "intents"))
-  | "add-comment" -> Add_comment {target = string_field fields "target";
+  | "add-comment" ->
+    let targets = if List.mem_assoc "targets" fields then
+      List.map Yojson.Basic.Util.to_string (array_field fields "targets")
+    else [string_field fields "target"] in
+    Add_comment {targets; reply_to = (match List.assoc_opt "replyTo" fields with
+      | None | Some `Null -> None | Some value -> Some (Yojson.Basic.Util.to_string value));
       thread = string_field fields "thread"; uuid = string_field fields "uuid";
       text = string_field fields "text"; created_at = int_field fields "createdAt"}
   | "set-reaction" -> Set_reaction {target = string_field fields "target";

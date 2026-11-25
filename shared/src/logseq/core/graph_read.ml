@@ -59,6 +59,16 @@ let ref_eids db eid attr =
   List.of_seq (Ds.Db.datoms db Ds.Eavt ~e:eid ~a:attr ())
   |> List.filter_map (fun (datom : Ds.datom) -> Ds_value.ref_eid db attr datom.v)
 
+let has_tag db eid ident =
+  Option.exists (has_ref db eid "block/tags")
+    (Ds.entid db "db/ident" (Ds.Keyword ident))
+
+let is_comments_area db eid = has_tag db eid "logseq.class/Comments"
+
+let is_comment db eid =
+  has_tag db eid "logseq.class/Comment"
+  || List.exists (is_comments_area db) (ref_eids db eid "block/parent")
+
 let block_classes_provide_property db eid attr =
   match Ds.entid db "db/ident" (Ds.Keyword attr) with
   | None -> false
@@ -891,6 +901,7 @@ let page_entity_visible tree eid =
     let visible =
       Ds_value.optional_ref_eid db "block/page" (value db eid "block/page") = tree.page_eid
       && value db eid "block/name" = None
+      && not (is_comments_area db eid || is_comment db eid)
       && value db eid "logseq.property/hide?" <> Some (Ds.Bool true)
       && value db eid "logseq.property/deleted-at" = None
       && value db eid "logseq.property/view-for" = None

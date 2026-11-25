@@ -5306,7 +5306,12 @@ let dictionaries = [
     ("No tasks to show", "暂无任务");
     ("Notifications", "通知");
     ("Unread notifications", "有未读通知");
+    ("Unread", "未读");
     ("Add reaction", "添加表情回应");
+    ("Add comment", "添加评论");
+    ("Show comments", "展开评论");
+    ("Hide comments", "收起评论");
+    ("Reply", "回复");
     ("Graph member", "图谱成员");
     ("No comments yet", "暂无评论");
     ("Write a comment", "写评论");

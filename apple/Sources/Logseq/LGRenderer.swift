@@ -78,7 +78,7 @@ enum LGIconPolicy {
             "tab-home-selected": .systemName("house.fill"),
             "tab-notifications": .systemName("bell"),
             "tab-notifications-selected": .systemName("bell.fill"),
-            "discussion-comment": .systemName("bubble"),
+            "discussion-comment": .systemName("bubble.left"),
             "reaction-add": .systemName("face.smiling"),
             "comment-send": .systemName("arrow.up"),
             "tab-tasks": .systemName("checkmark.square"),

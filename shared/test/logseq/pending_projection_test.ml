@@ -1367,10 +1367,18 @@ let discussion_writes_reuse_the_thread_and_preserve_reaction_ownership () =
     add 22 "block/uuid" (Ds.Uuid "owner");
     add 23 "block/uuid" (Ds.Uuid "member");
     add 23 "block/title" (Ds.String "Member");
+    add 24 "block/uuid" (Ds.Uuid "next");
+    add 24 "block/title" (Ds.String "Next block");
+    add 24 "block/parent" (Ds.Ref 1);
+    add 24 "block/page" (Ds.Ref 1);
+    add 24 "block/order" (Ds.String "a1");
     add 10 C.creator (Ds.Ref 22)] in
-  let post uuid thread text = Ops.Add_comment {target = "block"; uuid; thread; text; created_at = 100} in
+  let post uuid thread text = Ops.Add_comment {targets = ["block"]; reply_to = None; uuid; thread; text; created_at = 100} in
   let first = post "reply1" "thread1" "First" in
   let second = post "reply2" "thread2" "Second" in
+  let old_pending = `Assoc ["type", `String "add-comment"; "target", `String "block";
+    "uuid", `String "reply1"; "thread", `String "thread1"; "text", `String "First"; "createdAt", `Int 100] in
+  check_eq (Ops.intent_of_json old_pending) first;
   let db = apply_intent db (Ops.intent_of_json (Ops.intent_json first)) in
   let db = apply_intent db second in
   let eid uuid = Option.get (C.entity db uuid) in
@@ -1387,7 +1395,27 @@ let discussion_writes_reuse_the_thread_and_preserve_reaction_ownership () =
   check_eq (event_ids db) ["reaction1"; "reply1"];
   let db = apply_intent db (reaction "member" "unused" false) in
   check_eq (event_ids db) ["reply1"];
-  check_eq (List.length (C.own_reactions db ~target:"block" ~actor:"owner" ~emoji:"heart")) 1
+  check_eq (List.length (C.own_reactions db ~target:"block" ~actor:"owner" ~emoji:"heart")) 1;
+  let range = Ops.Add_comment {targets = ["block"; "next"]; reply_to = None; thread = "range";
+    uuid = "range-comment"; text = "Across both blocks"; created_at = 300} in
+  let db = apply_intent db (Ops.intent_of_json (Ops.intent_json range)) in
+  let eid uuid = Option.get (C.entity db uuid) in
+  check_eq (List.sort Int.compare (C.targets db (eid "range"))) (List.sort Int.compare [eid "block"; eid "next"]);
+  check_eq (C.refs db (eid "range") "block/parent") [eid "page"];
+  check (C.text db (eid "range") "block/order" > C.text db (eid "next") "block/order");
+  check_eq (List.length (C.comment_threads db ~actor:None (eid "next"))) 1;
+  check_eq (List.length (Graph_read.blocks_for_page (fun title -> Ok title) db "page")) 2;
+  let reply = Ops.Add_comment {targets = ["next"]; reply_to = Some "range"; thread = "unused-range";
+    uuid = "range-reply"; text = "A reply from the other block"; created_at = 400} in
+  let db = apply_intent db reply in
+  check_eq (List.length (C.comments db (eid "range"))) 2;
+  check_eq (C.entity db "unused-range") None;
+  let db = apply_intent db (Ops.Set_reaction {target = "reply2"; actor = "member"; uuid = "comment-reaction";
+    emoji = "heart"; active = true; created_at = 500}) in
+  let open Yojson.Basic.Util in
+  let activity = List.find (fun event -> member "id" event = `String "comment-reaction") (C.inbox db ~actor:"owner") in
+  check_eq (member "target" activity) (`String "block");
+  check_eq (member "opensDiscussion" activity) (`Bool true)
 
 let cases =
   [ case "discussion writes reuse threads and preserve reaction ownership"

@@ -39,8 +39,17 @@ import LogseqModel
         UserDefaults.standard.set("feedback", forKey: "logseq.selectedGraphId")
         _ = Self.call(nil, path: directory.appendingPathComponent("logseq.sqlite").path)
         let catalogURL = ProcessInfo.processInfo.environment["LOGSEQ_FEEDBACK_CATALOG_URL"] ?? "http://127.0.0.1:1"
-        _ = Self.call("configure", Self.encoded(["graphId":"feedback", "baseUrl":catalogURL,
-            "token":scenario == "responsiveness" ? "feedback-test-token" : ""]))
+        let token: String
+        switch scenario {
+        case "comments", "reactions", "notifications":
+            let actor = Data(Self.encoded(["sub": Self.uuid(31), "cognito:username": "Taylor"]).utf8)
+                .base64EncodedString().replacingOccurrences(of: "=", with: "")
+                .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+            token = "offline.\(actor).fixture"
+        case "responsiveness": token = "feedback-test-token"
+        default: token = ""
+        }
+        _ = Self.call("configure", Self.encoded(["graphId":"feedback", "baseUrl":catalogURL, "token":token]))
         let graph = directory.appendingPathComponent("graphs/feedback")
         let opened = Self.call("openGraph", Self.encoded(["graphId":"feedback",
             "activePath":graph.appendingPathComponent("graph.sqlite").path,
@@ -53,7 +62,7 @@ import LogseqModel
         case "attachment-refresh", "image-parent", "image-retry": selected = 3
         case "youtube": selected = 4
         case "math": selected = 5
-        case "comments", "reactions": selected = 7
+        case "comments", "reactions", "notifications": selected = 7
         default: selected = 1
         }
         let response = Self.call("selectPage", Self.uuid(selected))
@@ -185,8 +194,41 @@ import LogseqModel
                     let markup = (row["block"] as? [String: Any])?["markup"] as? [[String: Any]] ?? []
                     return markup.contains { $0["type"] as? String == "video" }
                 }
-            case "comments": observations["comment-panel"] = find("outliner.comment." + Self.uuid(19)) != nil
-            case "reactions": observations["reaction"] = backend.rootIDs.flatMap(descendants).contains { backend.model(id: $0)?.property(.text)?.stringValue == "👍 1" }
+            case "comments":
+                observations["starts-collapsed"] = find("outliner.comment." + Self.uuid(19)) == nil
+                try press("comments.toggle." + Self.uuid(17))
+                await pause()
+                observations["comment-panel"] = find("outliner.comment." + Self.uuid(19)) != nil
+                try press("comments.toggle." + Self.uuid(17))
+                try extensionEvent("outliner-block-row", "menu-action", ["payload": .string("select")])
+                await pause()
+                try press("button.outliner.selection.comment")
+                await pause()
+                if let node = find("field.comment") {
+                    try backend.performTextChange(node: node, text: "I'll add the checklist.")
+                    try await Task.sleep(for: .milliseconds(400))
+                    try press("button.comment.post")
+                    await pause()
+                }
+                observations["posted-inline"] = backend.rootIDs.flatMap(descendants).contains {
+                    backend.model(id: $0)?.property(.text)?.stringValue == "I'll add the checklist."
+                }
+            case "reactions":
+                observations["reaction"] = find("reaction.block." + Self.uuid(17) + ".+1") != nil
+                try extensionEvent("outliner-block-row", "menu-action", ["payload": .string("select")])
+                await pause()
+                try press("button.outliner.selection.reaction")
+                await pause()
+                try press("reaction.heart")
+                await pause()
+                observations["added-inline"] = find("reaction.block." + Self.uuid(17) + ".heart") != nil
+            case "notifications":
+                try press("tab.bottom.notifications")
+                await pause()
+                observations["activity-list"] = find("notification." + Self.uuid(20)) != nil
+                try press("notification." + Self.uuid(19))
+                await pause()
+                observations["opened-inline"] = find("outliner.comment." + Self.uuid(19)) != nil
             default: break
             }
             await pause()

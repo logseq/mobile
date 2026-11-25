@@ -554,6 +554,8 @@ type logseq_model =
   ; push_error : string option
   ; pending_push_route : (string * string) option
   ; discussion_target : string option
+  ; discussion_composition : (string list * string option) option
+  ; expanded_discussions : string list
   ; discussion_draft : string
   ; discussion_error : string option
   ; reaction_picker : string option
@@ -669,6 +671,8 @@ type logseq_action =
   | ApplyPushPreference of bool
   | OpenPushedDiscussion of string * string
   | OpenDiscussion of string
+  | ComposeDiscussion of string list * string option
+  | ToggleInlineComments of string
   | CloseDiscussion
   | EditDiscussionDraft of string
   | PostDiscussionComment
@@ -975,6 +979,8 @@ let initial () =
     collaboration = `Null;
     push_enabled = false; push_error = None; pending_push_route = None;
     discussion_target = None;
+    discussion_composition = None;
+    expanded_discussions = [];
     discussion_draft = "";
     discussion_error = None;
     reaction_picker = None;
@@ -1818,7 +1824,7 @@ let back_app_navigation (current : logseq_model) requested =
         (cancel_outliner_editing current) with
         outliner_selected_block_ids = [];
         outliner_selected_task_block_ids = [];
-        destination = JournalsDestination;
+        destination = (if current.app_navigation_path = [] then JournalsDestination else current.destination);
       }
   else
     let rec loop remaining updated =
@@ -2519,9 +2525,11 @@ let rec update (current : logseq_model) action =
       else apply_core_snapshot current projection in
     let graph_changed = applied.selected_graph_id <> current.selected_graph_id in
     let applied = if graph_changed then {applied with collaboration = `Null; discussion_target = None;
+      discussion_composition = None; expanded_discussions = [];
       discussion_draft = ""; discussion_error = None; reaction_picker = None} else applied in
     let applied = match projection.collaboration_update with
-      | Some `Null -> {applied with collaboration = `Null; discussion_target = None; reaction_picker = None}
+      | Some `Null -> {applied with collaboration = `Null; discussion_target = None; discussion_composition = None;
+          expanded_discussions = []; reaction_picker = None}
       | Some data when Option.map (fun graph -> `String graph) applied.selected_graph_id
            = Some (collaboration_field "graphId" data) -> {applied with collaboration = data}
       | _ -> applied in
@@ -2924,11 +2932,21 @@ let rec update (current : logseq_model) action =
          | CollaborationEffect (_, payload) ->
            let fields = pdf_fields payload in
            if current.selected_graph_id <> Some (pdf_string fields "graphId") then resolved_current
-           else if not succeeded then {resolved_current with discussion_error = Some message}
+           else if not succeeded then
+             if current.discussion_target = Some (pdf_string fields "target") then
+               {resolved_current with discussion_error = Some message}
+             else resolved_current
            else if pdf_string fields "action" = "comment"
              && current.discussion_target = Some (pdf_string fields "target")
              && current.discussion_draft = pdf_string fields "text"
-           then {resolved_current with discussion_draft = ""; discussion_error = None}
+           then
+             (match current.discussion_composition, current.discussion_target with
+              | Some _, Some target ->
+                let expanded_discussions = target :: List.filter ((<>) target) current.expanded_discussions in
+                let next = update {resolved_current with expanded_discussions} CloseDiscussion in
+                if next.outliner_selected_block_ids = [] then next
+                else update next (PerformOutlinerToolbarAction "unselect")
+              | _ -> {resolved_current with discussion_draft = ""; discussion_error = None})
            else resolved_current
          | PdfAnnotationEffect (_, payload) when not succeeded ->
            (match resolved_current.pdf_workspace with
@@ -2981,7 +2999,12 @@ let rec update (current : logseq_model) action =
                :: List.filter (fun (view, _, _) -> view <> uuid) current.result_view_feedback
            | _ -> resolved_current.result_view_feedback);
          effect_error =
-           (if succeeded || (match eff with SignInEffect _ | LoadResultRowsEffect _ | LoadPropertyValuesEffect _ | ResultViewEffect _ | NodePropertyEffect _ -> true | _ -> false) || (match eff with
+           (if succeeded || (match eff with
+             | SignInEffect _ | PushPreferenceEffect _ | LoadResultRowsEffect _ | LoadPropertyValuesEffect _
+             | ResultViewEffect _ | NodePropertyEffect _ -> true
+             | CollaborationEffect (_, payload) ->
+               current.discussion_target = Some (pdf_string (pdf_fields payload) "target")
+             | _ -> false) || (match eff with
               | CreateGraphEffect _ -> String.ends_with ~suffix:E2ee_keyring.password_required_message message
               | _ -> false)
             then None else Some message);
@@ -3237,18 +3260,33 @@ let rec update (current : logseq_model) action =
     else {viewing with push_error = Some "This activity is unavailable"}
   | OpenDiscussion target when notification_scope current <> None && target <> "" ->
     let next = update current DismissComposer in
-    collaboration_request {next with discussion_target = Some target; discussion_draft = "";
+    collaboration_request {next with discussion_target = Some target; discussion_composition = None; discussion_draft = "";
       discussion_error = None; reaction_picker = None; sidebar_open = false} target "open" []
   | OpenDiscussion _ -> current
+  | ComposeDiscussion (targets, reply_to) ->
+    (match List.rev targets with
+     | target :: _ when notification_scope current <> None ->
+       let next = update current (OpenDiscussion target) in
+       {next with discussion_composition = Some (targets, reply_to)}
+     | _ -> current)
+  | ToggleInlineComments target ->
+    let remaining = List.filter ((<>) target) current.expanded_discussions in
+    let expanded_discussions = if List.mem target current.expanded_discussions then remaining else target :: remaining in
+    {current with expanded_discussions}
   | CloseDiscussion ->
-    let next = {current with discussion_target = None; discussion_draft = ""; discussion_error = None;
-      reaction_picker = None} in
+    let next = {current with discussion_target = None; discussion_composition = None;
+      discussion_draft = ""; discussion_error = None; reaction_picker = None} in
     Option.fold ~none:next ~some:(fun target -> collaboration_request next target "close" []) current.discussion_target
   | EditDiscussionDraft draft -> {current with discussion_draft = draft; discussion_error = None}
   | PostDiscussionComment when String.trim current.discussion_draft = "" || posting_comment current -> current
   | PostDiscussionComment ->
+    let fields = match current.discussion_composition with
+      | None -> []
+      | Some (targets, reply) ->
+        ["targets", `List (List.map (fun uuid -> `String uuid) targets);
+         "replyTo", (match reply with Some thread -> `String thread | None -> `Null)] in
     Option.fold ~none:current ~some:(fun target -> collaboration_request current target "comment"
-      ["text", `String current.discussion_draft]) current.discussion_target
+      (("text", `String current.discussion_draft) :: fields)) current.discussion_target
   | ShowReactionPicker target ->
     if notification_scope current = None then current else
     let next = if target <> None then update current DismissComposer else current in
@@ -3264,7 +3302,12 @@ let rec update (current : logseq_model) action =
      | Some item ->
        let next = update (mark_notifications current [id]) SaveUISession in
        let target = collaboration_string "target" item in
-       if collaboration_string "kind" item = "comment" then update next (OpenDiscussion target)
+       if collaboration_field "opensDiscussion" item = `Bool true
+          || collaboration_string "kind" item = "comment" then
+         if collaboration_field "isPage" item = `Bool true then update next (OpenDiscussion target)
+         else
+           let expanded_discussions = target :: List.filter ((<>) target) next.expanded_discussions in
+           update {next with expanded_discussions} (RequestAppNode target)
        else update next (RequestAppNode target))
   | ShowJournals | ShowTasks | ShowNotifications ->
     let destination = match action with ShowTasks -> TasksDestination
