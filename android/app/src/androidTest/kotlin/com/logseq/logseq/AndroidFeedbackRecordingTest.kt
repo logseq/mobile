@@ -463,7 +463,13 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                     comment.assertExists()
                     ui.onNodeWithTag("comments.toggle." + uuid(17)).performClick()
                 } else {
-                    ui.onNodeWithText("👍 1").assertIsDisplayed()
+                    val existing = ui.onNodeWithTag("reaction.block.${uuid(17)}.+1").assertIsDisplayed()
+                    val inlineAdd = ui.onNodeWithTag("reaction.add." + uuid(17)).assertIsDisplayed()
+                    assertTrue(existing.getUnclippedBoundsInRoot().right <= inlineAdd.getUnclippedBoundsInRoot().left)
+                    inlineAdd.performClick()
+                    ui.onNodeWithTag("reaction.search").assertIsDisplayed()
+                    ui.onNodeWithTag("reaction.close").performClick()
+                    pause()
                     val block = ui.onNodeWithText("A note with a discussion")
                     block.performTouchInput { longClick() }
                     pause()

@@ -13,54 +13,59 @@ let selected_reactions items =
   List.filter_map (fun item -> if field "selected" item = `Bool true
     then Some (string "id" item) else None) items
 
+let reaction_tile ~selected children =
+  row ~height:30 ~min_width:34 ~padding_horizontal:6 ~gap:4 ~main:`center ~cross:`center
+    ~corner_radius:8
+    ~background:(if selected then "task-tab-selected-background" else "task-tab-background")
+    children
+
 let reaction_chip current send target reaction =
   let id = string "id" reaction in
-  let count = match field "count" reaction with `Int count -> count | _ -> 0 in
+  let count = match field "count" reaction with `Int count -> string_of_int count | _ -> "0" in
   let selected = field "selected" reaction = `Bool true in
-  let label = emoji id ^ " " ^ string_of_int count in
-  let foreground = if selected then "link" else "foreground" in
-  if not (ready current) then
-    text ~value:label ~font_size:"13" ~foreground
-      ~padding_horizontal:8 ~padding_vertical:4 ~corner_radius:12 ~background:"muted" []
+  let symbol = emoji id in
+  let label = symbol ^ " " ^ count in
+  let foreground = if selected then "link" else "muted-foreground" in
+  let tile = reaction_tile ~selected [
+    text ~value:symbol ~font_size:"17" ~white_space:`nowrap ~max_width:40 ~text_overflow:`ellipsis [];
+    text ~value:count ~font_size:"13" ~white_space:`nowrap ~foreground [];
+  ] in
+  if not (ready current) then tile
   else
     let toggle = if selected || Reaction_emoji.find id = None then Model.ToggleDiscussionReaction (target, id)
       else Model.ChooseDiscussionReaction (target, id) in
-    box ~corner_radius:14
-      ~background:(if selected then "task-tab-selected-background" else "task-tab-background") [
-      button ~text:label ~size:`sm ~min_height:36 ~min_width:44 ~variant:`ghost ~selected
-        ~foreground ~label ~accessibility_identifier:("reaction.block." ^ target ^ "." ^ id)
-        ~on_press:(send_event send toggle)
-        [text ~value:label ~font_size:"13" ~foreground []];
-    ]
+    button ~text:label ~size:`sm ~min_height:44 ~min_width:44 ~padding_horizontal:0 ~variant:`ghost
+      ~selected ~label ~accessibility_identifier:("reaction.block." ^ target ^ "." ^ id)
+      ~on_press:(send_event send toggle) [tile]
 
 let add_reaction current send target reactions =
   let label = copy current "Add reaction" in
-  button ~text:"" ~icon:(`app "reaction-add") ~size:`sm ~variant:`ghost
-    ~min_width:44 ~min_height:44 ~foreground:"muted-foreground" ~label
+  button ~text:"" ~size:`sm ~variant:`ghost ~min_width:44 ~min_height:44 ~padding_horizontal:0 ~label
     ~accessibility_identifier:("reaction.add." ^ target)
-    ~on_press:(send_event send (Model.OpenReactionPicker (target, selected_reactions reactions))) []
+    ~on_press:(send_event send (Model.OpenReactionPicker (target, selected_reactions reactions)))
+    [reaction_tile ~selected:false [
+      icon ~name:(`app "reaction-add") ~point_size:16 ~width:16 ~height:16 ~foreground:"muted-foreground" [];
+    ]]
+
+let reaction_actions current send target reactions =
+  List.map (reaction_chip current send target) reactions @
+  if ready current then [add_reaction current send target reactions] else []
+
+let reaction_row actions = row ~gap:4 ~cross:`center ~flex_wrap:`wrap actions
 
 let reaction_buttons current send item =
-  let target = string "id" item in
-  let reactions = list "reactions" item in
-  row ~gap:4 ~cross:`center ~flex_wrap:`wrap
-    (List.map (reaction_chip current send target) reactions @
-     if ready current then [add_reaction current send target reactions] else [])
+  reaction_row (reaction_actions current send (string "id" item) (list "reactions" item))
 
 let comment current send item =
   let target = string "id" item in
-  let chips = match list "reactions" item with
-    | [] -> []
-    | reactions -> [row ~gap:4 ~flex_wrap:`wrap (List.map (reaction_chip current send target) reactions)] in
-  column ~gap:4 ~padding_vertical:4
+  let actions = reaction_actions current send target (list "reactions" item) in
+  column ~gap:2 ~padding_vertical:4
     ~accessibility_identifier:("outliner.comment." ^ target)
-    (row ~gap:4 ~cross:`start
-       ([column ~grow:1.0 ~gap:3 [
-          text ~value:(let actor = string "actor" item in if actor = "" then copy current "Graph member" else actor)
-            ~foreground:"muted-foreground" ~style_class:"caption" [];
-          text ~value:(string "text" item) ~foreground:"foreground" [];
-        ]] @ if ready current then [add_reaction current send target (list "reactions" item)] else [])
-     :: chips)
+    ([column ~gap:3 [
+      text ~value:(let actor = string "actor" item in if actor = "" then copy current "Graph member" else actor)
+        ~foreground:"muted-foreground" ~style_class:"caption" [];
+      text ~value:(string "text" item) ~foreground:"foreground" [];
+    ]] @ if actions = [] then [] else [reaction_row actions])
 
 let inline current send ~target ~reactions ~threads =
   let count = List.fold_left (fun count thread -> count + List.length (list "comments" thread)) 0 threads in
@@ -90,8 +95,7 @@ let inline current send ~target ~reactions ~threads =
   if count = 0 && reactions = [] then box [] else
     column ~gap:4 ~margin_right:8 ~margin_bottom:6
       ~accessibility_identifier:("discussion.inline." ^ target) [
-      row ~gap:4 ~cross:`center ~flex_wrap:`wrap
-        (List.map (reaction_chip current send target) reactions @ disclosure);
+      reaction_row ((if reactions = [] then [] else reaction_actions current send target reactions) @ disclosure);
       column ~gap:6 expanded_threads;
     ]
 
