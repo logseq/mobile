@@ -19,13 +19,17 @@ import Vision
         try runtime.applyCoreResponse(#"{"ok":true,"result":{"selectedGraphId":"settings-colors","graphName":"Settings colors","journalTitleFormat":"yyyy-MM-dd","blocks":[],"outlinerRows":[]}}"#)
         try runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
         try runtime.applyHostUpdate(kind: "graph-loading", payload: "false")
+        try runtime.applyHostUpdate(kind: "settings", payload:
+            #"{"appearance":"system","darkTheme":"solarized","language":"system","spellCheck":true,"autoCorrection":true,"sidebarTabs":[],"baseURL":"https://api.logseq.io","version":"check","revision":"check"}"#)
         let backend = runtime.renderer.backend
         var frames: [Int: CGRect] = [:]
         backend.frameReportingEnabled = true
         backend.onFramesReport = { frames = $0 }
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first!
         let window = UIWindow(windowScene: scene)
-        window.rootViewController = UIHostingController(rootView: LGRendererRoot(renderer: runtime.renderer).tint(LogseqThemePolicy.accent))
+        window.rootViewController = UIHostingController(rootView: LGRendererRoot(renderer: runtime.renderer)
+            .tint(LogseqThemePolicy.accent)
+            .environment(\.logseqDarkTheme, .solarized))
         window.makeKeyAndVisible()
         defer { window.isHidden = true; window.rootViewController = nil; runtime.stop() }
         func ids(_ id: Int) -> [Int] {
@@ -107,9 +111,17 @@ import Vision
             func usesAccent(_ r: Int, _ g: Int, _ b: Int) -> Bool {
                 abs(r - accent.0) <= 12 && abs(g - accent.1) <= 12 && abs(b - accent.2) <= 12
             }
-            for control in switches {
-                let rect = control.convert(control.bounds, to: window)
-                guard matchingPixels(in: rect, where: usesAccent) > 100 else { throw failure("Native settings switches must use the sheet accent") }
+            let switchFrames = views(window).compactMap { view -> CGRect? in
+                guard let control = view as? UISwitch, control.isOn else { return nil }
+                return control.convert(control.bounds, to: window)
+            }
+            for (label, bounds) in [("Spell check", spell), ("Auto-correction", correction)] {
+                // System notification switches have their own state and can be off.
+                let labelY = (1 - bounds.midY) * window.bounds.height
+                guard let frame = switchFrames.first(where: { abs($0.midY - labelY) < 10 }),
+                      matchingPixels(in: frame, where: usesAccent) > 100 else {
+                    throw failure("The enabled \(label) switch must use the sheet accent")
+                }
             }
             for identifier in ["picker.settings.appearance", "picker.settings.language"] {
                 guard let rect = frames[try find(identifier)] else { throw failure("Missing picker frame: " + identifier) }
