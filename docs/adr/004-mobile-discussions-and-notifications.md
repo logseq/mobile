@@ -44,8 +44,22 @@ can read and update the same discussions, including in encrypted graphs.
   marking individual items or all visible items as read. Include a graph's notifications once its
   local mirror is available. Refresh from sync updates and retain the latest available results
   offline. Keep message text inside the encrypted graph boundary.
-- Deliver notifications through the in-app inbox. OS push delivery would need an authenticated,
-  privacy-preserving delivery channel and its own platform permission flow.
+- Deliver opted-in system alerts through APNs on iOS and FCM on Android. Request permission from
+  the Notifications screen and let users change their preference there. Register device tokens
+  with the signed-in account. Revoke registrations on sign-out and remove expired tokens.
+- Attach bounded routing hints to an authenticated sync transaction that creates a comment or
+  reaction. Hints contain only a graph ID, stable event UUID, and intended recipient account
+  IDs. The sync service can read those routing IDs, checks sender and recipient graph membership,
+  and limits fan-out and request frequency. It deduplicates on event ID and queues delivery only
+  after the corresponding write commits. Older writers can continue to sync; their events appear
+  in the in-app inbox once the local graph receives them.
+- Show generic alert text on the lock screen. Push payloads contain the graph and event IDs needed
+  for navigation. Keep titles, message text, member names, and emoji inside the graph. After a
+  notification tap, resolve the event against the synced graph and current account before
+  navigating. Drop unavailable graph routes without changing the current account.
+- Use the existing Cloudflare sync worker in the Logseq repository for registration, membership
+  checks and push delivery. Keep provider credentials in worker secrets. Exercise delivery with
+  staging credentials and signed mobile builds before enabling it in production.
 
 ### Platform interaction
 
