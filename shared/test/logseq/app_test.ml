@@ -3235,11 +3235,13 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   check_eq ~msg:"the sidebar has no duplicate graph switch"
     (descendant_with_identifier renderer native_sidebar "button.graph-switch")
     (-1);
-  let journals_tweak = List.hd (children renderer sidebar_content) in
-  check_eq ~msg:"the sidebar content starts directly with navigation rows"
-    (child_with_identifier renderer journals_tweak "link.sidebar.journals") journals;
-  check_eq ~msg:"VoiceOver can identify Journals as the current destination"
-    (extension_property application journals_tweak "current") (Some (Lui_protocol.BoolValue true));
+  check_eq ~msg:"Home is available from the bottom tab bar" journals (-1);
+  check_eq ~msg:"Flashcards is available from the bottom tab bar" flashcards (-1);
+  let graphs_tweak = List.hd (children renderer sidebar_content) in
+  check_eq ~msg:"the sidebar starts with the Graphs link"
+    (child_with_identifier renderer graphs_tweak "link.sidebar.graphs") graphs;
+  check_eq ~msg:"VoiceOver can identify whether Graphs is the current destination"
+    (extension_property application graphs_tweak "current") (Some (Lui_protocol.BoolValue false));
   check_eq ~msg:"the sidebar keeps a consistent gap between navigation rows"
     (property_int renderer sidebar_content Lui_protocol.Gap)
     2;
@@ -3262,7 +3264,7 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     (property_string renderer graph_switch Lui_protocol.IconPlacementValue)
     "trailing";
   check_eq ~msg:"sidebar destinations use native navigation rows"
-    (property_string renderer journals Lui_protocol.RoleValue)
+    (property_string renderer graphs Lui_protocol.RoleValue)
     "navigation";
   List.iter (fun (row, icon, icon_size) ->
     check_eq ~msg:"sidebar destinations have a spacious touch target"
@@ -3278,7 +3280,7 @@ let sidebar_renders_main_branch_navigation_identifiers () =
       (property_int renderer label Lui_protocol.FontWeight) 500;
     check ~msg:"sidebar destinations have no selected background"
       (not (property_bool renderer row Lui_protocol.Selected)))
-    [journals, "app:calendar", 22; flashcards, "app:flashcards", 28; graphs, "app:folder", 22];
+    [graphs, "app:folder", 22];
   check ~msg:"sidebar keeps the recent section identifier" (recent <> -1);
   check_eq ~msg:"sidebar pages keep their document icon"
     (property_string renderer favorite_link Lui_protocol.InlineIconName)
@@ -3310,8 +3312,6 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   let favorite_tweak = parent_with_child_identifier renderer favorites "link.sidebar.page.page-a" in
   check_eq ~msg:"VoiceOver can identify the current favorite"
     (extension_property application favorite_tweak "current") (Some (Lui_protocol.BoolValue true));
-  check_eq ~msg:"VoiceOver no longer identifies Journals as current"
-    (extension_property application journals_tweak "current") (Some (Lui_protocol.BoolValue false));
   check_eq ~msg:"a selected page has no graph switch in its header"
     (descendant_with_identifier renderer navigation "button.graph-switch") (-1);
   send application Model.ShowJournals;
@@ -4117,7 +4117,7 @@ let flashcards_render_empty_and_non_cloze_control_states () =
     <> -1)
 
 let sidebar_flashcards_link_selects_the_flashcard_destination () =
-  let application = App.create (ios_backend ()) in
+  let application = App.create (kotlin_backend ()) in
   start application;
   send application Model.OpenSidebar;
   flush application;
@@ -4134,7 +4134,7 @@ let sidebar_flashcards_link_selects_the_flashcard_destination () =
   check_eq ~msg:"the existing sidebar link enters the LG destination"
     (App.model application).destination Model.FlashcardsDestination;
   check ~msg:"selecting flashcards closes the controlled drawer"
-    (not (property_bool renderer root Lui_protocol.Selected))
+    (not (App.model application).sidebar_open)
 
 let graph_catalog_and_lifecycle_state_are_owned_by_lg () =
   let local = graph "local" "Local graph" false true in
@@ -6073,6 +6073,11 @@ let composer_task_status_button_toggles_todo () =
   check ~msg:"selecting TODO reveals the scheduled button" (scheduled <> -1);
   check ~msg:"the task button exposes its selected state"
     (property_bool renderer button Lui_protocol.Selected);
+  List.iter (fun id ->
+    let control = descendant_with_identifier renderer navigation id in
+    check_eq ~msg:"Task mode highlights all task controls"
+      (property_string renderer control Lui_protocol.ForegroundValue) "link")
+    ["button.task-status"; "button.composer.scheduled"; "button.composer.deadline"];
   dispatch application (Lui_protocol.Press button);
   flush application;
   check_eq ~msg:"pressing the selected task button clears the status"

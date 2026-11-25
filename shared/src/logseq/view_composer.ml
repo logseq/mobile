@@ -31,6 +31,9 @@ let attachment_picker_items item model_source context send =
 
 let composer_default_action_foreground = "border"
 
+let uses_ios_composer_controls context =
+  Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost
+
 let composer_action_foreground context =
   match Lui_ui.host context with
   | KotlinHost -> "muted-foreground"
@@ -147,6 +150,7 @@ let composer_task_status_button (context : Lui_ui.ui_context) model_source send 
   else
     let foreground (current : Model.logseq_model) =
       match current.selected_task_status with
+      | Some _ when uses_ios_composer_controls context -> "link"
       | Some status -> View_base.task_status_foreground status
       | None -> composer_action_foreground context in
     icon_button ~icon:(`app "toolbar-task") ~variant:`ghost ~width:32 ~height:44
@@ -159,6 +163,7 @@ let composer_task_date_button (context : Lui_ui.ui_context) model_source send fi
   let icon, label = if field = "scheduled" then "calendar", "Scheduled" else "deadline", "Deadline" in
   let foreground (current : Model.logseq_model) =
     if List.mem_assoc field current.composer_task_dates then "foreground"
+    else if uses_ios_composer_controls context && View_base.task_status_selected_ current then "link"
     else composer_action_foreground context in
   icon_button ~icon:(`app icon) ~variant:`ghost
     ?size:(if Lui_ui.platform context = IOS then Some `sm else None)
@@ -168,14 +173,12 @@ let composer_task_date_button (context : Lui_ui.ui_context) model_source send fi
     ~accessibility_identifier:("button.composer." ^ field)
     ~on_press:(fun _ -> ignore (send (Model.OpenComposerTaskDate field))) []
 
-let composer_task_date_buttons context model_source send : t =
-  if_
-    ~test:(reactive (fun (current : Model.logseq_model) -> current.selected_task_status <> None) model_source)
-    (row ~gap:8 ~cross:`center
-       [
-         stack [composer_task_date_button context model_source send "scheduled"];
-         stack [composer_task_date_button context model_source send "deadline"];
-       ])
+let composer_task_date_buttons context model_source send : t list =
+  let visible = Signal.map View_base.task_status_selected_ model_source in
+  let buttons = List.map (fun field ->
+    stack [composer_task_date_button context model_source send field]) ["scheduled"; "deadline"] in
+  if uses_ios_composer_controls context then List.map (if_ ~test:visible) buttons
+  else [if_ ~test:visible (row ~gap:8 ~cross:`center buttons)]
 
 let with_press handler (elem : t) : t =
  custom (fun context parent ->
@@ -380,10 +383,10 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
              (Signal.map View_base.composer_assets_present_ model_source)
            ~tag_strip:(composer_tag_chips model_source send)
            ~actions:
-             [
+             ([
                stack [composer_attachment_button model_source context send];
                stack [composer_task_status_button context model_source send];
-               composer_task_date_buttons context model_source send;
+             ] @ composer_task_date_buttons context model_source send @ [
                stack [icon_button ~icon:(`app "toolbar-tag") ~variant:`ghost
                  ?size:(if Lui_ui.platform context = IOS then Some `sm else None)
                  ~foreground:(composer_action_foreground context)
@@ -391,7 +394,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                  ~label:(View_base.tr (Signal.sample model_source) "Add tags") ~accessibility_identifier:"button.composer.tags"
                  ~disabled_signal:(Signal.map (fun (model : Model.logseq_model) -> model.composer_tags_loading) model_source)
                  ~on_press:(press send Model.OpenComposerTags) []];
-             ]
+             ])
            ~send_icon:(if Lui_ui.host context = KotlinHost then `send
                        else `app "arrow-up")
            ~send_disabled_signal:

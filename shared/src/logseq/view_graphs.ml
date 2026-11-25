@@ -581,7 +581,9 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
           ~key:View_base.graph_identifier ~cmp:compare
           ~mount:(fun graph_source ->
             graph_list_row context model_source graph_source false send);
-      ])
+      ] @ (if Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost then
+        [if_ ~test:(Signal.map View_base.graph_selected_ model_source) (View_outliner.outliner_bottom_spacer ())]
+      else []))
 
 let kotlin_graph_picker_loading_state model_source () : t =
   column ~grow:1.0 ~main:`center ~cross:`center ~gap:12

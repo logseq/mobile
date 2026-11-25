@@ -166,7 +166,7 @@ let android_graph_switch model_source send : t =
           ~style_class:"anchored-popover" ~gap:0 ~on_dismiss:(press send Model.DismissGraphMenu)
           (sidebar_graph_menu_items keyed_dropdown_menu_item sidebar_graph_dropdown_item model_source send)))]
 
-let sidebar_destination_row ?(icon_size = 22) context model_source send ~title ~id ~icon ~selected ~action : t =
+let sidebar_destination_row context model_source send ~title ~id ~icon ~selected ~action : t =
   let value = View_base.tr (Signal.sample model_source) title in
   let ios = uses_native_sidebar context in
   with_sidebar_selection context (Signal.map selected model_source)
@@ -180,7 +180,7 @@ let sidebar_destination_row ?(icon_size = 22) context model_source send ~title ~
       ~on_press:(press send action)
       (if ios then [row ~gap:12 ~cross:`center [
         row ~width:28 ~height:28 ~main:`center ~cross:`center [
-          Lui_elements.icon ~name:icon ~width:icon_size ~height:icon_size ~foreground:"foreground" [];
+          Lui_elements.icon ~name:icon ~width:22 ~height:22 ~foreground:"foreground" [];
         ];
         text ~value ~font_family:"system-ui" ~font_size:"21" ~font_weight:500
           ~style_class:"single-line" [];
@@ -191,8 +191,7 @@ let sidebar_journals_row context model_source send =
     ~icon:(`app "calendar") ~selected:View_base.journals_sidebar_selected_ ~action:Model.ShowJournals
 
 let sidebar_flashcards_row context model_source send =
-  (* The stacked-card artwork has more inset than the other navigation glyphs. *)
-  sidebar_destination_row ~icon_size:28 context model_source send ~title:"Flashcards" ~id:"flashcards"
+  sidebar_destination_row context model_source send ~title:"Flashcards" ~id:"flashcards"
     ~icon:(`app "flashcards") ~selected:View_base.flashcards_sidebar_selected_ ~action:Model.ShowFlashcards
 
 let sidebar_graphs_row context model_source send =
@@ -271,13 +270,17 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send ~settings : t =
     if native_sidebar then pages
     else scroll ~grow:1.0 ~accessibility_identifier:"scroll.sidebar.pages" [pages] in
   let content =
+    let shortcuts =
+      if native_sidebar then []
+      else [
+        sidebar_journals_row context model_source send;
+        if_
+          ~test:(Signal.map View_base.flashcards_tab_visible_ model_source)
+          (sidebar_flashcards_row context model_source send);
+      ] in
     column ~accessibility_identifier:(if native_sidebar then "sidebar.content" else "sidebar.navigation")
       ~grow:1.0 ~gap:(if native_sidebar then 2 else 4) ~padding:(if native_sidebar then 16 else 12)
-      (header @ [
-      sidebar_journals_row context model_source send;
-      if_
-        ~test:(Signal.map View_base.flashcards_tab_visible_ model_source)
-        (sidebar_flashcards_row context model_source send);
+      (header @ shortcuts @ [
       if_
         ~test:(Signal.map View_base.graphs_tab_visible_ model_source)
         (sidebar_graphs_row context model_source send);

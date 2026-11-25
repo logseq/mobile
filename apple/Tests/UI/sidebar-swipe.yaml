@@ -5,8 +5,14 @@ appId: com.logseq.logseq
     stopApp: false
 - tapOn:
     id: "button.sidebar"
-- tapOn:
+- assertNotVisible:
     id: "link.sidebar.journals"
+- assertNotVisible:
+    id: "link.sidebar.flashcards"
+- swipe:
+    start: "60%,27%"
+    end: "3%,24%"
+    duration: 400
 - assertVisible:
     id: "button.sidebar"
 - swipe:
@@ -58,8 +64,6 @@ appId: com.logseq.logseq
     id: "screen.graphs"
 - takeScreenshot: graphs-layout
 - tapOn:
-    id: "button.sidebar"
-- tapOn:
-    id: "link.sidebar.journals"
+    id: "tab.bottom.home"
 - assertVisible:
     id: "button.sidebar"

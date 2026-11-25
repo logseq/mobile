@@ -1810,7 +1810,9 @@ let journal_task_row ?(tasks_screen = false) context model_source task_source se
       | action -> send_scoped_outliner_edit scope send action in
     let task_metadata = Signal.map2 (fun current task ->
       let day = match journal_task_field "pageJournalDay" task with `Int day -> Some day | _ -> None in
-      let page = View_base.journal_display_title current day (task_text (journal_task_field "page" task)) in
+      let page =
+        if tasks_screen && current.Model.tasks_view.group_by_page then ""
+        else View_base.journal_display_title current day (task_text (journal_task_field "page" task)) in
       let dates = List.map (fun (key, name, image) ->
         key, name, image, journal_task_field key task) task_date_fields in
       (current.Model.language, current.system_language), dates, page) model_source task_source in
@@ -1850,7 +1852,7 @@ let journal_task_row ?(tasks_screen = false) context model_source task_source se
           (with_ios_trailing_padding inset (box [metadata])));
       ])
 
-let task_heading context model_source send section ~identifier label =
+let task_heading ?(divider = true) context model_source send section ~identifier label =
     let collapsed = Signal.map (fun (model : Model.logseq_model) ->
       List.mem section (Model.journal_tasks_collapsed model)) model_source in
     let title = text ~value:label ~style_class:"semibold" ~foreground:"muted-foreground" [] in
@@ -1870,13 +1872,12 @@ let task_heading context model_source send section ~identifier label =
     let contents = if Lui_ui.host context = KotlinHost then
         [row ~gap:6 ~cross:`center [title; chevron]]
       else [title; box ~width:6 []; chevron] in
-    box ~padding_horizontal:16 ~margin_top:12 [
-      separator [];
+    box ~padding_horizontal:16 ~margin_top:12 ((if divider then [separator []] else []) @ [
       button ~variant:`ghost ~padding_horizontal:0 ~foreground:"muted-foreground"
         ~min_height:44 ~text_alignment:`start ~text:label ~label
         ~accessibility_identifier:identifier
         ~on_press:(fun _ -> ignore (send (Model.ToggleJournalTaskSection section))) contents;
-    ]
+    ])
 
 let journal_task_entry context model_source send = function
   | View_rows.Journal_task_gap -> box ~height:80 []
@@ -1920,7 +1921,7 @@ let mount_journal_task_entry ?tasks_screen context model_source send entry_sourc
     journal_task_row ?tasks_screen context model_source (Signal.map (function
       | View_rows.Journal_task_row (task, _) -> task | _ -> initial) entry_source) send
   | View_rows.Tasks_page_heading (section, initial) ->
-    reactive (task_heading context model_source send section ~identifier:section)
+    reactive (task_heading ~divider:false context model_source send section ~identifier:section)
       (Signal.map (function View_rows.Tasks_page_heading (_, title) -> title | _ -> initial) entry_source)
   | entry -> journal_task_entry context model_source send entry
 

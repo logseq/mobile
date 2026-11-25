@@ -37,13 +37,15 @@ struct LGBottomTabStrip: View {
         let _ = context.revision
         #if os(iOS)
         if #available(iOS 26.0, *), let items = nativeItems {
+            let horizontalMargin: CGFloat = 21
             LGNativeBottomTabBar(
                 items: items, selectedIndex: selectedIndex,
-                tint: colors["link"], layoutDirection: layoutDirection, context: context
+                tint: colors["link"], layoutDirection: layoutDirection,
+                horizontalMargin: horizontalMargin, context: context
             )
             // UITabBar reserves horizontal margins around its floating capsule.
-            .frame(width: CGFloat(items.count) * 50 + inset * 2 + 42, height: 58)
-            .padding(.horizontal, -21)
+            .frame(width: CGFloat(items.count) * 50 + inset * 2 + 2 * horizontalMargin, height: 58)
+            .padding(.horizontal, -horizontalMargin)
             .background(LGSidebarPanExclusion())
             // Align the floating items within UITabBar with the trailing actions.
             .offset(y: 11)
@@ -179,9 +181,12 @@ private struct LGNativeBottomTabBar: UIViewRepresentable {
     let selectedIndex: Int?
     let tint: Color?
     let layoutDirection: LayoutDirection
+    let horizontalMargin: CGFloat
     let context: LUIAppleExtensionViewContext
 
-    func makeCoordinator() -> Coordinator { Coordinator(context: context) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(context: context, horizontalMargin: horizontalMargin)
+    }
 
     func makeUIView(context: Context) -> UITabBar {
         let bar = UITabBar()
@@ -214,8 +219,12 @@ private struct LGNativeBottomTabBar: UIViewRepresentable {
         var context: LUIAppleExtensionViewContext
         var items: [Item] = []
         var selectedIndex: Int?
+        let horizontalMargin: CGFloat
 
-        init(context: LUIAppleExtensionViewContext) { self.context = context }
+        init(context: LUIAppleExtensionViewContext, horizontalMargin: CGFloat) {
+            self.context = context
+            self.horizontalMargin = horizontalMargin
+        }
 
         func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
             if context.isUserInteractionEnabled {
@@ -226,12 +235,11 @@ private struct LGNativeBottomTabBar: UIViewRepresentable {
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            var view = touch.view
-            while let candidate = view, candidate !== gestureRecognizer.view {
-                if candidate.accessibilityIdentifier == "tab.bottom.home" { return true }
-                view = candidate.superview
-            }
-            return false
+            guard let bar = gestureRecognizer.view as? UITabBar, items.first?.name == "home" else { return false }
+            let x = touch.location(in: bar).x
+            let leadingX = bar.effectiveUserInterfaceLayoutDirection == .rightToLeft ? bar.bounds.width - x : x
+            let itemWidth = (bar.bounds.width - 2 * horizontalMargin) / CGFloat(items.count)
+            return leadingX >= horizontalMargin && leadingX < horizontalMargin + itemWidth
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
