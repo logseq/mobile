@@ -27,6 +27,8 @@ app_dir="$repo_root/apple/.build/Logseq-device.app"
 profile_plist="$core_build_dir/profile.plist"
 entitlements="$core_build_dir/entitlements.plist"
 
+mkdir -p "$core_build_dir"
+
 die() {
   echo "error: $*" >&2
   exit 1
@@ -110,8 +112,6 @@ if [[ ${LOGSEQ_IOS_LINK_INPUTS_ONLY:-0} != 1 ]]; then
     die "profile app id is $profile_app_id, expected $expected_app_id or $team_id.*"
   fi
 fi
-
-mkdir -p "$core_build_dir"
 
 if [[ ! -x $target_prefix/bin/ocamlopt.opt ]]; then
   "$repo_root/scripts/bootstrap-ios-ocaml.sh" device >/dev/null
