@@ -1153,36 +1153,40 @@ private fun AndroidAudioPlaybackRow(title: String, path: String) {
         }
     }
 
+    val togglePlayback: () -> Unit = {
+        scope.launch {
+            if (sessionId < 0) {
+                val result = player.start(path)
+                sessionId = (result["sessionId"] as? Number)?.toInt() ?: -1
+                playing = sessionId >= 0
+            } else if (playing) {
+                player.pause(sessionId)
+                playing = false
+            } else {
+                player.resume(sessionId)
+                playing = true
+            }
+        }
+    }
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = togglePlayback)
+            .testTag("player.asset.audio"),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         ) {
             IconButton(
-                onClick = {
-                    scope.launch {
-                        if (sessionId < 0) {
-                            val result = player.start(path)
-                            sessionId = (result["sessionId"] as? Number)?.toInt() ?: -1
-                            playing = sessionId >= 0
-                        } else if (playing) {
-                            player.pause(sessionId)
-                            playing = false
-                        } else {
-                            player.resume(sessionId)
-                            playing = true
-                        }
-                    }
-                },
+                onClick = togglePlayback,
                 modifier = Modifier.testTag("button.audio.play"),
             ) {
                 Icon(
                     if (playing) Icons.Filled.Add else Icons.Filled.PlayArrow,
-                    contentDescription = if (playing) "Pause" else "Play",
+                    contentDescription = if (playing) "Pause audio" else "Play audio",
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
