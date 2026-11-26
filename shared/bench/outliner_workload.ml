@@ -84,42 +84,39 @@ let result raw =
 
 let with_session ?show_journal_tasks ?show_notifications db f =
   let path = Filename.temp_file "outliner-workload" ".sqlite" in
+  let checkpoint_path = path ^ ".checkpoint" in
+  let host = Mobile_session.create (fun _ -> failwith "Unexpected crypto call in the plaintext fixture") in
   Fun.protect ~finally:(fun () ->
+    Mobile_database.close host.database;
     List.iter (fun path -> if Sys.file_exists path then Sys.remove path)
-      [path; path ^ "-wal"; path ^ "-shm"; Graph_store.staging_path path])
+      [path; path ^ "-wal"; path ^ "-shm"; Graph_store.staging_path path; checkpoint_path])
     (fun () ->
       Graph_sqlite.prepare_staging path;
       let conn = Ds.conn_from_db db in
       let runtime = Runtime.create_base path 42 conn Runtime.default_options in
+      host.database.graph.current := Some {
+        Mobile_graph.conn; state = Sync_session.create_state graph_id "bench" 42;
+        checkpoint_path; graph_id; e2ee = false; read_runtime = runtime };
       let journal_tasks = Journal_task_dates.create_cache () in
-      let visible_agenda () =
-        if Option.fold ~none:true ~some:(fun show -> show ()) show_journal_tasks then Some journal_tasks else None in
-      let apply_sync_event body =
-        let ( let* ) = Result.bind in
-        let* journal = Journal_sync.decode body in
-        let* applied = Journal_sync.apply Result.ok conn (Runtime.state runtime).server_t journal in
-        let agenda_update = Option.map (fun cache -> cache, applied) (visible_agenda ()) in
-        Runtime.rebase ?agenda_update
-          ~changed_attributes:applied.changed_attributes
-          runtime journal.t applied.operation_ids applied.changed_uuids;
-        Ok () in
+      let options =
+        Mobile_session.host_options ~journal_tasks ?show_journal_tasks host.database host.keyring None in
       let session = Session.create_session ~journal_tasks {Session.default_options with
-        outliner_projection_limit = Some 32;
-        show_journal_tasks;
+        outliner_projection_limit = options.outliner_projection_limit;
+        show_journal_tasks = options.show_journal_tasks;
         show_notifications;
         load_graph_catalog = Some (fun () -> Some {|{"graphs":[{"graph-id":"outliner-perf","graph-name":"Outliner benchmark","graph-e2ee?":false,"graph-ready-for-use?":true}]}|});
-        sync_cursor = Some (fun () -> Some (Runtime.state runtime).server_t);
-        apply_sync_event = Some apply_sync_event;
-        graph_db = Some (fun () -> Some (Runtime.db runtime));
-        graph_blocks = Some (fun () -> Some (Runtime.blocks runtime));
-        graph_page_blocks = Some (fun uuid -> Some (Runtime.blocks_for_page runtime uuid));
-        graph_sidebar_pages = Some (fun () -> Some (Runtime.sidebar_pages runtime));
-        graph_tag_pages = Some (fun () -> Some (Runtime.tag_pages runtime));
-        graph_node_destination = Some (Runtime.node_destination runtime);
-        empty_journals = Some (fun () -> Runtime.empty_journals runtime);
-        stage_operation = Some (fun operation -> Runtime.stage ?journal_tasks:(visible_agenda ()) runtime operation);
-        pending_operations = Some (fun () -> Runtime.pending_operations runtime);
-        prepare_operation = Some (Runtime.prepare_sync runtime)
+        sync_cursor = options.sync_cursor;
+        apply_sync_event = options.apply_sync_event;
+        graph_db = options.graph_db;
+        graph_blocks = options.graph_blocks;
+        graph_page_blocks = options.graph_page_blocks;
+        graph_sidebar_pages = options.graph_sidebar_pages;
+        graph_tag_pages = options.graph_tag_pages;
+        graph_node_destination = options.graph_node_destination;
+        empty_journals = options.empty_journals;
+        stage_operation = options.stage_operation;
+        pending_operations = options.pending_operations;
+        prepare_operation = options.prepare_operation;
       } in
       ignore (result (dispatch session "configure"
         (Printf.sprintf {|{"baseUrl":"http://127.0.0.1:8787","graphId":"outliner-perf","token":"%s"}|} fixture_token)));
