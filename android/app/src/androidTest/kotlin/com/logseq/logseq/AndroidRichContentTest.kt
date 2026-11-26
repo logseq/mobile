@@ -207,6 +207,7 @@ class AndroidRichContentTest {
             send(MotionEvent.ACTION_MOVE, middle)
             SystemClock.sleep(140)
             send(MotionEvent.ACTION_MOVE, drop)
+            ui.onNodeWithTag("outliner.drop.$expected").assertIsDisplayed()
             SystemClock.sleep(400)
             send(MotionEvent.ACTION_UP, drop)
             ui.runOnIdle {
