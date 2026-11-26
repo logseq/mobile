@@ -25,4 +25,4 @@ appId: com.logseq.logseq
       id: "button.composer.expand"
     timeout: 60000
 - assertVisible:
-    id: "button.connection"
+    id: "button.overflow-menu"
