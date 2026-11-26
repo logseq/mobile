@@ -30,15 +30,19 @@ else
   module_cache="$repo_root/apple/.build/app-intents-module-cache"
   mkdir -p "$module_cache"
   # Supply the Clang modules normally configured by SwiftPM.
-  sentry_headers="$swift_scratch_dir/checkouts/sentry-cocoa/Sources/Sentry"
   compiler_options=(
     -I "$swift_build_dir/Modules"
     -Xcc "-fmodule-map-file=$swift_build_dir/LogseqCoreABI.build/module.modulemap"
     -I "$repo_root/apple/Sources/LogseqCoreABI/include"
-    -Xcc "-fmodule-map-file=$swift_build_dir/SentryHeaders.build/module.modulemap"
-    -I "$sentry_headers/Public"
-    -I "$sentry_headers/include"
   )
+  if [[ ${LOGSEQ_ENABLE_SENTRY:-0} == 1 ]]; then
+    sentry_headers="$swift_scratch_dir/checkouts/sentry-cocoa/Sources/Sentry"
+    compiler_options+=(
+      -Xcc "-fmodule-map-file=$swift_build_dir/SentryHeaders.build/module.modulemap"
+      -I "$sentry_headers/Public"
+      -I "$sentry_headers/include"
+    )
+  fi
   const_values=("$work/values.swiftconstvalues")
   started=$SECONDS
   xcrun swiftc -frontend -typecheck -parse-as-library -sdk "$sdk" -target "$triple" \

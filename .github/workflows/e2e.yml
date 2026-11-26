@@ -152,22 +152,13 @@ jobs:
             ios-simulator-dune-v2-${{ runner.arch }}-xcode26.3-
             ios-simulator-dune-v1-${{ runner.arch }}-xcode26.3-
 
-      - name: Read the Sentry pin
-        id: sentry
-        if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
-        run: |
-          revision=$(jq -er '.pins[] | select(.identity == "sentry-cocoa") | .state.revision' apple/Package.resolved)
-          echo "revision=$revision" >> "$GITHUB_OUTPUT"
-
       - name: Restore Swift package downloads
         id: swift-downloads
         if: steps.ios-e2e-binaries.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
         with:
-          path: |
-            apple/.build/repositories
-            ~/Library/Caches/org.swift.swiftpm/artifacts/https___github_com_getsentry_sentry_cocoa_releases_download_*
-          key: ios-simulator-swift-downloads-v1-${{ runner.arch }}-xcode26.3-${{ steps.sentry.outputs.revision }}
+          path: apple/.build/repositories
+          key: ios-simulator-swift-downloads-v2-${{ runner.arch }}-xcode26.3-${{ hashFiles('apple/Package.resolved') }}
 
       - name: Restore simulator extensions
         id: ios-extensions
@@ -200,9 +191,7 @@ jobs:
         if: github.ref == 'refs/heads/main' && steps.swift-downloads.outputs.cache-primary-key != '' && steps.swift-downloads.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: |
-            apple/.build/repositories
-            ~/Library/Caches/org.swift.swiftpm/artifacts/https___github_com_getsentry_sentry_cocoa_releases_download_*
+          path: apple/.build/repositories
           key: ${{ steps.swift-downloads.outputs.cache-primary-key }}
 
       - name: Build iOS E2E fixture seed tool

@@ -62,6 +62,8 @@ Device builds default to Release. Use `LOGSEQ_IOS_BUILD_CONFIGURATION=debug` for
 
 The simulator and device scripts share SwiftPM dependencies in `apple/.build`, with build products in separate target directories. Both accept `LOGSEQ_IOS_SWIFT_SCRATCH_PATH` to override that location. The iOS core build retains the current native link snapshot and one previous snapshot per platform.
 
+Local iOS builds skip the Sentry SDK by default. To exercise crash reporting, build with `LOGSEQ_ENABLE_SENTRY=1`, then set `LOGSEQ_SENTRY_DEBUG=1` in the Debug app's launch environment or run `python3 scripts/test-ios-sentry-callback.py` after an opted-in Debug simulator build. SwiftPM may add a local Sentry pin to `Package.resolved` when you opt in. The tracked lockfile is for the default build. The TestFlight lane enables Sentry when it builds the release archive.
+
 To work on the LUI backend with a sibling checkout, use `swift package --package-path apple edit lui --path ../lui`. Restore the pinned version with `swift package --package-path apple unedit lui`.
 
 ### Android

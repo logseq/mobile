@@ -5,6 +5,7 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ios_device_config=${LOGSEQ_IOS_CONFIG:-$repo_root/.logseq-ios-device.env}
 [[ -f $ios_device_config ]] && source "$ios_device_config"
+export LOGSEQ_ENABLE_SENTRY="${LOGSEQ_ENABLE_SENTRY:-0}"
 
 toolchain_root=${LOGSEQ_APPLE_TOOLCHAIN_ROOT:-$repo_root/_build/apple-toolchains}
 ocaml_version=${LOGSEQ_IOS_OCAML_VERSION:-5.5.0}
