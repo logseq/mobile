@@ -5,11 +5,64 @@ module Outliner = Outliner_state
 module Effects = Outliner_effects
 module Cards = Flashcards
 
+(* Cache markup until its source text, references, tags, or display type changes. *)
+let markup_cache :
+    (string, string * Model.entity_summary list * Model.entity_summary list * string option * Markup.markup_node list * Json.t)
+    Hashtbl.t =
+  Hashtbl.create 256
+
+let markup_json_encode (block : Model.block) =
+  let nodes =
+    match block.display_type with
+    | Some "math" -> [Markup.Markup_math (block.title, true)]
+    | Some "code" -> [Markup.Markup_code_block (None, block.title)]
+    | Some "quote" ->
+      [Markup.Markup_quote (Markup.parse block.references block.tags block.title)]
+    | _ -> Markup.parse block.references block.tags block.title
+  in
+  let encoded = Markup.to_yojson nodes
+  in
+  if Hashtbl.length markup_cache > 8192 then Hashtbl.reset markup_cache;
+  Hashtbl.replace markup_cache block.uuid
+    (block.title, block.references, block.tags, block.display_type, nodes, encoded);
+  nodes, encoded
+
+let markup_cached (block : Model.block) =
+  match Hashtbl.find_opt markup_cache block.uuid with
+  | Some (title, references, tags, display_type, nodes, encoded)
+    when title = block.title
+         && references = block.references
+         && tags = block.tags
+         && display_type = block.display_type ->
+    nodes, encoded
+  | _ -> markup_json_encode block
+
+let markup_json (block : Model.block) =
+  snd (markup_cached block)
+
+(* Raw-parse views for consumers that predate the display-type-aware encoding:
+   media timestamp resolution and plain-text titles. Blocks whose display type
+   rewrites the markup tree (math/code/quote) are rare and keep the original
+   uncached path there. *)
+let display_type_rewrites (block : Model.block) =
+  match block.display_type with
+  | Some ("math" | "code" | "quote") -> true
+  | _ -> false
+
+let raw_markup_nodes (block : Model.block) =
+  if display_type_rewrites block then Markup.parse block.references block.tags block.title
+  else fst (markup_cached block)
+
+let raw_markup_json (block : Model.block) =
+  if display_type_rewrites block then
+    Markup.to_yojson (Markup.parse block.references block.tags block.title)
+  else markup_json block
+
 let youtube_url url = Media.youtube_id url <> None
 
 let youtube_target_urls (blocks : Model.block list) =
   let _, reversed = List.fold_left (fun (current, targets) (block : Model.block) ->
-    let markup = Markup.to_yojson (Markup.parse block.references block.tags block.title) in
+    let markup = raw_markup_json block in
     let resolved, current = Media.resolve_markup ?preceding:current markup in
     let targets = match Media.first_timestamp_target resolved with
       | Some url -> (block.uuid, url) :: targets | None -> targets in
@@ -43,43 +96,11 @@ let status_response_json (status : Model.status) =
           ]
         | _ -> []))
 
-(* Cache markup until its source text, references, tags, or display type changes. *)
-let markup_cache :
-    (string, string * Model.entity_summary list * Model.entity_summary list * string option * Json.t)
-    Hashtbl.t =
-  Hashtbl.create 256
-
-let markup_json_encode (block : Model.block) =
-  let nodes =
-    match block.display_type with
-    | Some "math" -> [Markup.Markup_math (block.title, true)]
-    | Some "code" -> [Markup.Markup_code_block (None, block.title)]
-    | Some "quote" ->
-      [Markup.Markup_quote (Markup.parse block.references block.tags block.title)]
-    | _ -> Markup.parse block.references block.tags block.title
-  in
-  let encoded = Markup.to_yojson nodes
-  in
-  if Hashtbl.length markup_cache > 8192 then Hashtbl.reset markup_cache;
-  Hashtbl.replace markup_cache block.uuid
-    (block.title, block.references, block.tags, block.display_type, encoded);
-  encoded
-
-let markup_json (block : Model.block) =
-  match Hashtbl.find_opt markup_cache block.uuid with
-  | Some (title, references, tags, display_type, encoded)
-    when title = block.title
-         && references = block.references
-         && tags = block.tags
-         && display_type = block.display_type ->
-    encoded
-  | _ -> markup_json_encode block
-
 let block_json (block : Model.block) =
   Wire.json_object
     ([ ("uuid", `String block.uuid)
      ; ("title", `String block.title)
-     ; ("displayTitle", `String (Markup.plain_text (Markup.parse block.references block.tags block.title)))
+     ; ("displayTitle", `String (Markup.plain_text (raw_markup_nodes block)))
      ; ("pageId", `String block.page_id)
      ; ("createdAt", `Int block.created_at)
      ; ("updatedAt", `Int block.updated_at)
@@ -260,26 +281,24 @@ let structural_outliner_delta anchored before_context before_state
     after_context after_state =
   let before_rows = Outliner.visible_rows before_context before_state in
   let after_rows = Outliner.visible_rows after_context after_state in
-  let before_uuids =
-    List.map
-      (fun (block : Model.block) -> (block.uuid, block))
-      before_context.Outliner.blocks
-  in
-  let after_uuids =
-    List.map
-      (fun (block : Model.block) -> block.uuid)
-      after_context.Outliner.blocks
-  in
+  let before_uuids = Hashtbl.create (List.length before_context.Outliner.blocks) in
+  List.iter
+    (fun (block : Model.block) -> Hashtbl.replace before_uuids block.uuid block)
+    before_context.Outliner.blocks;
+  let after_uuids = Hashtbl.create (List.length after_context.Outliner.blocks) in
+  List.iter
+    (fun (block : Model.block) -> Hashtbl.replace after_uuids block.uuid ())
+    after_context.Outliner.blocks;
   let blocks =
     List.filter
       (fun (block : Model.block) ->
-        List.assoc_opt block.uuid before_uuids <> Some block)
+        Hashtbl.find_opt before_uuids block.uuid <> Some block)
       after_context.Outliner.blocks
   in
   let deleted =
     List.filter_map
       (fun (block : Model.block) ->
-        if List.mem block.uuid after_uuids then None else Some block.uuid)
+        if Hashtbl.mem after_uuids block.uuid then None else Some block.uuid)
       before_context.Outliner.blocks
   in
   let start = common_row_prefix before_rows after_rows in
