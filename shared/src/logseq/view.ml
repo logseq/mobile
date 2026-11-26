@@ -24,7 +24,8 @@ let logseq_theme_tokens ui_context dark_theme : (string * Lui_ui.theme_token_val
       [ ("muted-foreground", Adaptive {
           light = "#6F6F6F";
           dark = if dark_theme = "black" then "#A1A1AA" else "#9BD3D4";
-        }) ]
+        });
+        ("error-foreground", Adaptive { light = "#C52222"; dark = "#FF5550" }) ]
     | _ -> []
   in
   let task_colors = Task_status_style.palette |> List.map (fun (name, (light, dark)) ->
