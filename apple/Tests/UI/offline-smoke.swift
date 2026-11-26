@@ -70,9 +70,17 @@ import LogseqModel
             try backend.performPress(node: control)
             await runtime.drainEffectsForTesting()
         }
+        // Walk each subtree once. Lazy first-element lookups can re-run a
+        // recursive transform when reading the matching element.
+        func firstView<T>(in view: UIView, matching match: (UIView) -> T?) -> T? {
+            if let result = match(view) { return result }
+            for child in view.subviews {
+                if let result = firstView(in: child, matching: match) { return result }
+            }
+            return nil
+        }
         func focusedInput(in view: UIView) -> (any UIKeyInput)? {
-            if view.isFirstResponder, let input = view as? any UIKeyInput { return input }
-            return view.subviews.lazy.compactMap(focusedInput).first
+            firstView(in: view) { $0.isFirstResponder ? $0 as? any UIKeyInput : nil }
         }
 
         let navigation = try await waitFor("native navigation") { extensionNode("native-navigation-stack") }
@@ -114,11 +122,11 @@ import LogseqModel
             "uuid": .string(firstCapture.uuid), "caret-utf16-offset": .int(firstCapture.title.utf16.count),
         ])
         func focusedEditor(in view: UIView, blockID: String) -> UITextView? {
-            if let editor = view as? UITextView, editor.isFirstResponder,
-               editor.accessibilityIdentifier == "field.outliner.block.\(blockID)" {
+            firstView(in: view) { view in
+                guard let editor = view as? UITextView, editor.isFirstResponder,
+                      editor.accessibilityIdentifier == "field.outliner.block.\(blockID)" else { return nil }
                 return editor
             }
-            return view.subviews.lazy.compactMap { focusedEditor(in: $0, blockID: blockID) }.first
         }
         var edited = before
         var currentBlockID = firstCapture.uuid
