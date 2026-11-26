@@ -300,7 +300,11 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
              ]);
         if_
           ~test:
-            (Signal.map (View_base.bottom_chrome_capture_and_search_ ~primary_tabs)
+            (Signal.map (fun current ->
+               View_base.bottom_chrome_capture_and_search_ ~primary_tabs current
+               && not
+                    (Lui_ui.host context = KotlinHost
+                     && View_base.flashcards_destination_ current))
                model_source)
           (column ~container_relative_frame:`horizontal ~cross:`stretch ~gap:0 ~padding_horizontal:16
              [
