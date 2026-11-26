@@ -96,10 +96,15 @@ Pick the checks that cover the code you changed.
 | Shared OCaml core | `opam exec --switch=5.5.0 -- dune build @shared/native/runtest` |
 | iOS Swift model | `python3 scripts/test-swift-model-suite.py` |
 | iOS UI | `python3 scripts/test-swift-ui-suite.py` after the simulator build |
+| iOS E2E smoke | `python3 apple/Tests/UI/run-simulator-runtime-check.py apple/Tests/UI/offline-smoke.swift OfflineSmokeCheck` after a testable simulator build |
 | Android JVM | `(cd android && ./gradlew test -PlogseqRequireNativeCore=false)` |
 | Android E2E runner | `./scripts/test-android-e2e-runner.sh` |
 
 Use the Swift scripts directly. The XCTest bridge used by `swift test` hangs in this repository. For the full device and simulator suites, see the [native test workflow](.github/workflows/native-tests.yml) and the [Maestro workflow](.github/workflows/e2e.yml).
+
+The E2E workflow runs the iOS simulator smoke check on pull requests and pushes to `main` with a 10-minute job limit, including the build. It uses a disposable SQLite graph to exercise the native renderer, composer, editor, and storage without a network account. To build just the inputs for this check locally, run `LOGSEQ_IOS_RUNTIME_CHECK_BUILD=1 LOGSEQ_IOS_ENABLE_TESTING=1 opam exec --switch=5.5.0 -- ./scripts/build-mobile-ios-simulator.sh` and set `LOGSEQ_IOS_RUNTIME_CHECK_BUILD=1` when invoking the check.
+
+The full Maestro suite covers live Cognito sign-in, sync, and additional UI flows nightly. Use `live-smoke` or a module from `./scripts/test-ios-e2e-suite.sh --list` in the E2E workflow dispatch to run those checks on demand.
 
 <details>
 <summary>Targeted iOS and Android checks</summary>

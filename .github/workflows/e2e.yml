@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       ios_module:
-        description: "iOS e2e module (scripts/test-ios-e2e-suite.sh --list)"
+        description: "iOS module: smoke (offline), live-smoke, or a module from scripts/test-ios-e2e-suite.sh --list"
         required: false
         default: "smoke"
       android_module:
@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IOS_MODULE: ${{ inputs.ios_module || (github.event_name == 'schedule' && 'all' || 'smoke') }}
+  IOS_MODULE: ${{ (inputs.ios_module == 'live-smoke' && 'smoke' || inputs.ios_module) || (github.event_name == 'schedule' && 'all' || 'smoke') }}
   ANDROID_MODULE: ${{ inputs.android_module || (github.event_name == 'schedule' && 'all' || 'smoke') }}
 
 jobs:
@@ -40,6 +40,71 @@ jobs:
 
   ios-e2e:
     name: iOS e2e
+    if: github.event_name != 'schedule' && (inputs.ios_module == '' || inputs.ios_module == 'smoke')
+    needs: duniverse
+    runs-on: macos-15
+    timeout-minutes: 10
+    env:
+      LOGSEQ_OPAM_SWITCH: ${{ github.workspace }}
+      LOGSEQ_IOS_RUNTIME_CHECK_BUILD: "1"
+      LOGSEQ_IOS_ENABLE_TESTING: "1"
+      LOGSEQ_RUNTIME_CHECK_TIMEOUT: "60"
+      DUNE_CACHE: enabled
+      DUNE_CACHE_STORAGE_MODE: copy
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      GIT_CONFIG_COUNT: 1
+      GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
+      GIT_CONFIG_VALUE_0: ssh://git@github.com/
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode and boot the simulator
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_26.3.app
+          runtime_id=$(xcrun simctl list -j runtimes | python3 -c 'import json,sys; rs=[r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable") and ".iOS-" in r["identifier"]]; print(max(rs, key=lambda r: tuple(map(int, r["version"].split("."))))["identifier"])')
+          udid=$(xcrun simctl create "CI iPhone" com.apple.CoreSimulator.SimDeviceType.iPhone-16 "$runtime_id")
+          xcrun simctl boot "$udid"
+          echo "LOGSEQ_IOS_SIMULATOR=$udid" >> "$GITHUB_ENV"
+
+      - uses: ./.github/actions/ocaml-tools
+        with:
+          image: macos-15
+
+      - uses: ./.github/actions/ocaml-vendor
+
+      - name: Restore iOS OCaml toolchain
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            _build/apple-toolchains/ios/host-5.5.0
+            _build/apple-toolchains/ios/arm64-apple-ios17.0-simulator-5.5.0
+            _build/apple-toolchains/ios/libffi-arm64-apple-ios17.0-simulator
+          key: apple-toolchain-${{ runner.os }}-xcode26.3-ios-simulator-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
+
+      - name: Restore iOS Simulator Dune cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/dune
+          key: ios-simulator-dune-v2-${{ runner.arch }}-xcode26.3-${{ hashFiles('logseq.opam.locked') }}
+          restore-keys: ios-simulator-dune-v2-${{ runner.arch }}-xcode26.3-
+
+      - name: Restore Swift package downloads
+        uses: actions/cache/restore@v4
+        with:
+          path: apple/.build/repositories
+          key: ios-simulator-swift-downloads-v2-${{ runner.arch }}-xcode26.3-${{ hashFiles('apple/Package.resolved') }}
+
+      - name: Build iOS simulator smoke test
+        run: opam exec -- ./scripts/build-mobile-ios-simulator.sh
+
+      - name: Run iOS simulator smoke test
+        run: |
+          xcrun simctl bootstatus "$LOGSEQ_IOS_SIMULATOR" -b
+          python3 apple/Tests/UI/run-simulator-runtime-check.py apple/Tests/UI/offline-smoke.swift OfflineSmokeCheck
+
+  ios-live-e2e:
+    name: iOS live e2e
+    if: github.event_name == 'schedule' || (inputs.ios_module != '' && inputs.ios_module != 'smoke')
     needs: duniverse
     runs-on: macos-15
     timeout-minutes: 90

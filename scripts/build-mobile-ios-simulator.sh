@@ -113,13 +113,22 @@ if [[ ${LOGSEQ_IOS_ENABLE_TESTING:-0} == 1 ]]; then
   swift_build_args+=(-Xswiftc -enable-testing)
 fi
 
+if [[ ${LOGSEQ_IOS_RUNTIME_CHECK_BUILD:-0} == 1 ]]; then
+  swift_build_args+=(--disable-index-store -Xswiftc -gnone)
+  unset LOGSEQ_APP_INTENTS_VALUES_PATH
+else
+  export LOGSEQ_APP_INTENTS_VALUES_PATH="$app_intents_values_path"
+  prune_stale_swift_resource_bundles
+fi
+
 build_phase_started=$SECONDS
-prune_stale_swift_resource_bundles
 LOGSEQ_NATIVE_LINK_INPUTS="$native_link_inputs" \
 LOGSEQ_SIMULATOR_ENTITLEMENTS="$simulator_entitlements" \
-LOGSEQ_APP_INTENTS_VALUES_PATH="$app_intents_values_path" \
 swift build "${swift_build_args[@]}"
 echo "[ios-build] Swift app: $((SECONDS - build_phase_started))s" >&2
+if [[ ${LOGSEQ_IOS_RUNTIME_CHECK_BUILD:-0} == 1 ]]; then
+  exit 0
+fi
 
 build_phase_started=$SECONDS
 if [[ ${LOGSEQ_IOS_REUSE_EXTENSIONS:-0} == 1 \

@@ -67,9 +67,10 @@ import SwiftUI
 """)
         app = directory / "RuntimeCheck.app"
         app.mkdir()
-        fixture_json = Path(entry).with_suffix(".json")
-        if fixture_json.exists():
-            shutil.copy2(fixture_json, app / fixture_json.name)
+        for suffix in (".json", ".sql"):
+            fixture_file = Path(entry).with_suffix(suffix)
+            if fixture_file.is_file():
+                shutil.copy2(fixture_file, app / fixture_file.name)
         objects = [line for line in (BUILD / "LogseqShell.product/Objects.LinkFileList").read_text().splitlines()
                    if "/LogseqShell.build/" not in line]
         testing = os.environ.get("LOGSEQ_SWIFT_UI_TEST_SUITE") == "1"
@@ -124,7 +125,11 @@ import SwiftUI
              "-Xlinker", str(entitlements), "-o", str(app / "RuntimeCheck")])
         privacy = {key: value for key, value in plistlib.loads((ROOT / "apple/App/Info.plist").read_bytes()).items()
                    if key.endswith("UsageDescription")}
-        orientations = plistlib.loads((ROOT / "apple/.build/Logseq.app/Info.plist").read_bytes()).get(
+        source_app = ROOT / "apple/.build/Logseq.app"
+        info = source_app / "Info.plist"
+        if not info.is_file():
+            info = ROOT / "apple/App/Info.plist"
+        orientations = plistlib.loads(info.read_bytes()).get(
             "UISupportedInterfaceOrientations", ["UIInterfaceOrientationPortrait"])
         (app / "Info.plist").write_bytes(plistlib.dumps({
             **privacy,
@@ -145,9 +150,10 @@ import SwiftUI
                          "CFBundleShortVersionString": "1.0", "CFBundleVersion": "1"})
             info_path.write_bytes(plistlib.dumps(info))
             run(["codesign", "--force", "--sign", "-", str(widget)])
-        for resource in (ROOT / "apple/.build/Logseq.app").glob("*.bundle"):
+        resource_dir = BUILD if os.environ.get("LOGSEQ_IOS_RUNTIME_CHECK_BUILD") == "1" else source_app
+        for resource in resource_dir.glob("*.bundle"):
             shutil.copytree(resource, app / resource.name)
-        assets = ROOT / "apple/.build/Logseq.app/Assets.car"
+        assets = resource_dir / "Assets.car"
         if assets.exists():
             shutil.copy2(assets, app / assets.name)
         fcntl.flock(build_lock, fcntl.LOCK_UN)
