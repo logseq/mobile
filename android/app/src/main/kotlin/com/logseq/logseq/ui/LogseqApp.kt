@@ -124,6 +124,7 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
                 } else if (rootId != null) {
                     Box(host.padding(padding).consumeWindowInsets(padding).logseqContentHostInsets()) {
                         runtime.backend.Content(rootId)
+                        DeleteConfirmationDialog()
                     }
                 }
             }
@@ -137,7 +138,6 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
                 )
             }
             AudioRecordingDialog(runtime.audioRecorder)
-            DeleteConfirmationDialog()
             JournalCalendarDialog()
             ImageGalleryHost()
             GraphProgressDialog(runtime.graphProgress)
