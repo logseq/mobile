@@ -732,6 +732,7 @@ type logseq_action =
   | DismissSettings
   | OpenSettingsTabs
   | BackSettings
+  | BackOrDismissSettings
   | OpenSettingsAppearanceMenu
   | CloseSettingsAppearanceMenu
   | ChangeAppearance of string

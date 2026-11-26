@@ -248,7 +248,7 @@ let settings_tab_row (context : Lui_ui.ui_context) model_source tab title
                     ~on_press:(fun _ ->
                       ignore (send (Model.ToggleSidebarTab tab)))
                     ~text:title []));
-            spacer [];
+            spacer ~grow:1.0 [];
             if_ ~test:movement_visible_source
               (icon_button ~icon:(`app "arrow-up") ~size:`icon
                  ~disabled_signal:up_disabled_source ~variant:`ghost
@@ -647,7 +647,7 @@ let settings_section_title = function
   | Model.SettingsCommunity -> "Community"
 
 let settings_section_icon = function
-  | Model.SettingsAccount -> "sign-in"
+  | Model.SettingsAccount -> "account"
   | Model.SettingsGeneral -> "settings"
   | Model.SettingsEditor -> "edit"
   | Model.SettingsNotifications -> "tab-notifications"
@@ -679,7 +679,7 @@ let settings_category_row model_source section send : t =
             ~foreground:"foreground"
             ~accessibility_identifier:("icon.settings." ^ slug) [];
           text ~value:title [];
-          spacer [];
+          spacer ~grow:1.0 [];
           icon ~name:(`app "chevron-right") ~width:18 ~height:18
             ~foreground:"muted-foreground" [];
         ];
@@ -717,7 +717,7 @@ let settings_tabs_link_row (context : Lui_ui.ui_context) model_source send : t =
         row ~grow:1.0 ~cross:`center
           [
             text ~value:(View_base.tr (Signal.sample model_source) "Tabs") [];
-            spacer [];
+            spacer ~grow:1.0 [];
             text
               ~value:(reactive (Signal.map View_base.settings_tabs_summary model_source))
               ~style_class:"single-line" ~foreground:"secondary"
@@ -877,7 +877,7 @@ let settings_about_detail_screen (context : Lui_ui.ui_context) model_source send
     let children =
       [
         text ~value:(View_base.tr (Signal.sample model_source) label) [];
-        spacer [];
+        spacer ~grow:1.0 [];
         text ~value:(reactive value_signal) ~foreground:"secondary" [];
       ]
     in
@@ -1151,7 +1151,7 @@ let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
       ~title:(reactive (fun (current : Model.logseq_model) -> settings_sheet_title current) model_source)
       ~height:640
       ~accessibility_identifier:"sheet.settings"
-      ~on_dismiss:(press send Model.DismissSettings)
+      ~on_dismiss:(press send Model.BackOrDismissSettings)
       [
         column ~grow:1.0 ~gap:12
           ~accessibility_identifier:"layout.settings.sheet"

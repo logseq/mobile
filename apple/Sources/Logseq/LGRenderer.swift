@@ -107,6 +107,7 @@ enum LGIconPolicy {
             "sidebar-toggle": .assetName("sidebar_toggle"),
             "settings": .systemName("gearshape"),
             "sign-in": .systemName("person.crop.circle"),
+            "account": .systemName("person.crop.circle"),
             "edit": .systemName("square.and.pencil"),
             "terminal": .systemName("terminal"),
             "open-external": .systemName("arrow.up.forward.app"),

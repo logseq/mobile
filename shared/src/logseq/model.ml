@@ -746,6 +746,7 @@ type logseq_action =
   | DismissSettings
   | OpenSettingsTabs
   | BackSettings
+  | BackOrDismissSettings
   | OpenSettingsAppearanceMenu
   | CloseSettingsAppearanceMenu
   | ChangeAppearance of string
@@ -3692,7 +3693,28 @@ let rec update (current : logseq_model) action =
   | BackSettings ->
     if current.settings_tabs_open || current.runtime_log_open then
       { current with settings_tabs_open = false; runtime_log_open = false }
+    else if current.settings_section = SettingsSyncServer then
+      { current with settings_section = SettingsHome; base_url_draft = current.base_url }
     else { current with settings_section = SettingsHome }
+  | BackOrDismissSettings ->
+    if current.settings_tabs_open || current.runtime_log_open then
+      { current with settings_tabs_open = false; runtime_log_open = false }
+    else if current.settings_section = SettingsSyncServer then
+      { current with settings_section = SettingsHome; base_url_draft = current.base_url }
+    else if current.settings_section <> SettingsHome then
+      { current with settings_section = SettingsHome }
+    else
+      {
+        current with
+        settings_open = false;
+        settings_section = SettingsHome;
+        settings_tabs_open = false;
+        settings_appearance_menu_open = false;
+        settings_dark_theme_menu_open = false;
+        settings_language_menu_open = false;
+        runtime_log_open = false;
+        base_url_draft = current.base_url;
+      }
   | OpenSettingsAppearanceMenu ->
     { current with settings_appearance_menu_open = true }
   | CloseSettingsAppearanceMenu ->
