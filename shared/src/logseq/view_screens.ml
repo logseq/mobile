@@ -554,7 +554,7 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
         ~test:(Signal.map View_base.flashcards_destination_ model_source)
         (View_flashcards.flashcard_screen
            ~uses_header:(uses_ios_native_header context || Lui_ui.host context = KotlinHost)
-           ~bottom_spacing:(if uses_ios_native_header context then 64 else 24)
+           ~bottom_spacing:(if uses_ios_native_header context then 64 else 88)
            model_source send);
       View_collaboration.notification_screen
         ~bottom_spacing:(if uses_ios_native_header context then 72 else 80) model_source send;

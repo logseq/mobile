@@ -44,7 +44,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -905,6 +904,9 @@ private fun MarkupRichNode(
     onTapFallback: () -> Unit,
     youtubeStarts: MutableMap<String, Int>,
 ) {
+    val richType = node.optString("type")
+    val selfTagged = richType in setOf("math", "table", "html", "image", "codeBlock", "video", "youtubeTimestamp")
+    Box(modifier = if (selfTagged) Modifier else Modifier.testTag("block.rich.$richType")) {
     when (node.optString("type")) {
         "table" -> MarkupTable(node, completedDecoration, onOpenNode, onTapFallback, youtubeStarts)
         "quote" -> {
@@ -950,7 +952,10 @@ private fun MarkupRichNode(
                     appendQueryParameter("start", start.toString())
                 }.build().toString()
             }
-            AndroidEmbeddedMedia(url = url, isVideo = true, headers = mediaHeaders(node))
+            val videoTag = "block.rich.video" + (start?.let { ".start.$it" } ?: "")
+            Box(modifier = Modifier.testTag(videoTag)) {
+                AndroidEmbeddedMedia(url = url, isVideo = true, headers = mediaHeaders(node))
+            }
         }
         "iframe" -> AndroidEmbeddedMedia(url = node.optString("embedURL"), isVideo = false, headers = mediaHeaders(node))
         "html" -> AndroidHtml(node.optString("text"))
@@ -958,13 +963,17 @@ private fun MarkupRichNode(
         "youtubeTimestamp" -> {
             val target = node.optString("url")
             val seconds = node.optInt("seconds", -1)
+            val activeStart = youtubeStarts[target]
+            val timestampTag = "block.rich.youtubeTimestamp" + (activeStart?.let { ".start.$it" } ?: "")
             TextButton(onClick = { youtubeStarts[target] = seconds },
-                enabled = androidEmbeddedMediaUri(target) != null && seconds >= 0) {
+                enabled = androidEmbeddedMediaUri(target) != null && seconds >= 0,
+                modifier = Modifier.testTag(timestampTag)) {
                 Text("◷ " + node.optString("text"))
             }
         }
         "cloze" -> AndroidCloze(node.optString("text"))
         else -> Text(node.optString("text"), style = outlinerBodyStyle)
+    }
     }
 }
 
@@ -1153,36 +1162,43 @@ private fun AndroidAudioPlaybackRow(title: String, path: String) {
         }
     }
 
+    val togglePlayback: () -> Unit = {
+        scope.launch {
+            if (sessionId < 0) {
+                val result = player.start(path)
+                sessionId = (result["sessionId"] as? Number)?.toInt() ?: -1
+                playing = sessionId >= 0
+            } else if (playing) {
+                player.pause(sessionId)
+                playing = false
+            } else {
+                player.resume(sessionId)
+                playing = true
+            }
+        }
+    }
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                onClickLabel = if (playing) "Pause audio" else "Play audio",
+                onClick = togglePlayback,
+            )
+            .semantics {
+                contentDescription = if (playing) "Pause audio" else "Play audio"
+            }
+            .testTag("player.asset.audio"),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         ) {
-            IconButton(
-                onClick = {
-                    scope.launch {
-                        if (sessionId < 0) {
-                            val result = player.start(path)
-                            sessionId = (result["sessionId"] as? Number)?.toInt() ?: -1
-                            playing = sessionId >= 0
-                        } else if (playing) {
-                            player.pause(sessionId)
-                            playing = false
-                        } else {
-                            player.resume(sessionId)
-                            playing = true
-                        }
-                    }
-                },
-                modifier = Modifier.testTag("button.audio.play"),
-            ) {
+            Box(modifier = Modifier.padding(12.dp).testTag("button.audio.play")) {
                 Icon(
                     if (playing) Icons.Filled.Add else Icons.Filled.PlayArrow,
-                    contentDescription = if (playing) "Pause" else "Play",
+                    contentDescription = null,
                 )
             }
             Column(modifier = Modifier.weight(1f)) {

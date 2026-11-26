@@ -100,7 +100,7 @@ internal fun AndroidCodeBlock(code: String, language: String) {
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = if (LocalShowCodeLanguage.current) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
-        modifier = Modifier.fillMaxWidth().testTag("block.rich.code"),
+        modifier = Modifier.fillMaxWidth().testTag("block.rich.codeBlock"),
     ) {
         Column(Modifier.padding(12.dp)) {
             if (LocalShowCodeLanguage.current && language.isNotBlank()) {

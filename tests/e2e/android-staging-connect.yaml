@@ -54,12 +54,8 @@ appId: com.logseq.logseq
     visible:
       id: "button.composer.expand"
     timeout: 60000
-- extendedWaitUntil:
-    visible:
-      id: "button.connection"
-    timeout: 30000
 - tapOn:
-    id: "button.connection"
+    id: "button.overflow-menu"
 - tapOn: "Settings"
 - assertVisible:
     id: "sheet.settings"

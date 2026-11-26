@@ -124,6 +124,7 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
                 } else if (rootId != null) {
                     Box(host.padding(padding).consumeWindowInsets(padding).logseqContentHostInsets()) {
                         runtime.backend.Content(rootId)
+                        DeleteConfirmationDialog()
                     }
                 }
             }
@@ -137,7 +138,6 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
                 )
             }
             AudioRecordingDialog(runtime.audioRecorder)
-            DeleteConfirmationDialog()
             JournalCalendarDialog()
             ImageGalleryHost()
             GraphProgressDialog(runtime.graphProgress)
@@ -301,6 +301,7 @@ private fun AudioRecordingDialog(recorder: com.logseq.logseq.AndroidAudioRecorde
 private fun DeleteConfirmationDialog() {
     val request = LogseqDialogs.deleteConfirmation ?: return
     AlertDialog(
+        modifier = androidx.compose.ui.Modifier.semantics { testTagsAsResourceId = true },
         onDismissRequest = { request.result.complete(false) },
         title = { Text(if (request.multiple) "Delete blocks?" else "Delete block?") },
         text = {
@@ -314,7 +315,7 @@ private fun DeleteConfirmationDialog() {
         },
         confirmButton = {
             TextButton(
-                modifier = Modifier.testTag("button.confirm-delete"),
+                modifier = Modifier.testTag("button.outliner-delete.confirm"),
                 onClick = { request.result.complete(true) },
             ) { Text("Delete") }
         },
