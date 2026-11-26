@@ -11,7 +11,7 @@ appId: com.logseq.logseq
     id: "button.sidebar"
 - extendedWaitUntil:
     visible:
-      id: "button.graph-switch"
+      id: "link.sidebar.journals"
     timeout: 5000
 - assertVisible:
     id: "section.sidebar.favorites"
