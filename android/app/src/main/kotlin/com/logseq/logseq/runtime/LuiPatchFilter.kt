@@ -24,17 +24,24 @@ internal class LuiPatchFilter(private val backend: LuiBackend) {
     private val ignoredProperties = mutableSetOf<Pair<Long, String>>()
     private var snapshotGeneration = 0
 
-    fun applyJson(patch: String): LuiPatchBatch = applyJson(patch, snapshot = false)
+    fun applyJson(patch: String): LuiPatchBatch = apply(LuiPatchBatch.parse(patch))
+
+    /** Apply a batch that was parsed off the main thread. */
+    fun apply(document: LuiPatchBatch): LuiPatchBatch = apply(document, snapshotSource = null)
 
     fun applySnapshotJson(patch: String): LuiPatchBatch = applyJson(patch, snapshot = true)
 
-    private fun applyJson(patch: String, snapshot: Boolean): LuiPatchBatch {
-        val document = LuiPatchBatch.parse(patch)
+    private fun applyJson(patch: String, snapshot: Boolean): LuiPatchBatch =
+        apply(LuiPatchBatch.parse(patch), patch.takeIf { snapshot })
+
+    // A snapshot keeps its source JSON so the filtered ops can be re-encoded.
+    private fun apply(document: LuiPatchBatch, snapshotSource: String?): LuiPatchBatch {
+        val snapshot = snapshotSource != null
         if (!snapshot && document.generation <= snapshotGeneration) return document
         val createdKinds = mutableMapOf<Long, LuiNodeKind>()
         val nextIgnored = if (snapshot) hashSetOf() else HashSet(ignoredProperties)
         val compatible = ArrayList<LuiPatchOp>(document.ops.size)
-        val sourceOps = if (snapshot) JSONObject(patch).getJSONArray("ops") else null
+        val sourceOps = if (snapshot) JSONObject(snapshotSource).getJSONArray("ops") else null
         val snapshotOps = if (snapshot) JSONArray() else null
 
         for ((index, operation) in document.ops.withIndex()) {

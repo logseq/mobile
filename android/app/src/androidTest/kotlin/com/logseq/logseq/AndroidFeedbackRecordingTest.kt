@@ -120,6 +120,11 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
             }; bitmap.recycle()
         }
     }
+
+    private fun dispatchFixtureEvent(event: dev.lui.LuiEvent, native: LogseqNativeBridge) {
+        if (event is dev.lui.LuiEvent.Press) NativeEditorInput.flush()
+        dispatchLuiEvent(event, native)
+    }
     private fun ignoreAdjustResize() = instrumentation.runOnMainSync {
         ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
             .first().window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
@@ -131,7 +136,7 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
         for (name in listOf("graph.sqlite", "sync.checkpoint")) {
             instrumentation.context.assets.open("feedback/$name").use { input -> File(graph, name).outputStream().use(input::copyTo) }
         }
-        val backend = LuiBackend(onEvent = { dispatchLuiEvent(it, bridge) }, extensions = logseqExtensionRegistry(
+        val backend = LuiBackend(onEvent = { dispatchFixtureEvent(it, bridge) }, extensions = logseqExtensionRegistry(
             loadImage = { uuid, type -> loader.load(uuid, type) },
             resolveAssetPath = { path -> if (path.isEmpty() || File(path).isAbsolute) path else File(graph, path).path }), icons = logseqIconResolver)
         filter = LuiPatchFilter(backend)
@@ -192,7 +197,7 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
     }
     private fun mountProjection(projection: JSONObject) {
         lateinit var native: LogseqNativeBridge
-        val backend = LuiBackend(onEvent = { dispatchLuiEvent(it, native) },
+        val backend = LuiBackend(onEvent = { dispatchFixtureEvent(it, native) },
             extensions = logseqExtensionRegistry { it }, icons = logseqIconResolver)
         filter = LuiPatchFilter(backend)
         native = LogseqNativeBridge(onPatch = { if (it.isNotEmpty()) filter.applyJson(it) })

@@ -12,10 +12,10 @@ import org.json.JSONObject
 //   discard      → resolveEffect only
 // Deadlines and save decisions are supplied by the shared core.
 internal interface NativeEffectRuntime {
-    fun takeEffect(): String
-    fun resolveEffect(id: Long, succeeded: Boolean, message: String): String
-    fun applySnapshot(response: String): String
-    fun applyHostUpdate(kind: String, payload: String): String
+    suspend fun takeEffect(): String
+    suspend fun resolveEffect(id: Long, succeeded: Boolean, message: String): String
+    suspend fun applySnapshot(response: String): String
+    suspend fun applyHostUpdate(kind: String, payload: String): String
 }
 
 internal data class NativeEffect(
@@ -56,10 +56,14 @@ internal class NativeEffectDrain(
 
     private var activeDrain: kotlinx.coroutines.Job? = null
     private var queryWake: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+    // Counts drain requests. Core calls are asynchronous, so an in-flight
+    // takeEffect can predate the event that queued a new effect.
+    private var requests = 0
 
     // Reentrant: concurrent drain() calls join the in-flight loop.
     suspend fun drain(scope: kotlinx.coroutines.CoroutineScope) {
         if (disposed) return
+        requests++
         val active = activeDrain
         if (active != null && active.isActive) {
             queryWake?.complete(Unit)
@@ -78,9 +82,11 @@ internal class NativeEffectDrain(
 
     private suspend fun run() {
         while (!disposed) {
+            val seen = requests
             val encoded = runtime.takeEffect()
             if (encoded.isEmpty()) {
-                return
+                if (requests == seen) return
+                continue
             }
 
             val waitMillis = runCatching { JSONObject(encoded).optLong("waitMs", 0) }.getOrDefault(0)
