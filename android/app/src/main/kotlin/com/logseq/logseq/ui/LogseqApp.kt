@@ -314,7 +314,7 @@ private fun DeleteConfirmationDialog() {
         },
         confirmButton = {
             TextButton(
-                modifier = Modifier.testTag("button.confirm-delete"),
+                modifier = Modifier.testTag("button.outliner-delete.confirm"),
                 onClick = { request.result.complete(true) },
             ) { Text("Delete") }
         },

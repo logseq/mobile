@@ -163,7 +163,7 @@ appId: com.logseq.logseq
 - tapOn: "Delete"
 - assertVisible: "Delete block?"
 - tapOn:
-    id: "button.page-delete.confirm"
+    id: "button.outliner-delete.confirm"
 - assertNotVisible: "Android E2E continuous second"
 - assertVisible: "Android E2E continuous first"
 - assertNotVisible: "outliner_effect_failed"
