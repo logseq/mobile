@@ -27,3 +27,7 @@ See what's changed in the [release notes](release-notes). Report a reproducible 
 | Find the right place to make a change | [Codebase overview](CODEBASE_OVERVIEW.md) |
 
 Bug reports, documentation improvements, and code changes are welcome. [Contributing guide](CONTRIBUTING.md) · [Code of conduct](CODE_OF_CONDUCT.md)
+
+## License
+
+[GNU Affero General Public License v3.0](LICENSE.md)
