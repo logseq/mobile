@@ -191,7 +191,10 @@ let refresh_search_after_rebase runtime before operations changed_uuids =
       in
       (try
          Graph_sqlite.set_search_version search_index.path None;
-         Index.refresh_uuids search_index before after affected;
+         (* Local writes are already indexed. An acknowledgement may change the
+            persisted graph and sync metadata without changing any search rows. *)
+         Index.refresh_uuids ~skip_unchanged:(state runtime).search_index_is_fresh
+           search_index before after affected;
          if (state runtime).search_index_is_fresh then
            Graph_sqlite.set_search_version search_index.path (Graph_sqlite.search_source_version runtime.path)
        with Failure _ ->

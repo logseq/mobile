@@ -521,8 +521,8 @@ let sidebar_pages decrypt_title db =
     List.fold_left (fun set (page : Model.entity_summary) -> page.uuid :: set) [] favorites
   in
   (* Set-scans instead of per-entity queries: collect the named eids
-     once, then pull ident / built-in / updated-at / journal-day for
-     just those eids while scanning each attr index. *)
+     once, then collect the sparse page metadata. Read updated-at directly
+     for named entities because ordinary blocks also carry that attribute. *)
   let named =
     List.of_seq (Ds.Db.datoms db Ds.Aevt ~a:"block/name" ())
     |> List.filter_map (fun (datom : Ds.datom) ->
@@ -560,7 +560,6 @@ let sidebar_pages decrypt_title db =
       | Some value -> Hashtbl.replace table datom.e value
       | None -> ())
   in
-  let updated_map = ints "block/updated-at" in
   let day_map = ints "block/journal-day" in
   let candidates =
     List.filter_map
@@ -568,7 +567,7 @@ let sidebar_pages decrypt_title db =
         if Hashtbl.mem class_eids eid || Hashtbl.mem builtin_eids eid then None
         else
           Some
-            ( Option.value ~default:0 (Hashtbl.find_opt updated_map eid)
+            ( Option.value ~default:0 (int_value (value db eid "block/updated-at"))
             , Option.value ~default:0 (Hashtbl.find_opt day_map eid)
             , eid ))
       named

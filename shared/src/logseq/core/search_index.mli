@@ -37,6 +37,7 @@ val row_for_uuid : Datascript.db -> string -> (string * string * string) option
 val rows_of_db : Datascript.db -> (string * string * string) list
 val referring_uuids : Datascript.db -> string -> string list
 val refresh_uuids :
+  ?skip_unchanged:bool ->
   search_index -> Datascript.db -> Datascript.db -> string list -> unit
 val refresh : search_index -> Datascript.db -> unit
 val search :

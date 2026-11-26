@@ -518,7 +518,7 @@ let referring_uuids db uuid =
       Graph.uuid_value (Graph.value db datom.e "block/uuid"))
   | None -> []
 
-let refresh_uuids index before after uuids =
+let refresh_uuids ?(skip_unchanged = false) index before after uuids =
   let uuids =
     if Journal.format before = Journal.format after then uuids
     else
@@ -538,9 +538,16 @@ let refresh_uuids index before after uuids =
         true
       end)
   in
-  let wanted = List.filter_map (fun uuid -> row_for_uuid after uuid) affected in
-  if affected <> [] then search_delete index.path affected;
-  ignore (if wanted <> [] then search_upsert index.path wanted)
+  let removed, updated =
+    List.fold_left (fun (removed, updated) uuid ->
+      let row = row_for_uuid after uuid in
+      if skip_unchanged && row = row_for_uuid before uuid then removed, updated
+      else match row with
+        | None -> uuid :: removed, updated
+        | Some row -> removed, row :: updated)
+      ([], []) affected in
+  if removed <> [] then search_delete index.path removed;
+  if updated <> [] then search_upsert index.path updated
 
 let refresh index db =
   let wanted = rows_of_db db in
