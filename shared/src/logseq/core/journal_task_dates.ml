@@ -53,25 +53,16 @@ let date = Task_recurrence.date
 
 let status_attr = "logseq.property/status"
 let doing_ident = "logseq.property/status.doing"
-type section = Overdue | Doing | Planned
 
 let rows ?actor db today lookahead =
   let offset_day days =
     Option.value ~default:today (Dev_query.Date_time_util.journal_day_plus today days) in
-  let first_day = offset_day (-week_days) in
-  let last_day = offset_day week_days in
   let first_today = offset_day (1 - week_days) in
   let first_upcoming = offset_day 1 in
   let module Date = Dev_query.Date_time_util in
   let midnight = Date.journal_day_to_local_ms today in
   let last_upcoming = Cache_model.journal_day_for_ms (Int64.to_int (Date.plus Months 1 midnight)) in
-  let end_day = Option.map (fun days -> offset_day (min week_days days)) lookahead in
   let upcoming_end = Option.map (fun days -> min last_upcoming (offset_day days)) lookahead in
-  let within_window = function
-    | Some timestamp as value ->
-      let day = Cache_model.journal_day_for_ms timestamp in
-      if day >= first_day && day <= last_day then value else None
-    | None -> None in
   let last_activity eid =
     let activity attr = match Read.int_value (Read.value db eid attr) with
       | Some timestamp as value when valid_date timestamp -> value
@@ -107,7 +98,7 @@ let rows ?actor db today lookahead =
           | Some task -> Read.class_descendants db task
           | None -> [] in
         Seq.append explicit (List.to_seq classes |> Seq.flat_map (eids_with_ref "block/tags")) in
-  let start = Date.journal_day_to_local_ms first_day in
+  let start = Date.journal_day_to_local_ms first_today in
   let next_after_upcoming = Option.value ~default:last_upcoming (Date.journal_day_plus last_upcoming 1) in
   let stop = Int64.pred (Date.journal_day_to_local_ms next_after_upcoming) in
   let dated_eids = List.to_seq fields |> Seq.flat_map (fun (_, attr) ->
@@ -137,29 +128,8 @@ let rows ?actor db today lookahead =
       Hashtbl.add seen eid ();
       let scheduled_at = date db eid scheduled in
       let deadline_at = date db eid deadline in
-      let earliest = match within_window scheduled_at, within_window deadline_at with
-        | Some a, Some b -> Some (min a b)
-        | Some a, None | None, Some a -> Some a
-        | None, None -> None in
-      let activity = lazy (last_activity eid) in
-      let doing_qualifies = if scheduled_at = None && deadline_at = None then
-          within_window (Lazy.force activity) <> None
-        else earliest <> None in
       let status = Read.status_for_eid identity db eid in
       let ident = Option.bind status (fun status -> status.Cache_model.ident) in
-      let dated_section = match earliest, end_day with
-        | Some earliest, Some end_day ->
-          let day = Cache_model.journal_day_for_ms earliest in
-          if day < today then Some (Overdue, earliest)
-          else if day <= end_day then Some (Planned, earliest)
-          else None
-        | _ -> None in
-      let section = match ident, dated_section with
-        | (Some "logseq.property/status.done" | Some "logseq.property/status.canceled"), _ -> None
-        | _, Some (Overdue, _) -> dated_section
-        | Some ident, _ when ident = doing_ident && doing_qualifies ->
-          Some (Doing, -(Option.value ~default:0 (Lazy.force activity)))
-        | _, _ -> dated_section in
       let dates = List.filter_map (Option.map Cache_model.journal_day_for_ms) [scheduled_at; deadline_at] in
       let upcoming = Option.exists (fun last -> List.exists (fun day -> day >= first_upcoming && day <= last) dates)
         upcoming_end in
@@ -169,20 +139,19 @@ let rows ?actor db today lookahead =
         else match Read.ref_eids db eid "block/page" with
           | page :: _ ->
             let day = Read.int_value (Read.value db page "block/journal-day") in
-            let legacy = if day = Some today then None else section in
             let visible = ident <> Some "logseq.property/status.canceled" in
             let journal_task = dates = [] && status <> None && Option.exists recent day in
             let recently_active = dates = [] && ident = Some doing_ident
-              && Option.exists (fun date -> recent (Cache_model.journal_day_for_ms date)) (Lazy.force activity) in
+              && Option.exists (fun date -> recent (Cache_model.journal_day_for_ms date)) (last_activity eid) in
             let past = (due && not (List.mem today dates)) || (journal_task && day <> Some today) in
             let today_row = visible && (due || journal_task || recently_active) in
             let upcoming_row = visible && upcoming && ident <> Some "logseq.property/status.done" in
-            if legacy = None && not today_row && not upcoming_row then None else
+            if not today_row && not upcoming_row then None else
             Option.map (fun block ->
               let status = match status with Some _ -> status | None -> default_status in
               let render_block = {block with Cache_model.status} in
               let title, created, updated = page_details page in
-              (legacy, today_row, upcoming_row, block.uuid,
+              (today_row, upcoming_row, block.uuid,
                 `Assoc ["uuid", `String block.uuid; "block", decorate block.uuid (Rpc_encode.block_json render_block);
                   "page", `String title; "pageJournalDay", json_int day;
                   "pageCreated", json_int created; "pageUpdated", json_int updated;
@@ -192,15 +161,10 @@ let rows ?actor db today lookahead =
               (Read.block ~with_breadcrumbs:false identity db eid)
           | _ -> None)) (Seq.concat (List.to_seq [dated_eids; doing_eids; recent_eids]))
     |> List.of_seq
-    |> List.sort (fun (_, _, _, left, _) (_, _, _, right, _) -> String.compare left right) in
-  let legacy_rows = List.filter_map (fun (legacy, _, _, uuid, row) ->
-    Option.map (fun (bucket, order) -> (order, uuid, bucket, row)) legacy) candidates
-    |> List.sort (fun (a, u, _, _) (b, v, _, _) -> compare (a, u) (b, v)) in
-  let json section = `List (List.filter_map (fun (_, _, bucket, row) ->
-    if bucket = section then Some row else None) legacy_rows) in
-  let today = List.filter_map (fun (_, today, _, _, row) -> if today then Some row else None) candidates in
-  let upcoming = List.filter_map (fun (_, _, upcoming, _, row) -> if upcoming then Some row else None) candidates in
-  json Overdue, json Doing, json Planned, `List today, `List upcoming
+    |> List.sort (fun (_, _, left, _) (_, _, right, _) -> String.compare left right) in
+  let today = List.filter_map (fun (today, _, _, row) -> if today then Some row else None) candidates in
+  let upcoming = List.filter_map (fun (_, upcoming, _, row) -> if upcoming then Some row else None) candidates in
+  `List today, `List upcoming
 
 type cached_projection = {
   day : int;
@@ -276,22 +240,17 @@ let project ?read_rows ?actor cache ~graph ~now ~force db =
   | Some value when not force && Option.exists ((==) db) (Weak.get value.db 0) ->
     remember value
   | _ ->
-    let fallback_page = Journal.page_uuid day in
     let result =
       try
-        let page = Option.value ~default:fallback_page (Read.journal_page_uuid db day) in
         let disabled, days = configuration db in
-        let overdue, doing, planned, today, upcoming = read_rows db day (if disabled then None else Some days) in
-        `Assoc ["graphId", `String graph; "page", `String page; "day", `Int day; "error", `Bool false; "success", `Bool true;
-          "enabled", `Bool (not disabled || doing <> `List []); "retained", `Bool false;
-          "overdue", overdue; "doing", doing; "planned", planned; "today", today; "upcoming", upcoming]
+        let today, upcoming = read_rows db day (if disabled then None else Some days) in
+        `Assoc ["graphId", `String graph; "day", `Int day; "error", `Bool false; "success", `Bool true;
+          "retained", `Bool false; "today", today; "upcoming", upcoming]
       with error ->
         prerr_endline ("journal task query: " ^ Printexc.to_string error);
         let prior name = match previous with Some value -> member name value.result | None -> `List [] in
-        let page = match previous with Some value -> member "page" value.result | None -> `String fallback_page in
-        `Assoc ["graphId", `String graph; "page", page; "day", `Int day; "error", `Bool true;
-          "enabled", `Bool true; "retained", `Bool (Option.exists (fun value -> member "success" value.result = `Bool true || member "retained" value.result = `Bool true) previous);
-          "overdue", prior "overdue"; "doing", prior "doing"; "planned", prior "planned";
+        `Assoc ["graphId", `String graph; "day", `Int day; "error", `Bool true;
+          "retained", `Bool (Option.exists (fun value -> member "success" value.result = `Bool true || member "retained" value.result = `Bool true) previous);
           "today", prior "today"; "upcoming", prior "upcoming"] in
     let source = Weak.create 1 in
     Weak.set source 0 (Some db);

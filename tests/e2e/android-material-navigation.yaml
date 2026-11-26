@@ -11,8 +11,10 @@ appId: com.logseq.logseq
     id: "button.sidebar"
 - extendedWaitUntil:
     visible:
-      id: "link.sidebar.journals"
+      id: "sidebar.navigation"
     timeout: 5000
+- assertNotVisible:
+    id: "link.sidebar.journals"
 - assertVisible:
     id: "section.sidebar.favorites"
 - assertVisible:
@@ -43,7 +45,9 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "section.sidebar.recent"
 - tapOn:
-    id: "link.sidebar.journals"
+    id: "button.sidebar.dismiss"
+- tapOn:
+    id: "tab.bottom.home"
 - extendedWaitUntil:
     visible:
       id: "pane.journals"

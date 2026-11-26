@@ -322,7 +322,7 @@ let notification_menu ~android source send =
   let push_label model = copy model (if model.Model.push_preferences.enabled
     then "Turn off system notifications" else "Enable system notifications") in
   box ~width:44 ~height:44 [
-    menu ~icon:(`app (if android then "more-vert" else "more-horiz"))
+    menu ~icon:(`app "more-horiz")
       ?foreground:(if android then Some "foreground" else None)
       ?style_class:(if android then None else Some "capsule") ~label:(copy current "More")
       ~accessibility_identifier:"button.notifications.more" [

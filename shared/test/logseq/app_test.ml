@@ -36,13 +36,23 @@ let property_float runtime node key =
   | Some (Lui_protocol.FloatValue value) -> value
   | _ -> -1.0
 
-let extension_property application node property =
-  let runtime = Lui_app.runtime application in
+let extension_property_in_runtime (runtime : Lui_runtime.application) node property =
   match
     Hashtbl.find_opt runtime.Lui_runtime.runtime_extension_properties node
   with
   | Some properties -> Lui_protocol.String_map.find_opt property properties
   | None -> None
+
+let extension_property application =
+  extension_property_in_runtime (Lui_app.runtime application)
+
+let is_filter_search (runtime : Lui_runtime.application) node =
+  Hashtbl.find_opt runtime.Lui_runtime.runtime_extension_nodes node = Some "filter-search-field"
+
+let has_accessibility_identifier runtime node identifier =
+  if is_filter_search runtime node then
+    extension_property_in_runtime runtime node "identifier" = Some (Lui_protocol.StringValue identifier)
+  else property_string runtime node Lui_protocol.AccessibilityIdentifier = identifier
 
 let extension_node application identifier =
   let runtime = Lui_app.runtime application in
@@ -149,9 +159,7 @@ let child_with_identifier runtime parent identifier =
     if index = List.length children then -1
     else
       let child = List.nth children index in
-      if identifier
-         = property_string runtime child
-             Lui_protocol.AccessibilityIdentifier
+      if has_accessibility_identifier runtime child identifier
       then child
       else loop (index + 1)
   in
@@ -162,9 +170,7 @@ let child_index_with_identifier runtime parent identifier =
   let rec loop index =
     if index = List.length children then -1
     else if
-      identifier
-      = property_string runtime (List.nth children index)
-          Lui_protocol.AccessibilityIdentifier
+      has_accessibility_identifier runtime (List.nth children index) identifier
     then index
     else loop (index + 1)
   in
@@ -523,6 +529,11 @@ let start application = ignore (Lui_app.start application)
 let send application action = ignore (Lui_app.send application action)
 let flush application = ignore (Lui_app.flush application)
 let dispatch application event =
+  let event = match event with
+    | Lui_protocol.TextChanged (node, query) when is_filter_search (Lui_app.runtime application) node ->
+      let values = Lui_protocol.String_map.singleton "query" (Lui_protocol.StringValue query) in
+      Lui_protocol.ExtensionEvent (node, "filter-search-field", "query-changed", values)
+    | event -> event in
   ignore (Lui_app.dispatch_event application event)
 
 (* TESTS *)
@@ -1729,10 +1740,10 @@ let kotlin_settings_use_full_width_material_controls () =
   check_eq ~msg:"Material settings preferences fill the available width"
     (property_string renderer general_card Lui_protocol.CrossAlignment)
     "stretch";
-  check_eq
-    ~msg:
-      "Material preferences use the native list surface without an Apple card"
-    (property renderer general_card Lui_protocol.BackgroundValue) None;
+  check_eq ~msg:"Material preferences share one themed group surface"
+    (property_string renderer general_card Lui_protocol.BackgroundValue) "settings-group";
+  check_eq ~msg:"the settings group has rounded corners"
+    (property_int renderer general_card Lui_protocol.CornerRadius) 24;
   List.iter
     (fun identifier ->
       let heading = descendant_with_identifier renderer root identifier in
@@ -1753,9 +1764,9 @@ let kotlin_settings_use_full_width_material_controls () =
       check_eq ~msg:"Tabs keeps native list padding like Theme and Language"
         (property renderer tabs padding) None)
     [Lui_protocol.PaddingValue; Lui_protocol.PaddingHorizontal];
-  check_eq ~msg:"Settings actions use the Material tonal surface"
+  check_eq ~msg:"Settings actions share the sheet background"
     (property_string renderer actions Lui_protocol.BackgroundValue)
-    "surface-container-low";
+    "background";
   check_eq ~msg:"the appearance select keeps a persistent Material field label"
     (property_string renderer appearance_picker
        Lui_protocol.AccessibilityLabel)
@@ -7360,7 +7371,7 @@ let journal_home_places_today_references_before_older_days () =
     applied.related_rows [reference]
 
 let journal_placeholders_only_follow_their_own_page_editor () =
-  List.iter (fun backend ->
+  List.iter (fun (backend, bullet_color) ->
     let app = App.create (backend ()) in
     let renderer = Lui_app.runtime app in
     let today = journal_outline_row "today-block" "today" "Draft" "Today" 20261116 0 in
@@ -7376,6 +7387,9 @@ let journal_placeholders_only_follow_their_own_page_editor () =
     start app;
     apply projection;
     let older_button = button "older" and empty_button = button "empty" in
+    let bullet = descendant_with_identifier renderer empty_button "outliner.placeholder.bullet.empty" in
+    check_eq (property_string renderer bullet Lui_protocol.ForegroundValue) bullet_color;
+    check_eq (property_string renderer empty_button Lui_protocol.AccessibilityLabel) "Add block";
     check ~msg:"all three dates initially offer Add block"
       (List.for_all (fun page -> button page <> -1) ["today"; "older"; "empty"]);
     let editing = Some {Model.editing_uuid = today.row_uuid; editing_is_task = None;
@@ -7404,7 +7418,7 @@ let journal_placeholders_only_follow_their_own_page_editor () =
     check_eq ~msg:"an unrelated empty date keeps Add block during an embed edit" (button "empty") empty_button;
     apply_embed {older with row_display_type = Some "math"} embedded_editing;
     check ~msg:"an embedded math block keeps Add block available on its host date" (button "today" <> -1)
-  ) [ios_backend; kotlin_backend]
+  ) [ios_backend, "muted-foreground"; kotlin_backend, "outliner-bullet"]
 
 let block_navigation_exposes_an_immediate_outliner_preview_route () =
   let parent =
@@ -7871,130 +7885,93 @@ let graph_switch_rearms_journal_pagination () =
   ) [ios_backend; kotlin_backend]
 
 let journal_agenda_is_retained_across_navigation () =
-  List.iter (fun (ios, backend) ->
+  List.iter (fun backend ->
     let app = App.create (backend ()) in
     let renderer = Lui_app.runtime app in
     let apply action = send app action; flush app in
     let graph_ids = ["work"; "notes"] in
     let graphs = List.map (fun id -> graph id id false true) graph_ids in
     let day = 20261123 in
-    let task ?(status = `Null) id date =
+    let task id page date =
       let millis = Int64.to_int (Dev_query.Date_time_util.journal_day_to_local_ms date) in
-      `Assoc ["uuid", `String id; "block", `Assoc [
-          "uuid", `String id; "pageId", `String "source"; "title", `String id; "status", status];
+      `Assoc ["uuid", `String id; "page", `String page; "block", `Assoc [
+          "uuid", `String id; "pageId", `String page; "title", `String id];
         "scheduled", `Int millis; "deadline", `Int millis] in
-    let doing = `Assoc ["uuid", `String "status-doing"; "ident", `String "logseq.property/status.doing";
-      "title", `String "Doing"] in
-    let agenda id = `Assoc ["graphId", `String id; "day", `Int day; "page", `String "today";
-       "enabled", `Bool true; "overdue", `List [task (id ^ "-overdue") 20261122];
-       "doing", `List [task ~status:doing (id ^ "-doing") day];
-       "planned", `List [task (id ^ "-planned") day]] in
     let journal id =
       let row = journal_outline_row (id ^ "-journal") "today" "Journal" "Today" day 0 in
       { (empty_core_projection ()) with graph_name = Some id; selected_graph_id = Some id;
-        graphs; outliner_rows = [row]; journal_outliner_rows = [row]; journal_tasks = agenda id } in
+        graphs; outliner_rows = [row]; journal_outliner_rows = [row];
+        journal_tasks = `Assoc ["graphId", `String id; "day", `Int day;
+          "today", `List [task (id ^ "-overdue") "inbox" 20261122; task (id ^ "-due") "project" day];
+          "upcoming", `List []] } in
     let snapshot data = apply (Model.ApplyCoreSnapshot data) in
+    let root = Lui_app.root_node app in
     let find parent id = descendant_with_identifier renderer parent id in
+    let tap parent id = dispatch app (Lui_protocol.Press (find parent id)); flush app in
     let work = journal "work" in
     start app;
     snapshot work;
     apply (Model.ApplyLocalGraphIds graph_ids);
-    let root = Lui_app.root_node app in
-    if ios then begin
-      check_eq ~msg:"the agenda is absent from Home" (find root "journal-tasks.planned") (-1);
-      dispatch app (Lui_protocol.Press (find root "tab.bottom.tasks"));
-      flush app
-    end;
-    let pane () = find root (if ios then "screen.tasks" else "pane.journals") in
-    let heading () = find (pane ()) "journal-tasks.planned" in
-    let doing_heading () = find (pane ()) "journal-tasks.doing" in
-    let doing_row () = find (pane ()) "journal-task.work-doing" in
+    check_eq ~msg:"Home keeps task query rows out of the outliner" (find root "journal-task.work-overdue") (-1);
+    tap root "tab.bottom.tasks";
+    check (find root "button.tasks.more" <> -1);
+    tap root "tasks.menu.ungrouped";
+    check (not (App.model app).tasks_view.group_by_page);
+    tap root "tasks.menu.group-page";
+    check (App.model app).tasks_view.group_by_page;
+    tap root "tasks.menu.deadline";
+    check_eq (App.model app).tasks_view.sort_tasks Model.DeadlineDate;
+    tap root "tasks.menu.scheduled";
+    tap root "tasks.menu.compact";
+    check (App.model app).tasks_view.compact;
+    tap root "tasks.menu.expanded";
+    tap root "tasks.tab.upcoming";
+    check_eq (find root "tasks.menu.past") (-1);
+    tap root "tasks.tab.today";
+    check (find root "tasks.menu.past" <> -1);
+    let pane () = find root "screen.tasks" in
+    let group = Journal_task_dates.task_group_key "today" "project" in
     let overdue () = find (pane ()) "journal-task.work-overdue" in
-    let planned () = find (pane ()) "journal-task.work-planned" in
+    let due () = find (pane ()) "journal-task.work-due" in
+    let heading () = find (pane ()) group in
     let original_heading = heading () and original_overdue = overdue () in
-    check ~msg:"all three sections initially mount"
-      (original_heading <> -1 && original_overdue <> -1 && planned () <> -1 && doing_row () <> -1);
-    check_eq ~msg:"the Doing heading uses its own label"
-      (property_string renderer (doing_heading ()) Lui_protocol.TextValue) "Doing";
-    dispatch app (Lui_protocol.Press (doing_heading ()));
-    flush app;
-    check_eq ~msg:"the Doing section collapses independently" (doing_row ()) (-1);
-    dispatch app (Lui_protocol.Press (doing_heading ()));
-    flush app;
-    check ~msg:"the Doing heading expands the same block" (doing_row () <> -1);
-    let rec contents parent =
-      List.concat_map (fun child -> match node renderer child with
-        | Some (Lui_protocol.Icon | Lui_protocol.Text) -> [child]
-        | _ -> contents child) (children renderer parent) in
-    let color id = property_string renderer id Lui_protocol.ForegroundValue in
-    let check_chevron direction =
-      match contents (heading ()) with
-      | [label; chevron] ->
-        check_eq (node renderer label) (Some Lui_protocol.Text);
-        check_eq (color label) "muted-foreground";
-        check_eq (property_string renderer chevron Lui_protocol.IconName)
-          ("app:chevron-" ^ if ios then "right" else direction);
-        check_eq (property_int renderer chevron Lui_protocol.WidthValue, property_int renderer chevron Lui_protocol.HeightValue)
-          (14, 14)
-      | _ -> fail "Expected task section label followed by a chevron" in
-    let check_date id expected =
-      let control = find (pane ()) ("journal-task." ^ id) in
-      check_eq (color control) expected;
-      check_eq (List.map color (contents control)) [expected; expected] in
-    check_chevron "down";
-    check_date "deadline.work-overdue" "deadline-overdue";
-    check_date "scheduled.work-overdue" "muted-foreground";
-    check_date "deadline.work-planned" "muted-foreground";
-    dispatch app (Lui_protocol.Press original_heading);
-    flush app;
-    check_chevron "right";
-    if ios then
-      check_eq ~msg:"the native transition observes the collapsed section"
-        (extension_property app (extension_node app "journal-task-transition") "collapsed")
-        (Some (Lui_protocol.StringValue "planned"));
-    check_eq (planned ()) (-1);
+    check (original_heading <> -1 && original_overdue <> -1 && due () <> -1);
+    let date_color id = property_string renderer (find (pane ()) ("journal-task." ^ id)) Lui_protocol.ForegroundValue in
+    check_eq (date_color "deadline.work-overdue") "deadline-overdue";
+    check_eq (date_color "scheduled.work-overdue") "muted-foreground";
+    check_eq (date_color "deadline.work-due") "muted-foreground";
+    tap (pane ()) group;
+    check_eq ~msg:"collapsing a page hides its tasks" (due ()) (-1);
+    check_eq ~msg:"another page keeps its task mounted" (overdue ()) original_overdue;
     let page = {Model.uuid = "other-page"; title = "Project"; page_journal_day = None} in
     snapshot {work with
       sidebar = {(empty_sidebar_projection ()) with selected_page = Some page};
-      outliner_rows = [outline_row "project-block" "Project"];
-      journal_tasks = `Null};
-    check_eq ~msg:"the agenda keeps the same task heading" (heading ()) original_heading;
-    check_eq ~msg:"the agenda keeps the same task row" (overdue ()) original_overdue;
-    check ~msg:"retry is unavailable on other pages"
-      (not (Model.journal_task_retry_available_ (App.model app)));
+      outliner_rows = [outline_row "project-block" "Project"]; journal_tasks = `Null};
+    check_eq ~msg:"a page snapshot without tasks keeps the task list" (heading ()) original_heading;
     snapshot work;
-    check_eq ~msg:"returning to the journal keeps the task row mounted" (overdue ()) original_overdue;
-    check_eq ~msg:"returning does not expand a collapsed section" (planned ()) (-1);
-    if ios then begin
-      dispatch app (Lui_protocol.Press (find root "tab.bottom.home"));
-      flush app;
-      check_eq ~msg:"Home keeps agenda rows out of the outliner" (find root "journal-task.work-overdue") (-1);
-      dispatch app (Lui_protocol.Press (find root "tab.bottom.tasks"));
-      flush app;
-      check (overdue () <> -1);
-      check_eq ~msg:"Tasks remembers collapsed sections when reopened" (planned ()) (-1)
-    end;
+    tap root "tab.bottom.home";
+    check_eq (App.model app).destination Model.JournalsDestination;
+    check_eq (find root "journal-task.work-overdue") (-1);
+    tap root "tab.bottom.tasks";
+    check (overdue () <> -1);
+    check_eq ~msg:"Tasks remembers collapsed pages when reopened" (due ()) (-1);
     apply (Model.ApplyGraphLoading true);
     let notes = journal "notes" in
-    snapshot {notes with journal_tasks = agenda "work"};
+    snapshot {notes with journal_tasks = work.journal_tasks};
     check_eq ~msg:"a provisional graph snapshot cannot show another graph's tasks"
       (App.model app).journal_tasks `Null;
     snapshot notes;
     apply (Model.ApplyGraphLoading false);
     check_eq (Model.journal_tasks_collapsed (App.model app)) [];
-    check_eq ~msg:"switching graphs removes the previous graph's task rows" (overdue ()) (-1);
+    check_eq (overdue ()) (-1);
     snapshot work;
-    check_eq ~msg:"the graph remembers its own disclosure state"
-      (Model.journal_tasks_collapsed (App.model app)) ["planned"];
-    check ~msg:"returning to a graph shows its task rows again" (overdue () <> -1);
+    check_eq (Model.journal_tasks_collapsed (App.model app)) [group];
     let failure = `Assoc (["error", `Bool true; "retained", `Bool true] @
       Yojson.Basic.Util.to_assoc work.journal_tasks) in
     snapshot {work with journal_tasks = failure};
     let retry () = find (pane ()) "journal-tasks.retry" in
-    check ~msg:"the query error exposes Retry without removing the agenda"
-      (retry () <> -1 && overdue () <> -1);
-    dispatch app (Lui_protocol.Press (retry ()));
-    flush app;
+    check (retry () <> -1 && overdue () <> -1);
+    tap (pane ()) "journal-tasks.retry";
     let retry_id = List.find_map (function
       | Model.NodePropertyEffect (id, "journal-tasks.refresh", _) -> Some id
       | _ -> None) (App.model app).pending_effects in
@@ -8002,16 +7979,15 @@ let journal_agenda_is_retained_across_navigation () =
     apply (Model.DequeueEffect id);
     snapshot work;
     apply (Model.ResolveEffect (id, true, ""));
-    check_eq ~msg:"a successful retry dismisses the error" (retry ()) (-1);
-    check_eq ~msg:"retry preserves the collapsed Planned section" (planned ()) (-1)
-  ) [true, ios_backend; false, kotlin_backend]
+    check_eq (retry ()) (-1);
+    check_eq (due ()) (-1)
+  ) [ios_backend; kotlin_backend]
 
 let journal_task_results_edit_and_select_the_source_block () =
   List.iter (fun (ios, backend) ->
     let app = App.create (backend ()) in
     let uuid = "agenda-task" in
-    let agenda title = `Assoc ["page", `String "today"; "day", `Int 20261123;
-      "enabled", `Bool true; "doing", `List [`Assoc ["uuid", `String uuid; "block", `Assoc [
+    let agenda title = `Assoc ["day", `Int 20261123; "today", `List [`Assoc ["uuid", `String uuid; "block", `Assoc [
         "uuid", `String uuid; "title", `String title; "pageId", `String "source"; "isTask", `Bool true]]]] in
     let today = journal_outline_row "today-note" "today" "Note" "Today" 20261123 0 in
     let normal = journal_outline_row uuid "source" "Task" "Yesterday" 20261122 0 in
@@ -8032,10 +8008,8 @@ let journal_task_results_edit_and_select_the_source_block () =
     let editing_node parent = descendant_with_extension runtime app parent "outliner-editor" in
     start app;
     apply projection;
-    if ios then begin
-      dispatch app (Lui_protocol.Press (find "tab.bottom.tasks"));
-      flush app
-    end;
+    dispatch app (Lui_protocol.Press (find "tab.bottom.tasks"));
+    flush app;
     trigger "edit";
     check ~msg:"tapping an agenda task sends an edit request for the original UUID"
       (List.exists (function Model.TapOutlinerBlockEffect (_, id) -> id = uuid | _ -> false)
@@ -8257,6 +8231,39 @@ let journal_date_headings_open_their_page_on_both_hosts () =
     check_eq ~msg:"the date opens its journal page on each native host"
       (App.model application).pending_effects [Model.OpenAppNodeEffect (1, "journal-page")])
     [ios_backend (); kotlin_backend ()]
+
+let android_discussion_rows_align_with_task_dates () =
+  let application = App.create (kotlin_backend ()) in
+  let status = Model.task_status "todo" "logseq.property/status.todo" "Todo" "Todo" in
+  let priority = Model.task_status "high" "logseq.property/priority.high" "High" "High" in
+  let task id depth = {
+    (journal_outline_row id "journal-page" "Task" "Oct 21st, 2026" 20261021 depth) with
+    row_status = Some status;
+    row_priority = Some priority;
+    row_task_dates_json = Printf.sprintf
+      {|{"ownerUuid":"%s","properties":[{"attr":"logseq.property/scheduled","title":"Scheduled","text":"Oct 21"}]}|} id;
+    row_metadata_json =
+      {|{"reactions":[{"id":"+1","count":1}],"commentThreads":[{"id":"thread","comments":[{"id":"comment","text":"Looks good"}]}]}|};
+  } in
+  start application;
+  send application (Model.ApplyCoreSnapshot {
+    (empty_core_projection ()) with
+    selected_graph_id = Some "test-graph";
+    outliner_rows = [task "parent-task" 0; task "child-task" 1];
+  });
+  flush application;
+  let runtime = Lui_app.runtime application in
+  let padding identifier =
+    let parent = parent_with_child_identifier runtime (main_root runtime application) identifier in
+    check ~msg:identifier (parent <> -1);
+    property_int runtime parent Lui_protocol.PaddingLeft in
+  List.iter (fun id ->
+    check ~msg:"The comment toggle shares the reaction row"
+      (descendant_with_identifier runtime (main_root runtime application)
+        ("comments.toggle." ^ id) <> -1);
+    check_eq ~msg:"Reactions and comments use the same inset as task dates"
+      (padding ("discussion.inline." ^ id)) (padding ("properties." ^ id)))
+    ["parent-task"; "child-task"]
 
 let notification_time_uses_local_date_and_time () =
   let model = { (Model.initial ()) with Model.language = "en" } in
@@ -10417,6 +10424,7 @@ let kotlin_outliner_markers_match_ios_visual_metrics () =
   check
     ~msg:"Kotlin renders a dedicated visual bullet inside its hit target"
     (bullet <> -1);
+  check_eq (property_string renderer bullet Lui_protocol.ForegroundValue) "outliner-bullet";
   check_eq ~msg:"Kotlin uses the same 24-point vector slot as iOS"
     (property_int renderer bullet Lui_protocol.WidthValue)
     24;
@@ -12155,6 +12163,7 @@ let cases =
     case "journal-date-headings-open-their-page-on-both-hosts" journal_date_headings_open_their_page_on_both_hosts;
     case "calendar dates follow the app language" localized_calendar_dates;
     case "journal titles follow the graph format on both hosts" journal_titles_follow_the_graph_format;
+    case "Android discussion rows align with task dates" android_discussion_rows_align_with_task_dates;
     case "notifications use local date and time with a year only when needed" notification_time_uses_local_date_and_time;
     case "notification month filter persists and keeps older read state" notifications_filter_month_and_preserve_read_history;
     case "journal-section-markers-preserve-boundaries-and-stable-pages" journal_section_markers_preserve_boundaries_and_stable_pages;

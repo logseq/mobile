@@ -109,7 +109,7 @@ val node_screen :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
-val tasks_menu : Model.logseq_model Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
+val tasks_menu : android:bool -> Model.logseq_model Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
 val tasks_screen :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->

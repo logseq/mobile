@@ -100,6 +100,35 @@ let extension_string values name =
   | Some (StringValue value) -> value
   | _ -> ""
 
+let filter_search_field ~model_source ?grow ?padding_horizontal ?container_relative_frame
+    ?(autofocus = false) ?disabled_signal ~text_signal ~placeholder ~label:field_label
+    ~accessibility_identifier ~on_input:change () : Lui_elements.t =
+  let open Lui_elements in
+  custom (fun context parent ->
+    match Lui_ui.profile context with
+    | { profile_os = AndroidOS; profile_host = KotlinHost } ->
+      let field = custom (fun context parent ->
+        let node = Lui_ui.extension context "filter-search-field" in
+        attach context parent node;
+        Lui_ui.extension_property context node "autofocus" (BoolValue autofocus);
+        (match disabled_signal with
+         | Some source -> Lui_ui.extension_property_signal context node "disabled"
+             (Signal.map (fun value -> BoolValue value) source)
+         | None -> Lui_ui.extension_property context node "disabled" (BoolValue false));
+        List.iter (fun (name, value) -> Lui_ui.extension_property context node name (StringValue value))
+          ["clear-title", tr (sample model_source) "Clear"; "identifier", accessibility_identifier;
+           "label", field_label; "placeholder", placeholder];
+        Lui_ui.extension_property_signal context node "query" (Signal.map (fun value -> StringValue value) text_signal);
+        Lui_ui.on_event context node (function
+          | ExtensionEvent (_, _, "query-changed", values) -> change (extension_string values "query")
+          | _ -> ());
+        node) in
+      mount context ?parent (box ?grow ?padding_horizontal ?container_relative_frame [field])
+    | _ ->
+      mount context ?parent (search_field ?grow ?padding_horizontal ?container_relative_frame
+        ~autofocus ?disabled_signal ~text_signal ~placeholder ~label:field_label
+        ~accessibility_identifier ~on_input:change []))
+
 let extension_int values name =
   match String_map.find_opt name values with
   | Some (IntValue value) -> value

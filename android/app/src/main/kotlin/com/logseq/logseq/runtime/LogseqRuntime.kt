@@ -3,6 +3,8 @@ package com.logseq.logseq.runtime
 import android.app.Activity
 import android.graphics.BitmapFactory
 import android.util.Log
+import androidx.core.view.HapticFeedbackConstantsCompat
+import androidx.core.view.ViewCompat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -1084,10 +1086,10 @@ internal class LogseqRuntime(
     private fun performHaptic(style: String?) {
         val view = activity.window.decorView
         val constant = when (style) {
-            "selection" -> android.view.HapticFeedbackConstants.CLOCK_TICK
-            else -> android.view.HapticFeedbackConstants.LONG_PRESS
+            "selection" -> HapticFeedbackConstantsCompat.CONFIRM
+            else -> HapticFeedbackConstantsCompat.LONG_PRESS
         }
-        view.performHapticFeedback(constant)
+        ViewCompat.performHapticFeedback(view, constant)
     }
 
     private suspend fun confirmDeletion(blockIds: List<String>) {

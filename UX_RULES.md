@@ -14,10 +14,8 @@ Pushed pages use the native Back control with its own circular Liquid Glass and 
 
 Each journal page owns its Add block placeholder. A regular inline editor hides the Add block control on its own page. Other dates keep their controls available, including empty journal pages. Editing a math or code block keeps the Add block control available on that page.
 
-On iOS, tasks appear in the Tasks tab under Today and Upcoming.
-
-On Android, adding a block above those sections moves them by the height of the new row. Typing the first character keeps their position stable.
+On iOS and Android, the Today and Upcoming task queries appear in the Tasks tab.
 
 ## iOS journal keyboard
 
-Reveal the caret just enough to clear the keyboard and editor toolbar. When the toolbar dismisses the keyboard, keep the edited block at its pre-dismissal screen position throughout the transition. The floating editor toolbar guides caret avoidance, and showing or hiding it keeps the scroll viewport the same size. Check the middle and end of a long journal with task sections and image assets, including reopening the same block.
+Reveal the caret just enough to clear the keyboard and editor toolbar. When the toolbar dismisses the keyboard, keep the edited block at its pre-dismissal screen position throughout the transition. The floating editor toolbar guides caret avoidance, and showing or hiding it keeps the scroll viewport the same size. Check the middle and end of a long journal with task blocks and image assets, including reopening the same block.

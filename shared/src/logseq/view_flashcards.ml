@@ -265,11 +265,11 @@ let flashcard_group_controls layout model_source send : t = custom (fun context 
                         request_search value "") [])) ["page", "Page reference"; "tag", "Tag"])];
             ];
             list_section [
-              list_section_item [search_field ~label:(View_base.tr (Signal.sample model_source) "Find a page or tag") ~placeholder:(View_base.tr (Signal.sample model_source) "Search pages or tags")
+              list_section_item [View_base.filter_search_field ~model_source ~label:(View_base.tr (Signal.sample model_source) "Find a page or tag") ~placeholder:(View_base.tr (Signal.sample model_source) "Search pages or tags")
                 ~text_signal:(Signal.value query) ~accessibility_identifier:"field.flashcards.deck.search"
                 ~disabled_signal:(Signal.value submitting)
                 ~on_input:(fun value -> Signal.set query value;
-                  request_search (Signal.sample (Signal.value kind)) value ) []];
+                  request_search (Signal.sample (Signal.value kind)) value ) ()];
               keyed_list_section_item ~source:targets ~key:(fun item -> json_text (json_field "uuid" item)) ~cmp:String.compare
                 ~mount:(fun source ->
                   let uuid = json_text (json_field "uuid" (Signal.sample source)) in

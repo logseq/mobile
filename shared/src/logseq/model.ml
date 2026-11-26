@@ -1167,16 +1167,9 @@ let journal_task_field key = function
   | `Assoc fields -> Option.value ~default:`Null (List.assoc_opt key fields)
   | _ -> `Null
 
-let journal_task_route (current : logseq_model) =
-  match List.rev current.node_routes, current.selected_page with
-  | route :: _, _ -> `String route.node_uuid
-  | [], Some page -> `String page.uuid
-  | [], None -> `Null
-
 let journal_task_retry_available_ (current : logseq_model) =
-  journal_task_field "error" current.journal_tasks = `Bool true
-  && (let route = journal_task_route current in
-      route = `Null || route = journal_task_field "page" current.journal_tasks)
+  current.destination = TasksDestination && current.app_navigation_path = []
+  && journal_task_field "error" current.journal_tasks = `Bool true
 
 let outliner_task_selection_ (current : logseq_model) =
   current.outliner_selected_task_block_ids <> []
@@ -2478,8 +2471,7 @@ let rec update (current : logseq_model) action =
     (match current.selected_graph_id with
      | Some graph when not running && journal_task_retry_available_ current ->
        let payload = Yojson.Basic.to_string (`Assoc ["action", `String "refreshJournalTasks";
-         "graphId", `String graph; "day", journal_task_field "day" current.journal_tasks;
-         "route", journal_task_route current]) in
+         "graphId", `String graph; "day", journal_task_field "day" current.journal_tasks]) in
        update current (SubmitNodeProperty (key, payload))
      | _ -> current)
   | SubmitNodeProperty (uuid, payload) ->
@@ -3021,7 +3013,6 @@ let rec update (current : logseq_model) action =
            let graph = Option.fold ~none:`Null ~some:(fun id -> `String id) resolved_current.selected_graph_id in
            journal_task_field "graphId" request = graph
            && journal_task_field "day" request = journal_task_field "day" resolved_current.journal_tasks
-           && journal_task_field "route" request = journal_task_route resolved_current
          | _ -> false in
        let journal_tasks =
          match resolved_current.journal_tasks with

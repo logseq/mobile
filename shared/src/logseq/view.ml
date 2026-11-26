@@ -26,6 +26,13 @@ let logseq_theme_tokens ui_context dark_theme : (string * Lui_ui.theme_token_val
           dark = if dark_theme = "black" then "#A1A1AA" else "#9BD3D4";
         });
         ("error-foreground", Adaptive { light = "#C52222"; dark = "#FF5550" }) ]
+    | Lui_protocol.AndroidOS, Lui_protocol.KotlinHost ->
+      [ (* UIColor.secondaryLabel with 40% alpha, including the empty-row marker. *)
+        ("outliner-bullet", Adaptive { light = "#3C3C4366"; dark = "#EBEBF566" });
+        ("settings-group", Adaptive {
+          light = "#FFFFFF";
+          dark = if dark_theme = "black" then "#2E2E30" else "#143D48";
+        }) ]
     | _ -> []
   in
   let task_colors = Task_status_style.palette |> List.map (fun (name, (light, dark)) ->
@@ -389,6 +396,12 @@ let extension_registry () =
        [Lui_extension.property "screen" StringScalar true None;
         Lui_extension.property "editor-active" BoolScalar true None;
         Lui_extension.property "presentation-open" BoolScalar true None]);
+  Lui_extension.register_tweak registry
+    (Lui_extension.tweak "tasks-menu-material"
+       [Lui_protocol.profile Lui_protocol.AndroidOS Lui_protocol.KotlinHost] []);
+  Lui_extension.register_tweak registry
+    (Lui_extension.tweak "settings-material-surface"
+       [Lui_protocol.profile Lui_protocol.AndroidOS Lui_protocol.KotlinHost] []);
   Lui_extension.register_component registry
     (Lui_extension.component "native-auth-input"
        [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost;
@@ -403,6 +416,20 @@ let extension_registry () =
   Lui_extension.register_component registry
     (Lui_extension.component "native-reaction-picker" [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]
       true [] [] [Lui_extension.event "dismiss" []]);
+  Lui_extension.register_component registry
+    (Lui_extension.component "centered-popover" [Lui_protocol.profile Lui_protocol.AndroidOS Lui_protocol.KotlinHost]
+      true [] [] [Lui_extension.event "dismiss" []]);
+  Lui_extension.register_component registry (let open Lui_protocol in
+    let open Lui_extension in
+    component "filter-search-field" [profile AndroidOS KotlinHost] false []
+      [property "autofocus" BoolScalar true None;
+       property "clear-title" StringScalar true None;
+       property "disabled" BoolScalar true None;
+       property "identifier" StringScalar true None;
+       property "label" StringScalar true None;
+       property "placeholder" StringScalar true None;
+       property "query" StringScalar true None]
+      [event "query-changed" [event_field "query" StringScalar true]]);
   Lui_extension.register_component registry
     (Lui_extension.component "reaction-search-input"
       [Lui_protocol.profile Lui_protocol.AndroidOS Lui_protocol.KotlinHost; Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]

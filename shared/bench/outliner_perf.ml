@@ -31,7 +31,7 @@ let check db =
     let today = Workload.result (Workload.open_today session) in
     let agenda = Workload.member "journalTasks" today in
     let count bucket = List.length (Json.Util.to_list (Workload.member bucket agenda)) in
-    assert (count "overdue" > 100 && count "planned" > 100 && count "doing" > 100);
+    assert (count "today" > 100 && count "upcoming" > 100);
     let within_budget name allocation_limit run =
       let response, (_, allocated, size) = measure (fun () -> run session) in
       if size >= 8_192 || allocated >= allocation_limit then

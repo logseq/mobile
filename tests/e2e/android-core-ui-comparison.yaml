@@ -13,7 +13,9 @@ appId: com.logseq.logseq
     timeout: 30000
 - takeScreenshot: "tests/e2e/screenshots/android-sidebar"
 - tapOn:
-    id: "link.sidebar.journals"
+    id: "button.sidebar.dismiss"
+- tapOn:
+    id: "tab.bottom.home"
 - extendedWaitUntil:
     visible:
       id: "pane.journals"

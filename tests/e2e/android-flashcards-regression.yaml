@@ -35,9 +35,7 @@ appId: com.logseq.logseq
 - assertNotVisible:
     id: "button.flashcards.practice-again"
 - tapOn:
-    id: "button.sidebar"
-- tapOn:
-    id: "link.sidebar.journals"
+    id: "tab.bottom.home"
 - tapOn:
     id: "button.sidebar"
 - tapOn:

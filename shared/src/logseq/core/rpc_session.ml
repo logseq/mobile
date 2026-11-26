@@ -110,11 +110,6 @@ let outliner_is_task session =
         (Datascript.entid db "block/uuid" (Datascript.Uuid uuid))
     | None -> false
 
-let journal_task_route session =
-  match active_node_route session with
-  | Some route -> Some route.Types.uuid
-  | None -> Option.map (fun (page : Model.entity_summary) -> page.uuid) (state session).selected_sidebar_page
-
 let collaboration_identity session =
   Option.bind (state session).config (fun config ->
     Option.map (fun (actor : Created_by.identity) -> config.Api.graph_id, actor.uuid)
@@ -2772,13 +2767,8 @@ let rec dispatch session action payload =
            | _ -> false in
          if not same_graph then Rpc.failure "stale_graph" "The active graph changed. Reopen the editor"
          else if Json.Util.member "action" input = `String "refreshJournalTasks" then (
-           let route = Option.fold ~none:`Null ~some:(fun uuid -> `String uuid) (journal_task_route session) in
            let day = `Int (Model.journal_day_for_ms (now_ms ())) in
-           let agenda = journal_tasks_json session in
-           let on_today = route = `Null || (match agenda with
-             | `Assoc fields -> List.assoc_opt "page" fields = Some route
-             | _ -> false) in
-           if on_today && Json.Util.member "route" input = route && Json.Util.member "day" input = day then
+           if Json.Util.member "day" input = day then
              ignore (journal_tasks_json ~force:true session);
            snapshot_visible session)
          else if Json.Util.member "action" input = `String "saveTaskDates" then (
@@ -2801,24 +2791,18 @@ let rec dispatch session action payload =
                 let after_stage () =
                   let current = state session in
                   match Json.Util.member "agendaCollapsedSections" input,
-                        Json.Util.member "editingUuid" input, current.outliner_state.editing with
-                  | `List collapsed, `String uuid, Some editing when editing.uuid = uuid ->
-                    let agenda = journal_tasks_json session in
-                    let visible = match Json.Util.member "tasksView" input with
-                      | `Assoc _ as view ->
-                        let boolean key = Json.Util.member key view = `Bool true in
-                        (match Json.Util.member "section" view with
-                         | `String ("today" | "upcoming" as section) ->
-                           Journal_task_dates.task_is_visible agenda ~section
-                             ~collapsed:(List.filter_map (function `String key -> Some key | _ -> None) collapsed)
-                             ~group_by_page:(boolean "groupByPage") ~show_completed:(boolean "showCompleted")
-                             ~show_past:(boolean "showPast") uuid
-                         | _ -> false)
-                      | _ -> List.exists (fun section ->
-                        not (List.mem (`String section) collapsed)
-                        && match Json.Util.member section agenda with
-                           | `List tasks -> List.exists (fun task -> Json.Util.member "uuid" task = `String uuid) tasks
-                           | _ -> false) ["overdue"; "doing"; "planned"] in
+                        Json.Util.member "editingUuid" input, current.outliner_state.editing,
+                        Json.Util.member "tasksView" input with
+                  | `List collapsed, `String uuid, Some editing, (`Assoc _ as view) when editing.uuid = uuid ->
+                    let boolean key = Json.Util.member key view = `Bool true in
+                    let visible =
+                      match Json.Util.member "section" view with
+                      | `String ("today" | "upcoming" as section) ->
+                        Journal_task_dates.task_is_visible (journal_tasks_json session) ~section
+                          ~collapsed:(List.filter_map (function `String key -> Some key | _ -> None) collapsed)
+                          ~group_by_page:(boolean "groupByPage") ~show_completed:(boolean "showCompleted")
+                          ~show_past:(boolean "showPast") uuid
+                      | _ -> false in
                     if not visible then session.state := {current with
                       outliner_state = {current.outliner_state with editing = None; autocomplete = None}}
                   | _ -> () in
