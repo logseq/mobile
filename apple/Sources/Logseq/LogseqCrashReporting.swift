@@ -23,6 +23,11 @@ enum LogseqCrashReporting {
         #else
         let environment = "production"
         #endif
+        #if targetEnvironment(simulator)
+        let dsn = ProcessInfo.processInfo.environment["LOGSEQ_SENTRY_STARTUP_CHECK"] == "1"
+            ? "https://public@127.0.0.1:9/0"
+            : dsn
+        #endif
 
         SentrySDK.start { options in
             options.dsn = dsn

@@ -13,7 +13,8 @@ ROOT = Path(__file__).resolve().parents[3]
 CONFIGURATION = os.environ.get("LOGSEQ_IOS_CONFIGURATION", "debug")
 if CONFIGURATION not in ("debug", "release"):
     raise SystemExit("LOGSEQ_IOS_CONFIGURATION must be debug or release")
-BUILD = ROOT / "apple/.build/arm64-apple-ios-simulator" / CONFIGURATION
+SWIFT_SCRATCH = Path(os.environ.get("LOGSEQ_IOS_SWIFT_SCRATCH_PATH", ROOT / "apple/.build"))
+BUILD = SWIFT_SCRATCH / "arm64-apple-ios-simulator" / CONFIGURATION
 SIMULATOR = os.environ.get("LOGSEQ_IOS_SIMULATOR", "booted")
 BUNDLE = "com.logseq.logseq.RuntimeCheck"
 
@@ -103,9 +104,13 @@ import SwiftUI
             runtime_exports += ["-Xlinker", "-dead_strip"]
         sentry_args = []
         if any("/SentrySwift.build/" in path for path in objects):
-            sentry_headers = ROOT / "apple/.build/checkouts/sentry-cocoa/Sources/Sentry"
-            sentry_args = ["-Xcc", f"-fmodule-map-file={BUILD / 'SentryHeaders.build/module.modulemap'}",
-                           "-I", str(sentry_headers / "Public"), "-I", str(sentry_headers / "include")]
+            description = json.loads((BUILD / "description.json").read_text())
+            sentry = next(command for command in description["swiftCommands"].values()
+                          if command["moduleName"] == "SentrySwift")
+            arguments = sentry["otherArguments"]
+            sentry_args = [item for index, value in enumerate(arguments[:-1]) if value == "-Xcc"
+                           for item in (value, arguments[index + 1])]
+            sentry_args.append("-lc++")
         run(["xcrun", "--sdk", "iphonesimulator", "swiftc", *optimization, "-parse-as-library", "-DLOGSEQ_LINKED_CORE",
              "-target", "arm64-apple-ios17.0-simulator", "-I", str(BUILD / "Modules"),
              "-I", str(BUILD / "LogseqCoreABI.build"),
