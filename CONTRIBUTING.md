@@ -102,7 +102,7 @@ Pick the checks that cover the code you changed.
 
 Use the Swift scripts directly. The XCTest bridge used by `swift test` hangs in this repository. For the full device and simulator suites, see the [native test workflow](.github/workflows/native-tests.yml) and the [Maestro workflow](.github/workflows/e2e.yml).
 
-The E2E workflow runs the iOS simulator smoke check on pull requests and pushes to `main` with a 10-minute job limit, including the build. It uses a disposable SQLite graph to exercise the native renderer, composer, editor, and storage without a network account. To build just the inputs for this check locally, run `LOGSEQ_IOS_RUNTIME_CHECK_BUILD=1 LOGSEQ_IOS_ENABLE_TESTING=1 opam exec --switch=5.5.0 -- ./scripts/build-mobile-ios-simulator.sh` and set `LOGSEQ_IOS_RUNTIME_CHECK_BUILD=1` when invoking the check.
+The E2E workflow runs the iOS simulator smoke check on pull requests and pushes to `main` with a 15-minute job limit, including the build. It uses a disposable SQLite graph to exercise the native renderer, composer, editor, and storage without a network account. To build just the inputs for this check locally, run `LOGSEQ_IOS_RUNTIME_CHECK_BUILD=1 LOGSEQ_IOS_ENABLE_TESTING=1 opam exec --switch=5.5.0 -- ./scripts/build-mobile-ios-simulator.sh` and set `LOGSEQ_IOS_RUNTIME_CHECK_BUILD=1` when invoking the check.
 
 The full Maestro suite covers live Cognito sign-in, sync, and additional UI flows nightly. Use `live-smoke` or a module from `./scripts/test-ios-e2e-suite.sh --list` in the E2E workflow dispatch to run those checks on demand.
 

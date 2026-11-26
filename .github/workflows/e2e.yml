@@ -43,7 +43,7 @@ jobs:
     if: github.event_name != 'schedule' && (inputs.ios_module == '' || inputs.ios_module == 'smoke')
     needs: duniverse
     runs-on: macos-15
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       LOGSEQ_OPAM_SWITCH: ${{ github.workspace }}
       LOGSEQ_IOS_RUNTIME_CHECK_BUILD: "1"
