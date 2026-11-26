@@ -40,14 +40,29 @@ let markup_cached (block : Model.block) =
 let markup_json (block : Model.block) =
   snd (markup_cached block)
 
-let markup_nodes (block : Model.block) =
-  fst (markup_cached block)
+(* Raw-parse views for consumers that predate the display-type-aware encoding:
+   media timestamp resolution and plain-text titles. Blocks whose display type
+   rewrites the markup tree (math/code/quote) are rare and keep the original
+   uncached path there. *)
+let display_type_rewrites (block : Model.block) =
+  match block.display_type with
+  | Some ("math" | "code" | "quote") -> true
+  | _ -> false
+
+let raw_markup_nodes (block : Model.block) =
+  if display_type_rewrites block then Markup.parse block.references block.tags block.title
+  else fst (markup_cached block)
+
+let raw_markup_json (block : Model.block) =
+  if display_type_rewrites block then
+    Markup.to_yojson (Markup.parse block.references block.tags block.title)
+  else markup_json block
 
 let youtube_url url = Media.youtube_id url <> None
 
 let youtube_target_urls (blocks : Model.block list) =
   let _, reversed = List.fold_left (fun (current, targets) (block : Model.block) ->
-    let markup = markup_json block in
+    let markup = raw_markup_json block in
     let resolved, current = Media.resolve_markup ?preceding:current markup in
     let targets = match Media.first_timestamp_target resolved with
       | Some url -> (block.uuid, url) :: targets | None -> targets in
@@ -85,7 +100,7 @@ let block_json (block : Model.block) =
   Wire.json_object
     ([ ("uuid", `String block.uuid)
      ; ("title", `String block.title)
-     ; ("displayTitle", `String (Markup.plain_text (markup_nodes block)))
+     ; ("displayTitle", `String (Markup.plain_text (raw_markup_nodes block)))
      ; ("pageId", `String block.page_id)
      ; ("createdAt", `Int block.created_at)
      ; ("updatedAt", `Int block.updated_at)
