@@ -415,6 +415,10 @@ let create_attrs db uuid title created_at =
   | Some eid -> ("block/tags", Ds.Many_values [Ds.Ref eid]) :: attrs
   | None -> attrs
 
+let is_query_definition db eid =
+  not (Node_title.is_page db eid)
+  && not (Seq.is_empty (Datascript_value.datoms_by_ref db Ds.Aevt "logseq.property/query" eid))
+
 (* Resolve pasted and directly typed page refs at the transaction boundary, so
    nested clipboard operations share the same creation and deduplication rules. *)
 let resolve_page_references literal_blocks db intent =
@@ -458,7 +462,10 @@ let resolve_page_references literal_blocks db intent =
           (Ds.entid db "block/uuid" (Ds.Uuid uuid)) in
     if literal then text else Ref_text.to_ids resolve (Graph_read.unique_named_uuid true db) text in
   let next = match intent with
-    | Ops.Save_title value -> Ops.Save_title {value with title = title value.uuid value.title}
+    | Ops.Save_title value ->
+      if Option.exists (is_query_definition db) (Ds.entid db "block/uuid" (Ds.Uuid value.uuid))
+      then intent
+      else Ops.Save_title {value with title = title value.uuid value.title}
     | Ops.Insert_block value -> Ops.Insert_block {value with title = title value.uuid value.title}
     | Ops.Split_block value -> Ops.Split_block {value with before = title value.uuid value.before; after = title value.uuid value.after}
     | Ops.Merge_backward value -> Ops.Merge_backward {value with title = title value.uuid value.title}
@@ -650,7 +657,9 @@ let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
      | Some current ->
        if current = value.expected_title then
          let id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid value.uuid)) in
-         Result.map (fun () -> title_tx db value.uuid value.title) (Node_title.validate db id value.title)
+         Result.map (fun () ->
+           if is_query_definition db id then [Ds.Add (lookup value.uuid, "block/title", Ds.String value.title)]
+           else title_tx db value.uuid value.title) (Node_title.validate db id value.title)
        else Error "title changed on the server"
      | None -> Error "block no longer exists")
   | Ops.Set_property value ->
