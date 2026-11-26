@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = Path(__file__).resolve().parents[3]
 CONFIGURATION = os.environ.get("LOGSEQ_IOS_CONFIGURATION", "debug")
@@ -34,11 +35,34 @@ def terminate_app(simulator, bundle):
         pass
 
 
+def launch_with_result_file(simulator, bundle, environment, timeout):
+    container = Path(run(["xcrun", "simctl", "get_app_container", simulator, bundle, "data"],
+                         capture_output=True, text=True, timeout=30).stdout.strip())
+    result_file = container / "Library/Caches/runtime-check-result.txt"
+    result_file.unlink(missing_ok=True)
+    run(["xcrun", "simctl", "launch", "--terminate-running-process", simulator, bundle],
+        env=environment, timeout=60)
+    deadline = time.monotonic() + timeout
+    result = ""
+    while time.monotonic() < deadline:
+        result = result_file.read_text() if result_file.is_file() else ""
+        if result == "RUNTIME_CHECK_COMPLETE":
+            print(result, flush=True)
+            return
+        if result.startswith("RUNTIME_CHECK_FAILED"):
+            raise SystemExit(result)
+        time.sleep(0.2)
+    raise SystemExit(f"Simulator runtime check did not finish within {timeout} seconds "
+                     f"(last status: {result or 'app produced no status'})")
+
+
 def main():
     print(f"RUNTIME_CHECK_CONFIGURATION={CONFIGURATION}", flush=True)
     entry, check_type = sys.argv[1:3]
     interactive = check_type == "--interactive"
     benchmark = check_type in ("--benchmark", "--interactive")
+    boot_simulator = os.environ.get("LOGSEQ_RUNTIME_CHECK_BOOT_SIMULATOR") == "1"
+    use_result_file = boot_simulator and not benchmark
     fixture = Path(sys.argv[3]).resolve() if benchmark else None
     bundle = "com.logseq.logseq.PageBenchmark" if benchmark else BUNDLE
     lock_path = ROOT / "_build/ios-core/.build-lock"
@@ -46,6 +70,10 @@ def main():
         fcntl.flock(build_lock, fcntl.LOCK_SH)
         directory = Path(temporary)
         source = directory / "check.swift"
+        result_report = """
+                    try? FileManager.default.createDirectory(at: URL.cachesDirectory, withIntermediateDirectories: true)
+                    try? message.write(to: URL.cachesDirectory.appendingPathComponent("runtime-check-result.txt"),
+                                       atomically: true, encoding: .utf8)""" if use_result_file else ""
         source.write_text(Path(entry).read_text() if benchmark else Path(entry).read_text().replace("@main", "", 1) + f"""
 import SwiftUI
 @main struct RuntimeCheckApplication: App {{
@@ -62,6 +90,10 @@ import SwiftUI
                 }}
             }}
         }}
+    }}
+
+    private func report(_ message: String) {{{result_report}
+        print(message)
     }}
 }}
 """)
@@ -159,7 +191,7 @@ import SwiftUI
             shutil.copy2(assets, app / assets.name)
         fcntl.flock(build_lock, fcntl.LOCK_UN)
         run(["codesign", "--force", "--sign", "-", str(app)])
-        if os.environ.get("LOGSEQ_RUNTIME_CHECK_BOOT_SIMULATOR") == "1":
+        if boot_simulator:
             # Simulator startup can contend with the Swift compiler on CI.
             print("Waiting for the simulator to boot", flush=True)
             run(["xcrun", "simctl", "bootstatus", SIMULATOR, "-b"])
@@ -186,6 +218,10 @@ import SwiftUI
         timeout = 180 if testing else (90 if benchmark else int(os.environ.get("LOGSEQ_RUNTIME_CHECK_TIMEOUT", "30")))
         try:
             print("Launching the simulator runtime check", flush=True)
+            if use_result_file:
+                # The app owns the result, even if the simulator's console disconnects.
+                launch_with_result_file(SIMULATOR, bundle, launch_environment, timeout)
+                return
             output = subprocess.run(["xcrun", "simctl", "launch", "--console", "--terminate-running-process", SIMULATOR, bundle],
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                     timeout=timeout, env=launch_environment)
