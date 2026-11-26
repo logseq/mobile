@@ -44,7 +44,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -905,7 +904,9 @@ private fun MarkupRichNode(
     onTapFallback: () -> Unit,
     youtubeStarts: MutableMap<String, Int>,
 ) {
-    Box(modifier = Modifier.testTag("block.rich." + node.optString("type"))) {
+    val richType = node.optString("type")
+    val selfTagged = richType in setOf("math", "table", "html", "image", "codeBlock", "video", "youtubeTimestamp")
+    Box(modifier = if (selfTagged) Modifier else Modifier.testTag("block.rich.$richType")) {
     when (node.optString("type")) {
         "table" -> MarkupTable(node, completedDecoration, onOpenNode, onTapFallback, youtubeStarts)
         "quote" -> {
@@ -951,7 +952,10 @@ private fun MarkupRichNode(
                     appendQueryParameter("start", start.toString())
                 }.build().toString()
             }
-            AndroidEmbeddedMedia(url = url, isVideo = true, headers = mediaHeaders(node))
+            val videoTag = "block.rich.video" + (start?.let { ".start.$it" } ?: "")
+            Box(modifier = Modifier.testTag(videoTag)) {
+                AndroidEmbeddedMedia(url = url, isVideo = true, headers = mediaHeaders(node))
+            }
         }
         "iframe" -> AndroidEmbeddedMedia(url = node.optString("embedURL"), isVideo = false, headers = mediaHeaders(node))
         "html" -> AndroidHtml(node.optString("text"))
@@ -959,8 +963,11 @@ private fun MarkupRichNode(
         "youtubeTimestamp" -> {
             val target = node.optString("url")
             val seconds = node.optInt("seconds", -1)
+            val activeStart = youtubeStarts[target]
+            val timestampTag = "block.rich.youtubeTimestamp" + (activeStart?.let { ".start.$it" } ?: "")
             TextButton(onClick = { youtubeStarts[target] = seconds },
-                enabled = androidEmbeddedMediaUri(target) != null && seconds >= 0) {
+                enabled = androidEmbeddedMediaUri(target) != null && seconds >= 0,
+                modifier = Modifier.testTag(timestampTag)) {
                 Text("◷ " + node.optString("text"))
             }
         }
@@ -1175,20 +1182,20 @@ private fun AndroidAudioPlaybackRow(title: String, path: String) {
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = togglePlayback)
+            .clickable(
+                onClickLabel = if (playing) "Pause audio" else "Play audio",
+                onClick = togglePlayback,
+            )
             .testTag("player.asset.audio"),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         ) {
-            IconButton(
-                onClick = togglePlayback,
-                modifier = Modifier.testTag("button.audio.play"),
-            ) {
+            Box(modifier = Modifier.padding(12.dp).testTag("button.audio.play")) {
                 Icon(
                     if (playing) Icons.Filled.Add else Icons.Filled.PlayArrow,
-                    contentDescription = if (playing) "Pause audio" else "Play audio",
+                    contentDescription = null,
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
