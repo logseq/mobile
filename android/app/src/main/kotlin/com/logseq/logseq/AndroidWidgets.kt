@@ -29,6 +29,7 @@ import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -56,12 +57,20 @@ class TodayJournalWidgetProvider : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray,
     ) {
-        val monthDay = SimpleDateFormat("MMM d", Locale.getDefault()).format(Date())
-        val weekday = SimpleDateFormat("EEEE", Locale.getDefault()).format(Date())
+        val now = Date()
+        val patterns = AndroidWidgetContent.read(context)?.optJSONArray("journalTitlePatterns")
+        val day = Calendar.getInstance(Locale.US).apply { time = now }.get(Calendar.DAY_OF_MONTH)
+        val pattern = patterns?.optString(if (patterns.length() == 1) 0 else day - 1)
+        val title = pattern?.takeIf { it.isNotEmpty() }?.let {
+            runCatching { SimpleDateFormat(it, Locale.US).format(now) }.getOrNull()
+        }
+        val dateLabel = title ?: SimpleDateFormat("MMM d", Locale.getDefault()).format(now)
+        val weekday = SimpleDateFormat("EEEE", Locale.getDefault()).format(now)
         appWidgetIds.forEach { appWidgetId ->
             val views = RemoteViews(context.packageName, R.layout.widget_today_journal).apply {
-                setTextViewText(R.id.widget_journal_date, monthDay)
+                setTextViewText(R.id.widget_journal_date, dateLabel)
                 setTextViewText(R.id.widget_journal_weekday, weekday)
+                setViewVisibility(R.id.widget_journal_weekday, if (title == null) View.VISIBLE else View.GONE)
                 setOnClickPendingIntent(
                     R.id.widget_journal_root,
                     entryPointIntent(context, "logseq://journal", journalRequestCode),
@@ -335,6 +344,8 @@ internal object AndroidWidgetContent {
             val hadRandomBlocks = (previous?.optJSONArray("randomBlocks")?.length() ?: 0) > 0
             val hasRandomBlocks = (content.optJSONArray("randomBlocks")?.length() ?: 0) > 0
             val providers = buildList {
+                if (previous?.optJSONArray("journalTitlePatterns")?.toString() !=
+                    content.optJSONArray("journalTitlePatterns")?.toString()) add(TodayJournalWidgetProvider())
                 if (graphChanged || tasksChanged) add(TaskListWidgetProvider())
                 // Once data is available, the launcher updates the random widget on its own schedule.
                 val randomVersionChanged = previous?.optInt("randomBlocksVersion") != content.optInt("randomBlocksVersion")

@@ -24,8 +24,12 @@
 
     <TextView
         android:id="@+id/widget_journal_date"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:maxLines="2"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="16sp"
+        android:autoSizeMaxTextSize="23sp"
         android:textColor="@color/widget_on_surface"
         android:textSize="23sp"
         android:textStyle="bold" />

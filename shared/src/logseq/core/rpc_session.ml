@@ -92,6 +92,11 @@ let query_db session =
   | Some load -> load ()
   | None -> Some (state session).model.db
 
+let journal_title_format_json session =
+  match query_db session with
+  | Some db -> `String (Journal.format db)
+  | None -> `Null
+
 let active_graph_db session graph_id =
   match (host session).Types.model_for_graph with
   | Some _ when (state session).active_graph_id <> Some graph_id -> None
@@ -551,8 +556,8 @@ let snapshot_with_agenda ?(graph_snapshot_recovery = false) agenda_update sessio
                 | Some name -> `String name
                 | None -> `Null)
              | None -> `Null )
-         ; ("journalTitleFormat", `String (Option.fold ~none:Journal.default_format ~some:Journal.format (query_db session)))
-       ; ( "selectedGraphId"
+         ; ("journalTitleFormat", journal_title_format_json session)
+         ; ( "selectedGraphId"
            , match config with
              | Some config ->
                if config.Api.graph_id = "" then `Null
@@ -747,7 +752,7 @@ let graph_catalog_snapshot session =
               | Some name -> `String name
               | None -> `Null)
            | None -> `Null )
-       ; ("journalTitleFormat", `String (Option.fold ~none:Journal.default_format ~some:Journal.format (query_db session)))
+       ; ("journalTitleFormat", journal_title_format_json session)
        ; ( "selectedGraphId"
          , match s.config with
            | Some config ->
@@ -1114,6 +1119,10 @@ let with_object action payload missing handle =
 
 let search_page session ?journal_day ~offset ~limit query =
   let h = host session in
+  let journal_day =
+    let formatted_day = Option.bind (query_db session) (fun db ->
+      Dev_query.Date_time_util.journal_title_to_int ~formatters:[Journal.format db] (String.trim query)) in
+    match formatted_day with Some _ -> formatted_day | None -> journal_day in
   match h.Types.graph_search_page with
   | Some search -> search ?journal_day ~offset ~limit query
   | None ->
@@ -2252,7 +2261,9 @@ let widget_snapshot ?(resample = false) session =
          let choices = widget_status_choices db eid |> List.map widget_status_choice in
          `Assoc (["status", `String status.title; "statusUuid", `String status.uuid;
            "statusAppearance", widget_status_appearance status; "statusChoices", `List choices] @ widget_block_fields block)) !tasks in
+       let date_patterns = List.map (fun pattern -> `String pattern) (Journal.widget_date_patterns (Journal.format db)) in
        let response = Rpc.success (`Assoc ["graphId", `String graph_id; "tasks", `List tasks;
+         "journalTitlePatterns", `List date_patterns;
          "randomBlocks", `List random_blocks; "randomBlocksVersion", `Int 2]) in
        session.widget_snapshot := Some (graph_id, db, response);
        response)

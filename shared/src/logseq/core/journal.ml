@@ -128,20 +128,34 @@ let int_to_journal_title (day : int) (date_formatter : string) : string =
     date_formatter
     (day / 10000, (day / 100) mod 100, day mod 100)
 
-let title_without_weekday day format =
+(* Widgets format the local day independently of the app process. Translate
+   the graph's format to ICU, expanding the ordinal token for each day if used. *)
+let widget_date_patterns format =
   let tokens = tokens_of_formatter format in
-  let rec trim_separators = function
-    | TokLit (' ' | ',') :: remaining -> trim_separators remaining
-    | tokens -> tokens in
-  let rec remove_weekday = function
-    | TokWeekday _ :: remaining -> remove_weekday (trim_separators remaining)
-    | token :: remaining -> token :: remove_weekday remaining
-    | [] -> [] in
-  let stripped = remove_weekday tokens in
-  if stripped = tokens then None
-  else
-    let stripped = List.rev (trim_separators (List.rev stripped)) in
-    Some (format_tokens stripped (day / 10000, day / 100 mod 100, day mod 100))
+  let pattern day =
+    let result = Buffer.create 32 and literal = Buffer.create 16 in
+    let flush_literal () =
+      let text = Buffer.contents literal in
+      Buffer.clear literal;
+      let quote = String.exists (function 'A' .. 'Z' | 'a' .. 'z' -> true | _ -> false) text in
+      if quote then Buffer.add_char result '\'';
+      String.iter (fun c ->
+        if c = '\'' then Buffer.add_char result c;
+        Buffer.add_char result c) text;
+      if quote then Buffer.add_char result '\'' in
+    let field token = flush_literal (); Buffer.add_string result token in
+    List.iter (function
+      | TokYear width -> field (String.make width 'y')
+      | TokMonthNum -> field "MM"
+      | TokMonthName width -> field (String.make width 'M')
+      | TokDay -> field "dd"
+      | TokDayOrd -> field "d"; Buffer.add_string literal (ordinal_suffix day)
+      | TokWeekday width -> field (String.make width 'E')
+      | TokLit c -> Buffer.add_char literal c) tokens;
+    flush_literal ();
+    Buffer.contents result in
+  if List.mem TokDayOrd tokens then List.init 31 (fun index -> pattern (index + 1))
+  else [pattern 1]
 
 let month_names = Array.to_list month_short
 

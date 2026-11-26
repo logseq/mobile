@@ -4,24 +4,13 @@ let tr (current : Model.logseq_model) value =
 let tr_named current source name =
   String_kit.replace (tr current source) ~match_:"{1}" ~replacement:name
 
-let journal_title_parts (current : Model.logseq_model) day title =
+let journal_display_title (current : Model.logseq_model) day title =
   match day with
   | Some day when Journal.valid_day day ->
-    let current_year = Cache_model.journal_day_for_ms (Session_types.now_ms ()) / 10000 in
-    let date, weekday = Localization.journal_date
-      ~language:current.language ~system_language:current.system_language ~current_year day in
-    let format = current.journal_title_format in
-    let date = if format = Journal.default_format then date
-      else match Journal.title_without_weekday day format with
-        | Some date -> date
-        | None -> Journal.int_to_journal_title day format in
-    date, Some ("· " ^ weekday)
-  | _ -> title, None
+    Journal.int_to_journal_title day current.journal_title_format
+  | _ -> title
 
-let journal_display_title current day title = fst (journal_title_parts current day title)
-
-let journal_heading_label current (title, suffix) =
-  tr_named current "Open {1}" (match suffix with None -> title | Some suffix -> title ^ " " ^ suffix)
+let journal_heading_label current title = tr_named current "Open {1}" title
 
 let property_title current ~attr ~title =
   if attr = "block/title" || (attr = "block/tags" && title = "Set tags") then tr current title
@@ -706,10 +695,10 @@ let outliner_journal_divider_visible_ (current : Model.logseq_model) row =
   | Some marker -> marker.has_divider
   | None -> false
 
-let outliner_journal_title_parts (current : Model.logseq_model) row =
+let outliner_journal_title (current : Model.logseq_model) row =
   match outliner_journal_marker current row with
-  | Some marker -> journal_title_parts current row.Model.journal_day marker.section_title
-  | None -> "", None
+  | Some marker -> journal_display_title current row.Model.journal_day marker.section_title
+  | None -> ""
 
 let outliner_journal_page_id (current : Model.logseq_model) row =
   match outliner_journal_marker current row with
@@ -814,19 +803,17 @@ let active_node_breadcrumbs (current : Model.logseq_model) =
 let active_node_has_breadcrumbs_ (current : Model.logseq_model) =
   active_node_breadcrumbs current <> []
 
-let active_node_title_parts (current : Model.logseq_model) =
+let active_node_title (current : Model.logseq_model) =
   match active_node_projection current with
-  | Some route -> journal_title_parts current route.node_journal_day route.node_title
-  | None -> tr current "Untitled", None
-
-let active_node_title current = fst (active_node_title_parts current)
+  | Some route -> journal_display_title current route.node_journal_day route.node_title
+  | None -> tr current "Untitled"
 
 let selected_page_journal_day (current : Model.logseq_model) =
   match current.selected_page with
   | Some page ->
-    (match current.selected_page_journal_day with
-      | Some _ as day -> day
-      | None ->
+    (match current.selected_page_journal_day, page.page_journal_day with
+      | (Some _ as day), _ | None, (Some _ as day) -> day
+      | None, None ->
         match List.find_map (fun (row : Model.outline_row) ->
           if row.page_id = page.uuid then row.journal_day else None) current.outliner_rows with
         | Some _ as day -> day
@@ -834,12 +821,10 @@ let selected_page_journal_day (current : Model.logseq_model) =
             if journal.uuid = page.uuid then Some day else None) current.empty_journals)
   | None -> None
 
-let selected_page_title_parts (current : Model.logseq_model) =
+let selected_page_title (current : Model.logseq_model) =
   match current.selected_page with
-  | Some page -> journal_title_parts current (selected_page_journal_day current) page.title
-  | None -> "", None
-
-let selected_page_title current = fst (selected_page_title_parts current)
+  | Some page -> journal_display_title current (selected_page_journal_day current) page.title
+  | None -> ""
 
 let outliner_scroll_identity (current : Model.logseq_model) =
   let graph = Option.value ~default:"local" current.selected_graph_id in

@@ -39,15 +39,16 @@ struct RecordingLiveActivityWidget: Widget {
 
 private struct JournalEntry: TimelineEntry {
     let date: Date
+    let title: String?
 }
 
 private struct JournalTimelineProvider: TimelineProvider {
     func placeholder(in context: Context) -> JournalEntry {
-        JournalEntry(date: .now)
+        JournalEntry(date: .now, title: nil)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (JournalEntry) -> Void) {
-        completion(JournalEntry(date: .now))
+        completion(context.isPreview ? placeholder(in: context) : entry(for: .now))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<JournalEntry>) -> Void) {
@@ -58,7 +59,19 @@ private struct JournalTimelineProvider: TimelineProvider {
             value: 1,
             to: calendar.startOfDay(for: now)
         ) ?? now.addingTimeInterval(3600)
-        completion(Timeline(entries: [JournalEntry(date: now)], policy: .after(nextDay)))
+        completion(Timeline(entries: [entry(for: now)], policy: .after(nextDay)))
+    }
+
+    private func entry(for date: Date) -> JournalEntry {
+        let patterns = GraphWidgetContent.read().journalTitlePatterns ?? []
+        let calendar = Calendar(identifier: .gregorian)
+        let index = patterns.count == 1 ? 0 : calendar.component(.day, from: date) - 1
+        guard patterns.indices.contains(index) else { return JournalEntry(date: date, title: nil) }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.dateFormat = patterns[index]
+        return JournalEntry(date: date, title: formatter.string(from: date))
     }
 }
 
@@ -71,11 +84,15 @@ private struct TodayJournalWidgetView: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
-            Text(entry.date, format: .dateTime.month(.abbreviated).day())
+            Text(entry.title ?? entry.date.formatted(.dateTime.month(.abbreviated).day()))
                 .font(.title2.weight(.bold))
-            Text(entry.date, format: .dateTime.weekday(.wide))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+            if entry.title == nil {
+                Text(entry.date, format: .dateTime.weekday(.wide))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
             Spacer(minLength: 0)
             Label("Open journal", systemImage: "arrow.right")
                 .font(.caption.weight(.semibold))
@@ -95,9 +112,11 @@ private struct CaptureWidgetView: View {
         VStack(alignment: .leading, spacing: 8) {
             Button(intent: OpenJournalIntent()) {
                 HStack {
-                    Text(entry.date, format: .dateTime.weekday(.wide))
+                    Text(entry.title ?? entry.date.formatted(.dateTime.weekday(.wide)))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white.opacity(0.65))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.75)
                     Spacer(minLength: 0)
                     Image(systemName: "book.closed").foregroundStyle(.white)
                 }
@@ -216,6 +235,7 @@ private struct GraphWidgetContent: Decodable {
 
     let graphId: String?
     var graphLocked: Bool? = nil
+    var journalTitlePatterns: [String]? = nil
     let tasks: [Block]
     let randomBlocks: [Block]
 

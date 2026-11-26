@@ -68,6 +68,10 @@ import WidgetKit
             let graphChanged = previous == nil
                 || previous?["graphId"] as? String != content["graphId"] as? String
                 || previous?["graphLocked"] as? Bool != content["graphLocked"] as? Bool
+            if previous?["journalTitlePatterns"] as? [String] != content["journalTitlePatterns"] as? [String] {
+                WidgetCenter.shared.reloadTimelines(ofKind: "TodayJournalWidget")
+                WidgetCenter.shared.reloadTimelines(ofKind: "CaptureWidget")
+            }
             let tasksChanged = previous?["tasks"] as? [NSDictionary] != content["tasks"] as? [NSDictionary]
             let hadRandomBlocks = (previous?["randomBlocks"] as? [NSDictionary])?.isEmpty == false
             let hasRandomBlocks = (content["randomBlocks"] as? [NSDictionary])?.isEmpty == false

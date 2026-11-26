@@ -8236,10 +8236,6 @@ let journal_section_markers_recompute_after_row_splices () =
 
 let journal_test_year () = Cache_model.journal_day_for_ms (Session_types.now_ms ()) / 10000
 
-let expected_august_date day =
-  if journal_test_year () = 2026 then Printf.sprintf "Aug %d" day
-  else Printf.sprintf "Aug %d, 2026" day
-
 let journal_date_headings_open_their_page_on_both_hosts () =
   List.iter (fun backend ->
     let application = App.create backend in
@@ -8255,7 +8251,7 @@ let journal_date_headings_open_their_page_on_both_hosts () =
     check ~msg:"the journal date is visible" (heading <> -1);
     check_eq ~msg:"journal date buttons satisfy the native accessible-name contract"
       (property_string renderer heading Lui_protocol.AccessibilityLabel)
-      (if journal_test_year () = 2026 then "Open Oct 21 · Wed" else "Open Oct 21, 2026 · Wed");
+      "Open Oct 21st, 2026";
     dispatch application (Lui_protocol.Press heading);
     flush application;
     check_eq ~msg:"the date opens its journal page on each native host"
@@ -8297,7 +8293,7 @@ let notifications_filter_month_and_preserve_read_history () =
   let widened = Model.update all_read Model.ToggleRecentNotifications in
   check_eq (Model.notification_count widened) 0
 
-let journal_dates_follow_the_app_language () =
+let localized_calendar_dates () =
   let format language day = Localization.journal_date ~language ~system_language:"en" ~current_year:2026 day in
   check_eq (format "zh-CN" 20260101) ("1月1日", "星期四");
   check_eq (format "zh-CN" 20260102) ("1月2日", "星期五");
@@ -8309,7 +8305,9 @@ let journal_dates_follow_the_app_language () =
   check_eq (format "pt-BR" 20251231) ("31 de dez. de 2025", "qua.");
   check_eq (format "pt-PT" 20251231) ("31/12/2025", "quarta");
   check_eq (format "ar" 20251231) ("٣١ ديسمبر ٢٠٢٥", "الأربعاء");
-  check_eq (format "fa" 20251231) ("۳۱ دسامبر ۲۰۲۵", "چهارشنبه");
+  check_eq (format "fa" 20251231) ("۳۱ دسامبر ۲۰۲۵", "چهارشنبه")
+
+let journal_titles_follow_the_graph_format () =
   List.iter (fun backend ->
     let app = App.create (backend ()) in
     start app;
@@ -8323,26 +8321,18 @@ let journal_dates_follow_the_app_language () =
     flush app;
     let renderer = Lui_app.runtime app in
     let root = main_root renderer app in
-    let check_heading id title suffix =
+    let check_heading id title =
       let heading = descendant_with_identifier renderer root ("button.journal." ^ id) in
       check (heading <> -1);
       check_eq (descendant_count_with_property_string renderer heading Lui_protocol.TextValue title) 1;
-      let weekday = descendant_with_identifier renderer heading "journal.weekday" in
-      check_eq (property_string renderer weekday Lui_protocol.TextValue) suffix;
-      check_eq (property_string renderer weekday Lui_protocol.ForegroundValue) "muted-foreground";
-      check_eq (property_string renderer heading Lui_protocol.AccessibilityLabel) ("打开 " ^ title ^ " " ^ suffix) in
-    let prefix = if journal_test_year () = 2026 then "" else "2026年" in
-    let title = prefix ^ "11月23日" in
-    let empty_title = if journal_test_year () = 2025 then "11月22日" else "2025年11月22日" in
-    check_heading "journal-page" title "· 星期一";
-    check_heading "empty-day" empty_title "· 星期六";
-    List.iter (fun (format, original, date) ->
-      let model = {(App.model app) with journal_title_format = format} in
-      check_eq (View_base.journal_title_parts model (Some 20261123) original) (date, Some "· 星期一");
-      check_eq (View_base.journal_display_title model (Some 20261123) original) date)
-      ["yyyy-MM-dd", "2026-11-23", "2026-11-23";
-       "yyyy-MM-dd EEEE", "2026-11-23 Monday", "2026-11-23";
-       "EEE, dd-MM-yyyy", "Mon, 23-11-2026", "23-11-2026"];
+      check_eq (property_string renderer heading Lui_protocol.AccessibilityLabel) ("打开 " ^ title) in
+    check_heading "journal-page" "Nov 23rd, 2026";
+    check_heading "empty-day" "Nov 22nd, 2025";
+    let projection = {projection with journal_title_format = Some "yyyy-MM-dd EEEE"} in
+    let title = "2026-11-23 Monday" in
+    apply projection;
+    check_heading "journal-page" title;
+    check_heading "empty-day" "2025-11-22 Saturday";
     let heading = descendant_with_identifier renderer root "button.journal.journal-page" in
     dispatch app (Lui_protocol.Press heading);
     flush app;
@@ -8351,11 +8341,12 @@ let journal_dates_follow_the_app_language () =
     apply {projection with node_routes = routes};
     let detail = descendant_with_identifier renderer (Lui_app.root_node app) "layout.node.title" in
     let heading = descendant_with_identifier renderer detail "title.node" in
-    let weekday = descendant_with_identifier renderer detail "journal.weekday" in
     check_eq (property_string renderer heading Lui_protocol.TextValue) title;
-    check_eq (property_string renderer weekday Lui_protocol.TextValue) "· 星期一";
-    check_eq (property_string renderer weekday Lui_protocol.ForegroundValue) "muted-foreground";
-    check_eq (View_base.active_node_title (App.model app)) title)
+    check_eq (View_base.active_node_title (App.model app)) title;
+    let updated_format = "EEE, dd-MM-yyyy" in
+    apply {projection with node_routes = routes; journal_title_format = Some updated_format};
+    check_eq (property_string renderer heading Lui_protocol.TextValue) "Mon, 23-11-2026";
+    check_eq (View_base.active_node_title (App.model app)) "Mon, 23-11-2026")
     [ios_backend; kotlin_backend]
 
 let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
@@ -8432,7 +8423,7 @@ let journal_home_keeps_first_day_viewport_and_later_block_items_flat () =
   check ~msg:"the second journal heading is visible" (second_heading <> -1);
   check_eq
     ~msg:"journal headings announce their title"
-    (descendant_count_with_property_string renderer heading_content Lui_protocol.TextValue (expected_august_date 27))
+    (descendant_count_with_property_string renderer heading_content Lui_protocol.TextValue "Aug 27th, 2026")
     1;
   check ~msg:"the first day's row stays inside the virtualized collection"
     (descendant_with_identifier renderer outliner "outliner.block.day-a"
@@ -12162,7 +12153,8 @@ let cases =
     case "task view changes settle the editor and respect selection" task_view_changes_settle_the_editor_and_respect_selection;
     case "older-journals-only-appear-at-the-journal-root" older_journals_only_appear_at_the_journal_root;
     case "journal-date-headings-open-their-page-on-both-hosts" journal_date_headings_open_their_page_on_both_hosts;
-    case "journal dates follow the app language on both hosts" journal_dates_follow_the_app_language;
+    case "calendar dates follow the app language" localized_calendar_dates;
+    case "journal titles follow the graph format on both hosts" journal_titles_follow_the_graph_format;
     case "notifications use local date and time with a year only when needed" notification_time_uses_local_date_and_time;
     case "notification month filter persists and keeps older read state" notifications_filter_month_and_preserve_read_history;
     case "journal-section-markers-preserve-boundaries-and-stable-pages" journal_section_markers_preserve_boundaries_and_stable_pages;
