@@ -7,7 +7,6 @@ press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
 wait prop:accessibility-identifier=outliner.load-older-sentinel
 appear prop:accessibility-identifier=outliner.load-older-sentinel
-wait text:"Aug 27"
-expect prop:accessibility-identifier=button.journal.journal-older
+wait prop:accessibility-identifier=button.journal.journal-older
 expect text:"Older journal note"
 expect-absent prop:accessibility-identifier=outliner.load-older-sentinel

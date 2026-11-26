@@ -256,7 +256,7 @@ let handle_block_menu_event model_source row_source send = function
      | _ -> ())
   | input -> ignore (View_base.handle_outliner_block_content_event input model_source send)
 
-let outliner_rich_block_view ?(show_code_language = true) model_source row_source send : t =
+let outliner_rich_block_view ?(show_code_language = true) ~allow_drag model_source row_source send : t =
  custom @@ fun context parent ->
    let row_actions = if Lui_ui.host context <> KotlinHost then None else Some (
        Signal.map2 (fun current row ->
@@ -270,6 +270,7 @@ let outliner_rich_block_view ?(show_code_language = true) model_source row_sourc
          StringValue (Yojson.Basic.to_string (`Assoc [
            "selectionMode", `Bool (View_base.outliner_selection_active_ current);
            "selectionMember", `Bool (View_base.row_selected_ current row);
+           "allowsDrag", `Bool allow_drag;
            "isTask", `Bool is_task;
            "discussionsAvailable", `Bool (current.collaboration <> `Null && metadata_member "discussionKind" row <> `String "thread");
            "isComment", `Bool (metadata_member "discussionKind" row = `String "comment");
@@ -573,7 +574,7 @@ let code_language_control context model_source row_source send : t =
       ~accessibility_identifier:("outliner.code.language-header." ^ current_row.row_uuid)
       [box ~height:28 [trigger]])
 
-let code_block_content model_source retained_source row_source send : t =
+let code_block_content ~allow_drag model_source retained_source row_source send : t =
  custom @@ fun context parent ->
   let current_row = Signal.sample row_source in
   let source = Signal.map (fun retained -> if View_rows.retained_row_editing_ retained then
@@ -595,7 +596,7 @@ let code_block_content model_source retained_source row_source send : t =
           Some (fun _ -> ignore (send (Model.LongPressOutlinerBlock (Signal.sample row_source).row_uuid))))
         [reactive (fun calculator -> if calculator then
           text ~value:(reactive source) ~font_family:"monospace" ~font_size:"17" ~padding:12 [] else
-          outliner_rich_block_view ~show_code_language:false model_source row_source send) calculator]);
+          outliner_rich_block_view ~show_code_language:false ~allow_drag model_source row_source send) calculator]);
   ] in
   mount context ?parent (column ~gap:0 ~cross:`stretch ~corner_radius:8
     ~background_signal:(Signal.map (fun retained ->
@@ -623,7 +624,7 @@ let annotation_page_link row_source send =
         let page = try Yojson.Basic.Util.(value |> member "page" |> to_int) with _ -> 0 in
         "📌 P" ^ string_of_int page) reference) ~style_class:"caption" []])
 
-let outliner_row_main_content (context : Lui_ui.ui_context) model_source
+let outliner_row_main_content ?(allow_drag = true) (context : Lui_ui.ui_context) model_source
     retained_row_source row_source send : t =
   let current_row = Signal.sample row_source in
   let block_id_source =
@@ -662,12 +663,12 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
       column ~gap:2 ~grow:1.0 ~cross:`start
         ~accessibility_identifier:("outliner.title-and-tags." ^ current_row.row_uuid)
         [
-          reactive (fun code -> if code then code_block_content model_source retained_row_source row_source send else
+          reactive (fun code -> if code then code_block_content ~allow_drag model_source retained_row_source row_source send else
             column ~gap:0 ~cross:`stretch [
               if_ ~test:editing_source
                 (outliner_editor_view model_source block_id_source editing_title_source editing_caret_source send);
               if_ ~test:not_editing_source
-                (outliner_rich_block_view model_source row_source send)])
+                (outliner_rich_block_view ~allow_drag model_source row_source send)])
             (Signal.map (fun (row : Model.outline_row) -> row.row_display_type = Some "code") row_source);
           if_ ~test:has_tags_source
             (row ~gap:6
@@ -690,7 +691,7 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
            [ outliner_collapse_button context model_source row_source send ]);
     ]
 
-let outliner_row_content context model_source retained_row_source
+let outliner_row_content ?(allow_drag = true) context model_source retained_row_source
     row_source send : t =
   row ~gap:0 ~cross:`start ~padding_vertical:2
     [
@@ -698,7 +699,7 @@ let outliner_row_content context model_source retained_row_source
         (Signal.map View_base.outliner_row_indent row_source);
       outliner_zoom_control context model_source row_source send;
       box ~width:2 [];
-      outliner_row_main_content context model_source retained_row_source
+      outliner_row_main_content ~allow_drag context model_source retained_row_source
         row_source send;
     ]
 
@@ -760,7 +761,7 @@ let native_outliner_row ~allow_drag ~trailing_inset model_source retained_source
       "tags", `List (List.map summary row.tags)]) in
   Lui_ui.extension_property_signal context node "payload"
     (Signal.map2 (fun current retained -> StringValue (payload current retained)) model_source retained_source);
-  ignore (mount context ~parent:node (reactive (fun code -> if code then code_block_content model_source retained_source row_source send else
+  ignore (mount context ~parent:node (reactive (fun code -> if code then code_block_content ~allow_drag model_source retained_source row_source send else
     if_ ~test:(reactive View_rows.retained_row_editing_ retained_source)
       (box ~padding:0 [outliner_editor_view model_source (Signal.map View_base.outliner_row_uuid row_source)
         (Signal.map View_rows.retained_row_editing_title retained_source)
@@ -872,7 +873,7 @@ let outliner_row_body ?(allow_drag = true) ?(trailing_inset = 0) (context : Lui_
                            (Model.LongPressOutlinerBlock
                               (Signal.sample row_source : Model.outline_row).row_uuid)))
                     [
-                      outliner_row_main_content context model_source
+                      outliner_row_main_content ~allow_drag context model_source
                         retained_row_source row_source send;
                     ]));
            ]);
@@ -889,7 +890,7 @@ let outliner_row_body ?(allow_drag = true) ?(trailing_inset = 0) (context : Lui_
               (Signal.map View_base.outliner_row_identifier row_source)
             ~padding:0 ~corner_radius:10
             [
-              swipe (outliner_row_content context model_source
+              swipe (outliner_row_content ~allow_drag context model_source
                 retained_row_source row_source send);
             ]))
 
@@ -1090,20 +1091,16 @@ let outliner_row ?(trailing_inset = 0) context model_source retained_row_source 
   ]))
     (render_result_block_in_scope context model_source)
 
-let page_heading_text ?accessibility_identifier ?(tracks_scroll_title = true) parts =
-  let suffix = Signal.map snd parts in
+let page_heading_text ?accessibility_identifier ?(tracks_scroll_title = true) title =
   let style_class = if tracks_scroll_title then Some "scroll-section-title" else None in
-  [heading ~level:`h3 ?style_class ~foreground:"foreground" ~value:(reactive fst parts)
-     ?accessibility_identifier [];
-   if_ ~test:(Signal.map Option.is_some suffix)
-     (text ~value:(reactive (Option.value ~default:"") suffix) ~style_class:"subheadline single-line"
-        ~foreground:"muted-foreground" ~accessibility_identifier:"journal.weekday" [])]
+  heading ~level:`h3 ?style_class ~foreground:"foreground" ~value:(reactive Fun.id title)
+    ?accessibility_identifier []
 
-let journal_heading model_source row_source parts send children : t =
+let journal_heading model_source row_source title send children : t =
  custom @@ fun context parent ->
   let node =
     mount context ?parent (View_base.with_label_signal
-       (Signal.map2 View_base.journal_heading_label model_source parts)
+       (Signal.map2 View_base.journal_heading_label model_source title)
        (box ~padding:0
           ~accessibility_identifier_signal:
             (Signal.map2 View_base.outliner_journal_button_identifier
@@ -1120,7 +1117,7 @@ let journal_heading model_source row_source parts send children : t =
 let outliner_entry context model_source retained_row_source row_source
     send : t =
   let inset = 8 in
-  let parts = Signal.map2 View_base.outliner_journal_title_parts model_source row_source in
+  let title = Signal.map2 View_base.outliner_journal_title model_source row_source in
   (* On iOS the disclosure button includes the trailing gutter. *)
   with_ios_trailing_padding 0 (column ~padding_horizontal:inset
     ~accessibility_identifier_signal:(Signal.map (fun (row : Model.outline_row) -> "outliner.entry." ^ row.row_uuid) row_source)
@@ -1140,7 +1137,7 @@ let outliner_entry context model_source retained_row_source row_source
              (fun (current : Model.logseq_model) (r : Model.outline_row) ->
                View_base.outliner_journal_heading_visible_ current r)
              model_source row_source)
-        (with_ios_trailing_padding inset (journal_heading model_source row_source parts send
+        (with_ios_trailing_padding inset (journal_heading model_source row_source title send
            [
              (* Align the Android title edge with the center of its 24dp bullet slot. *)
              box
@@ -1154,10 +1151,10 @@ let outliner_entry context model_source retained_row_source row_source
                         then 26 else 0)
                       model_source row_source)
                    (box []);
-                 row ~gap:8 ~cross:`center (
+                 row ~gap:8 ~cross:`center [
                  View_base.node_icon_view ~size:28 (Signal.map2 (fun current row ->
-                   View_base.node_icon current (View_base.outliner_journal_page_id current row)) model_source row_source)
-                 :: page_heading_text ~tracks_scroll_title:false parts);
+                   View_base.node_icon current (View_base.outliner_journal_page_id current row)) model_source row_source);
+                 page_heading_text ~tracks_scroll_title:false title];
                  page_title_spacer ();
                ];
            ]));
@@ -1848,16 +1845,16 @@ let placeholder_block context model_source (value : View_rows.placeholder) show_
   match value.journal_heading with
   | None -> box ~padding_horizontal:8 [placeholder]
   | Some (title, day, divider) ->
-    let parts = Signal.map (fun current -> View_base.journal_title_parts current (Some day) title) model_source in
+    let title = Signal.map (fun current -> View_base.journal_display_title current (Some day) title) model_source in
     column ~padding_horizontal:8 ~gap:0 [
       (if divider then column ~gap:0 [box ~height:26 []; separator ~accessibility_identifier:"journal.divider" []; box ~height:26 []]
        else box []);
       (custom @@ fun mount_context parent ->
         let node = mount mount_context ?parent (View_base.with_label_signal
-          (Signal.map2 View_base.journal_heading_label model_source parts)
+          (Signal.map2 View_base.journal_heading_label model_source title)
           (box ~accessibility_identifier:("button.journal." ^ value.parent_uuid)
             ~padding_horizontal:(if Lui_ui.host context = KotlinHost then 12 else 8)
-            [row ~gap:8 ~cross:`center (page_heading_text ~tracks_scroll_title:false parts)])) in
+            [row ~gap:8 ~cross:`center [page_heading_text ~tracks_scroll_title:false title]])) in
         Lui_ui.bool_property mount_context node PressEnabled true;
         register_press mount_context node (fun _ -> ignore (send (Model.RequestAppNode value.parent_uuid)));
         node);
@@ -2231,11 +2228,11 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
           if_ ~test:(reactive View_base.node_title_visible_ model_source)
             (column ~gap:0
                [ box ~padding_horizontal:16 ~accessibility_identifier:"layout.node.title"
-                   [ row ~gap:8 ~cross:`center (
+                   [ row ~gap:8 ~cross:`center [
                        View_base.node_icon_view ~size:28 (Signal.map (fun current ->
-                         View_base.node_icon current (View_base.active_node_uuid current)) model_source)
-                       :: page_heading_text ~accessibility_identifier:"title.node"
-                         (Signal.map View_base.active_node_title_parts model_source)) ];
+                         View_base.node_icon current (View_base.active_node_uuid current)) model_source);
+                       page_heading_text ~accessibility_identifier:"title.node"
+                         (Signal.map View_base.active_node_title model_source) ] ];
                  reactive (fun has_properties -> page_title_spacer ~has_properties ())
                    (Signal.map (fun model -> match View_base.active_node_projection model with
                      | Some route -> View_property.has_properties route.node_properties_json | None -> false) model_source) ]);

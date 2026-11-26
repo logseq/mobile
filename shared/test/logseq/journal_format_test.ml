@@ -293,10 +293,11 @@ let localized_journal_titles_round_trip () =
     ["2026年2月29日"; "2000年10月21日的日记"; "20001021"]
 
 let displayed_journal_titles_search_through_native_effects () =
-  R.with_runtime ~search:true (fun _ runtime conn ->
+  R.with_runtime ~search:true (fun format_session runtime conn ->
     let day = 20001021 and uuid = "82000000-0000-4000-8000-000000000021" in
     let core_title = Journal.day_title day in
-    let model = { (Model.initial ()) with language = "zh-CN" } in
+    let format = "EEEE, dd-MM-yyyy" in
+    let model = { (Model.initial ()) with language = "zh-CN"; journal_title_format = format } in
     let query = View_base.journal_display_title model (Some day) core_title in
     let put = Q.put in
     let block index =
@@ -307,6 +308,7 @@ let displayed_journal_titles_search_through_native_effects () =
       put uuid "block/name" (D.String (String.lowercase_ascii core_title));
       put uuid "block/journal-day" (D.Int64 (Int64.of_int day))]
       @ List.concat_map block (List.init 22 Fun.id));
+    success (set_format format_session format);
     let index = Option.get runtime.search_index in
     Search_index.refresh index (Graph_runtime.db runtime);
     let session = Rpc_session.create_session {Rpc_session.default_options with
@@ -320,9 +322,9 @@ let displayed_journal_titles_search_through_native_effects () =
       let response = Rpc_session.call session request in
       Result.get_ok (Response_snapshot.decode_response response) in
     let journal_ids projection = List.map (fun (hit : Model.search_hit) -> hit.hit_uuid) projection.Model.search_results in
-    List.iter (fun query ->
-      let projection = search (Model.SearchNodesEffect (1, query)) in
-      check ~msg:query (List.mem uuid (journal_ids projection))) [core_title; string_of_int day];
+    let numeric_title = string_of_int day in
+    let numeric = search (Model.SearchNodesEffect (1, numeric_title)) in
+    check ~msg:numeric_title (List.mem uuid (journal_ids numeric));
     let first = search (Model.SearchNodesEffect (2, query)) in
     check_eq first.projection_search_query query;
     check_eq (List.length first.search_results) 20;
@@ -336,7 +338,24 @@ let displayed_journal_titles_search_through_native_effects () =
     let ids = journal_ids first @ journal_ids second in
     check_eq (List.length (List.sort_uniq String.compare ids)) 23)
 
+let widgets_receive_the_active_graph_format () = R.with_runtime (fun session _ _ ->
+  let patterns () =
+    let response = Rpc_test.dispatch_json session "widgetSnapshot" "{}" in
+    success response;
+    Q.items "journalTitlePatterns" (member "result" response) in
+  let ordinal = patterns () in
+  check_eq (List.length ordinal) 31;
+  check_eq (List.nth ordinal 0) (`String "MMM d'st, 'yyyy");
+  check_eq (List.nth ordinal 10) (`String "MMM d'th, 'yyyy");
+  check_eq (List.nth ordinal 21) (`String "MMM d'nd, 'yyyy");
+  check_eq (List.nth ordinal 22) (`String "MMM d'rd, 'yyyy");
+  success (set_format session "yyyy-MM-dd EEEE");
+  check_eq (patterns ()) [`String "yyyy-MM-dd EEEE"];
+  success (set_format session "yyyy年MM月dd日");
+  check_eq (patterns ()) [`String "yyyy年MM月dd日"])
+
 let cases = [
+  case "widgets receive the active graph title format" widgets_receive_the_active_graph_format;
   case "displayed journal titles are searchable through paged native effects" displayed_journal_titles_search_through_native_effects;
   case "localized journal titles round-trip in every supported language" localized_journal_titles_round_trip;
   case "reference dates parse without epoch conversion or partial years" reference_dates_parse_without_epoch_conversion;

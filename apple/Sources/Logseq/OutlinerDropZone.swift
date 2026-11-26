@@ -16,14 +16,18 @@ enum OutlinerDropPlacement: Equatable {
 
 enum OutlinerDropZone {
     static func placement(
-        locationX: CGFloat = 0,
-        locationY: CGFloat,
+        startX: CGFloat,
+        dropX: CGFloat,
+        rowX: CGFloat,
+        rowY: CGFloat,
         rowHeight: CGFloat,
         depth: Int = 0
     ) -> OutlinerDropPlacement {
         let topZone = min(16, max(rowHeight, 1) * 0.25)
-        if locationY < topZone { return .before }
-        if locationX > CGFloat(max(0, depth)) * 22 + 100 { return .inside }
+        if rowY < topZone { return .before }
+        let indent: CGFloat = 22
+        let childX = CGFloat(max(0, depth) + 1) * indent
+        if dropX - startX >= indent && rowX >= childX { return .inside }
         return .after
     }
 }

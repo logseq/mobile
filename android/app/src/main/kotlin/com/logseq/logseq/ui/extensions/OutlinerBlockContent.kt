@@ -1,6 +1,7 @@
 package com.logseq.logseq.ui.extensions
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -22,10 +23,9 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.horizontalDrag
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,14 +69,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
+import androidx.compose.foundation.draganddrop.dragAndDropSource
 import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
+import androidx.compose.ui.draganddrop.DragAndDropTransferData
 import androidx.compose.ui.draganddrop.toAndroidDragEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -87,11 +90,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -169,6 +174,16 @@ private fun decodeSampledFile(path: String): android.graphics.Bitmap? {
     })
 }
 
+private data class OutlinerDragOrigin(val uuid: String, val x: Float)
+
+private data class OutlinerGesturePolicy(
+    val takesTap: Boolean,
+    val tapEvent: String,
+    val allowsDrag: Boolean,
+    val hasMenu: Boolean,
+)
+
+@Suppress("DEPRECATION") // The gesture overload lets a hold release to the menu or move to lift the block.
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun OutlinerBlockContent(
@@ -189,14 +204,20 @@ internal fun OutlinerBlockContent(
     val selectionMode = actions?.optBoolean("selectionMode") == true
     val interaction = context.string("interaction")
     val readOnly = interaction != null
+    val allowDrag = !readOnly && actions?.optBoolean("allowsDrag", true) != false
     val preview = interaction == "preview"
     val currentContext by rememberUpdatedState(context)
+    val haptics by rememberUpdatedState(LocalHapticFeedback.current)
     var menuOpen by remember(uuid) { mutableStateOf(false) }
-    val pressBlock: () -> Unit = { currentContext.emit(if (selectionMode) "toggle-selection" else "edit", "uuid" to uuid) }
-    val holdBlock: () -> Unit = {
-        if (actions == null) currentContext.emit("drag-start", "uuid" to uuid)
-        else menuOpen = true
-    }
+    val tapEvent = if (selectionMode) "toggle-selection" else "edit"
+    val pressBlock: () -> Unit = { currentContext.emit(tapEvent, "uuid" to uuid) }
+    val gesturePolicy by rememberUpdatedState(OutlinerGesturePolicy(
+        takesTap = !isAsset && (!linkOnly || selectionMode),
+        tapEvent = tapEvent,
+        allowsDrag = allowDrag,
+        hasMenu = actions != null,
+    ))
+    fun openBlockMenu() { menuOpen = true }
     var rowHeightPx by remember { mutableIntStateOf(0) }
     var rowPosition by remember { mutableStateOf(Offset.Zero) }
     val density = LocalDensity.current.density
@@ -214,35 +235,36 @@ internal fun OutlinerBlockContent(
 
     val dropTarget = remember(uuid, density) {
         object : DragAndDropTarget {
-            private fun placement(event: DragAndDropEvent): String {
+            private fun placement(event: DragAndDropEvent): String? {
                 val drag = event.toAndroidDragEvent()
+                val origin = drag.localState as? OutlinerDragOrigin ?: return null
+                if (origin.uuid == uuid) return null
                 return outlinerDropPlacement(
                     (drag.y - rowPosition.y) / density,
                     rowHeightPx / density,
                     (drag.x - rowPosition.x) / density,
+                    (drag.x - origin.x) / density,
                 )
             }
             override fun onDrop(event: DragAndDropEvent): Boolean {
                 dragHover = false
-                val clip = event.toAndroidDragEvent().clipData
-                val source = clip?.takeIf { it.itemCount > 0 }
-                    ?.getItemAt(0)?.text?.toString() ?: return false
-                if (source == uuid) return false
-                context.emit(
+                val placement = placement(event) ?: return false
+                currentContext.emit(
                     "drop",
                     "uuid" to uuid,
-                    "placement" to placement(event),
+                    "placement" to placement,
                 )
                 return true
             }
 
             override fun onEntered(event: DragAndDropEvent) {
-                dragHover = true
-                hoverPlacement = placement(event)
+                onMoved(event)
             }
 
             override fun onMoved(event: DragAndDropEvent) {
-                hoverPlacement = placement(event)
+                val placement = placement(event)
+                dragHover = placement != null
+                if (placement != null) hoverPlacement = placement
             }
 
             override fun onExited(event: DragAndDropEvent) {
@@ -265,24 +287,50 @@ internal fun OutlinerBlockContent(
                 AndroidLaunchMetrics.report("journals_ui_ready")
             }
             .background(hoverColor, RoundedCornerShape(8.dp))
-            .then(when {
-                readOnly -> Modifier
-                linkOnly && !selectionMode && actions == null -> Modifier
-                linkOnly && !selectionMode -> Modifier.pointerInput(uuid) {
+            .then(if (readOnly || (linkOnly && !selectionMode && actions == null)) Modifier else
+                Modifier.dragAndDropSource(block = {
                     awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                        awaitLongPressOrCancellation(down.id)?.let { change ->
-                            change.consume()
-                            menuOpen = true
+                        val initialDown = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        val policy = gesturePolicy
+                        val pass = if (policy.takesTap) PointerEventPass.Main else PointerEventPass.Initial
+                        if (policy.takesTap) {
+                            val down = awaitPointerEvent(PointerEventPass.Main).changes
+                                .firstOrNull { it.id == initialDown.id && !it.isConsumed } ?: return@awaitEachGesture
+                            down.consume()
+                        }
+                        val origin = OutlinerDragOrigin(uuid, rowPosition.x + initialDown.position.x)
+                        val finished = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                            val up = waitForUpOrCancellation(pass)
+                            if (up != null && policy.takesTap) {
+                                up.consume()
+                                currentContext.emit(policy.tapEvent, "uuid" to uuid)
+                            }
+                            true
+                        }
+                        if (finished == true) return@awaitEachGesture
+
+                        // A hold confirms immediately. Movement lifts the block, while releasing opens its menu.
+                        if (!policy.hasMenu) currentContext.emit("drag-start", "uuid" to uuid)
+                        else haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val pointer = event.changes.singleOrNull { it.id == initialDown.id } ?: break
+                            if (event.changes.any { it.id != initialDown.id && it.pressed } || pointer.isConsumed) break
+                            pointer.consume()
+                            if (!pointer.pressed) {
+                                if (policy.hasMenu) openBlockMenu()
+                                break
+                            }
+                            if (policy.allowsDrag && (pointer.position - initialDown.position).getDistance() >= viewConfiguration.touchSlop) {
+                                if (policy.hasMenu) currentContext.emit("drag-start", "uuid" to uuid)
+                                startTransfer(DragAndDropTransferData(ClipData.newPlainText("Logseq block", uuid), localState = origin))
+                                break
+                            }
                         }
                     }
-                }
-                else -> Modifier.pointerInput(uuid, selectionMode, actions != null) {
-                    detectTapGestures(onTap = { pressBlock() }, onLongPress = { holdBlock() })
-                }
-            })
-            .then(if (readOnly) Modifier else Modifier.dragAndDropTarget(
-                shouldStartDragAndDrop = { true },
+                }))
+            .then(if (!allowDrag) Modifier else Modifier.dragAndDropTarget(
+                shouldStartDragAndDrop = { (it.toAndroidDragEvent().localState as? OutlinerDragOrigin)?.uuid?.let { source -> source != uuid } == true },
                 target = dropTarget,
             ))
             .testTag("outliner-block-content-$uuid")
@@ -301,7 +349,8 @@ internal fun OutlinerBlockContent(
                     onPreview = if (preview) null else if (selectionMode) ({ _ -> pressBlock() }) else onOpenImage?.let { open ->
                         { path -> open(uuid, path) }
                     },
-                    onLongPress = if (readOnly) null else holdBlock,
+                    onBlockMenu = if (readOnly || actions == null) null else ::openBlockMenu,
+                    blockMenuLabel = actions?.optJSONObject("labels")?.optString("More actions", "More actions") ?: "More actions",
                 )
             } else {
                 CompositionLocalProvider(
@@ -544,11 +593,11 @@ internal fun isLinkOnlyMarkup(encoded: String): Boolean = try {
     false
 }
 
-internal fun outlinerDropPlacement(localY: Float, rowHeight: Float, localX: Float = 0f): String {
+internal fun outlinerDropPlacement(localY: Float, rowHeight: Float, localX: Float, horizontalTravel: Float): String {
     val height = if (rowHeight <= 0) 1f else rowHeight
     return when {
         localY < minOf(16f, height * 0.25f) -> "before"
-        localX > 100f -> "inside"
+        localX >= 22f && horizontalTravel >= 22f -> "inside"
         else -> "after"
     }
 }
@@ -1028,11 +1077,12 @@ private fun AndroidLinkedImage(url: String, alt: String) {
 private fun ProjectedAsset(
     uuid: String, title: String, assetType: String, localPath: String,
     loadImage: (suspend (String, String) -> String)?, onPreview: ((String) -> Unit)?,
-    preview: Boolean, onLongPress: (() -> Unit)?,
+    preview: Boolean,
+    onBlockMenu: (() -> Unit)?, blockMenuLabel: String,
 ) {
     when {
         isImageAsset(assetType, localPath) ->
-            GraphImagePreview(uuid, title, assetType, localPath, loadImage, onPreview, onLongPress)
+            GraphImagePreview(uuid, title, assetType, localPath, loadImage, onPreview, onBlockMenu, blockMenuLabel)
         preview -> AssetFallback(title)
         assetType.lowercase() in listOf("pdf", "application/pdf") || localPath.endsWith(".pdf", ignoreCase = true) ->
             PdfAssetButton(uuid, title, assetType, localPath, loadImage)
@@ -1219,7 +1269,8 @@ internal fun GraphImagePreview(
     uuid: String, title: String, assetType: String, localPath: String,
     loadImage: (suspend (String, String) -> String)?,
     onPreview: ((String) -> Unit)?,
-    onLongPress: (() -> Unit)? = null,
+    onBlockMenu: (() -> Unit)? = null,
+    blockMenuLabel: String = "More actions",
 ) {
     var retry by remember(uuid, localPath) { mutableIntStateOf(0) }
     var loadedPath by remember(uuid, localPath) { mutableStateOf("") }
@@ -1248,12 +1299,10 @@ internal fun GraphImagePreview(
     if (image != null) {
         Image(bitmap = image, contentDescription = title,
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                .then(if (onPreview != null) Modifier.combinedClickable(
-                    onClick = { onPreview(loadedPath) },
-                    onLongClick = onLongPress,
-                    // Block selection already sends haptic feedback through the shared core.
-                    hapticFeedbackEnabled = false,
-                ) else Modifier)
+                .then(if (onPreview != null) Modifier.clickable { onPreview(loadedPath) } else Modifier)
+                .then(if (onBlockMenu != null) Modifier.semantics {
+                    onLongClick(label = blockMenuLabel) { onBlockMenu(); true }
+                } else Modifier)
                 .testTag("asset.preview.image"), contentScale = ContentScale.FillWidth)
     } else if (failed) {
         Row(verticalAlignment = Alignment.CenterVertically) {

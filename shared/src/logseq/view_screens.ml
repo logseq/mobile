@@ -425,11 +425,11 @@ let root_outliner_view ?scroll_to_top (context : Lui_ui.ui_context) model_source
                  box ~padding_horizontal:16
                    ~accessibility_identifier:"layout.selected-page.title"
                    [
-                     row ~gap:8 ~cross:`center (
+                     row ~gap:8 ~cross:`center [
                      View_base.node_icon_view ~size:28 (Signal.map (fun (current : Model.logseq_model) ->
-                       match current.selected_page with Some page -> View_base.node_icon current page.uuid | None -> "") model_source)
-                     :: View_outliner.page_heading_text ~accessibility_identifier:"title.selected-page"
-                       (Signal.map View_base.selected_page_title_parts model_source));
+                       match current.selected_page with Some page -> View_base.node_icon current page.uuid | None -> "") model_source);
+                     View_outliner.page_heading_text ~accessibility_identifier:"title.selected-page"
+                       (Signal.map View_base.selected_page_title model_source) ];
                    ];
                  reactive (fun has_properties -> View_outliner.page_title_spacer ~has_properties ())
                    (Signal.map (fun (model : Model.logseq_model) -> View_property.has_properties model.properties_json) model_source);

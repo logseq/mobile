@@ -16,10 +16,13 @@ import Vision
 @main struct JournalHeadingCheck {
     @MainActor static func main() async throws {
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first!
-        for appearance in ["light", "dark"] {
+        for (appearance, format, expectedDate) in [
+            ("light", "MMM do, yyyy", "Oct 21st, 2026"),
+            ("dark", "yyyy-MM-dd EEEE", "2026-10-21 Wednesday"),
+        ] {
             let effects = JournalHeadingEffects()
             let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: effects)
-            let snapshot = #"{"ok":true,"result":{"graphName":"Work","selectedGraphId":"work","outlinerRows":[{"block":{"uuid":"entry","title":"Journal entry","pageId":"journal-page","journalTitle":"Oct 21st, 2026","journalDay":20261021},"depth":0}],"outlinerState":{"selectedBlockIds":[]}}}"#
+            let snapshot = #"{"ok":true,"result":{"graphName":"Work","selectedGraphId":"work","journalTitleFormat":"\#(format)","outlinerRows":[{"block":{"uuid":"entry","title":"Journal entry","pageId":"journal-page","journalTitle":"Oct 21st, 2026","journalDay":20261021},"depth":0}],"outlinerState":{"selectedBlockIds":[]}}}"#
             try runtime.applyCoreResponse(snapshot)
             try runtime.start(platformCode: 2, hostCode: 2, authenticationCode: 3)
             try runtime.applyHostUpdate(kind: "graph-loading", payload: "false")
@@ -40,9 +43,7 @@ import Vision
             try VNImageRequestHandler(cgImage: image.cgImage!, options: [:]).perform([request])
             let visible = (request.results ?? []).filter { $0.boundingBox.midY > 0.55 }
                 .compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-            let year = Calendar(identifier: .gregorian).component(.year, from: Date())
-            let expectedDate = year == 2026 ? "Oct 21" : "Oct 21, 2026"
-            guard visible.contains(expectedDate), visible.contains("Wed") else {
+            guard visible.contains(expectedDate) else {
                 throw failure("Journal date must be visible in the rendered \(appearance) screenshot; found: \(visible)")
             }
             let backend = runtime.renderer.backend

@@ -3,7 +3,7 @@ val composer_task_date_dialog : Model.logseq_model Signal.signal -> (Model.logse
 val composer_reference_bar : Lui_ui.ui_context -> Model.logseq_model Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
 val task_dates_dialog : Model.logseq_model Signal.signal -> (Model.logseq_action -> bool) -> Lui_elements.t
 val page_title_spacer : ?has_properties:bool -> unit -> Lui_elements.t
-val page_heading_text : ?accessibility_identifier:string -> ?tracks_scroll_title:bool -> (string * string option) Signal.signal -> Lui_elements.t list
+val page_heading_text : ?accessibility_identifier:string -> ?tracks_scroll_title:bool -> string Signal.signal -> Lui_elements.t
 
 val outliner_editor_view :
   Model.logseq_model Signal.signal ->
@@ -44,12 +44,14 @@ val outliner_status_control :
   Model.outline_row Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val outliner_row_main_content :
+  ?allow_drag:bool ->
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   View_rows.retained_row Signal.signal ->
   Model.outline_row Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val outliner_row_content :
+  ?allow_drag:bool ->
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   View_rows.retained_row Signal.signal ->

@@ -39,15 +39,18 @@ struct RecordingLiveActivityWidget: Widget {
 
 private struct JournalEntry: TimelineEntry {
     let date: Date
+    let title: String?
 }
 
 private struct JournalTimelineProvider: TimelineProvider {
     func placeholder(in context: Context) -> JournalEntry {
-        JournalEntry(date: .now)
+        JournalEntry(date: .now, title: nil)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (JournalEntry) -> Void) {
-        completion(JournalEntry(date: .now))
+        let now = Date.now
+        completion(context.isPreview ? placeholder(in: context) :
+            (try? entry(for: now)) ?? JournalEntry(date: now, title: nil))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<JournalEntry>) -> Void) {
@@ -58,7 +61,25 @@ private struct JournalTimelineProvider: TimelineProvider {
             value: 1,
             to: calendar.startOfDay(for: now)
         ) ?? now.addingTimeInterval(3600)
-        completion(Timeline(entries: [JournalEntry(date: now)], policy: .after(nextDay)))
+        do {
+            completion(Timeline(entries: [try entry(for: now)], policy: .after(nextDay)))
+        } catch {
+            let retry = (error as? CocoaError)?.code == .fileReadNoPermission
+                ? min(nextDay, now.addingTimeInterval(15 * 60)) : nextDay
+            completion(Timeline(entries: [JournalEntry(date: now, title: nil)], policy: .after(retry)))
+        }
+    }
+
+    private func entry(for date: Date) throws -> JournalEntry {
+        let patterns = try GraphWidgetContent.load().journalTitlePatterns ?? []
+        let calendar = Calendar(identifier: .gregorian)
+        let index = patterns.count == 1 ? 0 : calendar.component(.day, from: date) - 1
+        guard patterns.indices.contains(index) else { return JournalEntry(date: date, title: nil) }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.dateFormat = patterns[index]
+        return JournalEntry(date: date, title: formatter.string(from: date))
     }
 }
 
@@ -71,11 +92,15 @@ private struct TodayJournalWidgetView: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
-            Text(entry.date, format: .dateTime.month(.abbreviated).day())
+            Text(entry.title ?? entry.date.formatted(.dateTime.month(.abbreviated).day()))
                 .font(.title2.weight(.bold))
-            Text(entry.date, format: .dateTime.weekday(.wide))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+            if entry.title == nil {
+                Text(entry.date, format: .dateTime.weekday(.wide))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
             Spacer(minLength: 0)
             Label("Open journal", systemImage: "arrow.right")
                 .font(.caption.weight(.semibold))
@@ -95,9 +120,11 @@ private struct CaptureWidgetView: View {
         VStack(alignment: .leading, spacing: 8) {
             Button(intent: OpenJournalIntent()) {
                 HStack {
-                    Text(entry.date, format: .dateTime.weekday(.wide))
+                    Text(entry.title ?? entry.date.formatted(.dateTime.weekday(.wide)))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white.opacity(0.65))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.75)
                     Spacer(minLength: 0)
                     Image(systemName: "book.closed").foregroundStyle(.white)
                 }
@@ -216,17 +243,22 @@ private struct GraphWidgetContent: Decodable {
 
     let graphId: String?
     var graphLocked: Bool? = nil
+    var journalTitlePatterns: [String]? = nil
     let tasks: [Block]
     let randomBlocks: [Block]
 
     static var empty: Self { Self(graphId: nil, tasks: [], randomBlocks: []) }
 
     static func read() -> Self {
+        (try? load()) ?? .empty
+    }
+
+    static func load() throws -> Self {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.com.logseq.logseq"
-        ), let data = try? Data(contentsOf: container.appendingPathComponent("widget-content.json")),
-           let content = try? JSONDecoder().decode(Self.self, from: data) else { return .empty }
-        return content
+        ) else { return .empty }
+        let data = try Data(contentsOf: container.appendingPathComponent("widget-content.json"))
+        return try JSONDecoder().decode(Self.self, from: data)
     }
 }
 

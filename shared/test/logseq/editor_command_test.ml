@@ -1153,7 +1153,7 @@ let empty_journals_are_projected_without_writes () = R.with_runtime (fun _ runti
     (List.map (member "journalDay") (items "nodeRoutes" opened)) [`Int day];
   check_eq (Graph_runtime.pending_operations runtime) pending)
 
-let empty_journal_favorites_localize_outside_history () = R.with_runtime ~search:true (fun _ runtime conn ->
+let empty_journals_keep_the_graph_format_outside_history () = R.with_runtime ~search:true (fun _ runtime conn ->
   let old = "50000000-0000-4000-8000-000000000002" and recent = "50000000-0000-4000-8000-000000000003" in
   let now = Session_types.now_ms () in
   let day = 20001021 in
@@ -1193,21 +1193,19 @@ let empty_journal_favorites_localize_outside_history () = R.with_runtime ~search
     let root = Lui_app.root_node app in
     let find id = App_test.descendant_with_identifier host root id in
     let sidebar_title uuid = App_test.property_string host (find ("link.sidebar.page." ^ uuid)) Lui_protocol.AccessibilityLabel in
-    check_eq (sidebar_title old) "21 oct. 2000";
-    check_eq (sidebar_title recent) "22 oct. 2000";
+    check_eq (sidebar_title old) "Oct 21st, 2000";
+    check_eq (sidebar_title recent) "Oct 22nd, 2000";
     let detail = find "layout.selected-page.title" in
     let heading = App_test.descendant_with_identifier host detail "title.selected-page" in
-    let weekday = App_test.descendant_with_identifier host detail "journal.weekday" in
-    check_eq (App_test.property_string host heading Lui_protocol.TextValue) "21 oct. 2000";
-    check_eq (App_test.property_string host weekday Lui_protocol.TextValue) "· sam.";
+    check_eq (App_test.property_string host heading Lui_protocol.TextValue) "Oct 21st, 2000";
     App_test.send app Model.OpenSearch;
     App_test.send app (Model.ChangeSearchQuery search_query);
     App_test.send app (Model.ApplySearchResults (search_query, search.search_results));
     App_test.flush app;
-    check_eq (App_test.property_string host (find ("search.result.title." ^ old)) Lui_protocol.TextValue) "21 oct. 2000";
+    check_eq (App_test.property_string host (find ("search.result.title." ^ old)) Lui_protocol.TextValue) "Oct 21st, 2000";
     App_test.send app (Model.ChooseSettingsLanguage "zh-CN");
     App_test.flush app;
-    check_eq (App_test.property_string host (find ("search.result.title." ^ old)) Lui_protocol.TextValue) "2000年10月21日"))
+    check_eq (App_test.property_string host (find ("search.result.title." ^ old)) Lui_protocol.TextValue) "Oct 21st, 2000"))
     [App_test.ios_backend; App_test.kotlin_backend])
 
 let display_titles_resolve_references_without_changing_source () = R.with_runtime (fun session runtime conn ->
@@ -1963,7 +1961,7 @@ let cases = [
   case "zoom placeholder creates a child in its page" zoom_placeholder_creates_a_child_in_the_same_page;
   case "rapid placeholder taps create one editor" repeated_placeholder_taps_create_one_editor;
   case "empty journals project without writes" empty_journals_are_projected_without_writes;
-  case "older empty favorites use the localized journal title" empty_journal_favorites_localize_outside_history;
+  case "older empty journals use the graph title format" empty_journals_keep_the_graph_format_outside_history;
   case "page placeholders are lazy and editable" page_placeholders_are_lazy_and_editable;
   case "empty journal headings stay visible" empty_journal_pages_keep_their_heading;
   case "Return selects completion and special blocks create siblings" return_selects_completion_and_special_blocks_create_siblings;

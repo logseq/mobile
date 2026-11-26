@@ -178,9 +178,8 @@ val outliner_journal_heading_visible_ :
   Model.logseq_model -> Model.outline_row -> bool
 val outliner_journal_divider_visible_ :
   Model.logseq_model -> Model.outline_row -> bool
-val outliner_journal_title_parts : Model.logseq_model -> Model.outline_row -> string * string option
-val journal_title_parts : Model.logseq_model -> int option -> string -> string * string option
-val journal_heading_label : Model.logseq_model -> string * string option -> string
+val outliner_journal_title : Model.logseq_model -> Model.outline_row -> string
+val journal_heading_label : Model.logseq_model -> string -> string
 val journal_display_title : Model.logseq_model -> int option -> string -> string
 val outliner_journal_page_id :
   Model.logseq_model -> Model.outline_row -> string
@@ -206,7 +205,6 @@ val active_node_uuid : Model.logseq_model -> string
 val active_node_breadcrumbs : Model.logseq_model -> Model.sidebar_page list
 val active_node_has_breadcrumbs_ : Model.logseq_model -> bool
 val active_node_title : Model.logseq_model -> string
-val active_node_title_parts : Model.logseq_model -> string * string option
 val main_title : Model.logseq_model -> string
 val outliner_scroll_identity : Model.logseq_model -> string
 val current_content_active_ : Model.logseq_model -> bool
@@ -375,7 +373,6 @@ val sync_error_message : Model.logseq_model -> string
 val selected_page_content_title_visible_ : Model.logseq_model -> bool
 val selected_page_title : Model.logseq_model -> string
 val selected_page_journal_day : Model.logseq_model -> int option
-val selected_page_title_parts : Model.logseq_model -> string * string option
 val navigation_root_model : Model.logseq_model -> Model.logseq_model
 val without_outliner_interaction : Model.logseq_model -> Model.logseq_model
 val journal_navigation_model : Model.logseq_model -> Model.logseq_model

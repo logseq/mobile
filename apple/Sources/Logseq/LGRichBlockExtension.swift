@@ -5,7 +5,6 @@ import Observation
 import SwiftUI
 #if os(iOS)
 import UIKit
-import UniformTypeIdentifiers
 import QuickLook
 #endif
 
@@ -42,12 +41,6 @@ final class LGYouTubePlaybackState {
     var starts: [String: Int] = [:]
 }
 
-@Observable
-final class OutlinerRowDropGeometry {
-    var height: CGFloat = 44
-    var placement: OutlinerDropPlacement?
-}
-
 struct OutlinerDropIndicator: View {
     let placement: OutlinerDropPlacement?
     let depth: Int
@@ -72,40 +65,6 @@ struct OutlinerDropIndicator: View {
         .accessibilityHidden(true)
     }
 }
-
-#if os(iOS)
-struct OutlinerRowDropDelegate: DropDelegate {
-    let geometry: OutlinerRowDropGeometry
-    var depth: Int = 0
-    let onDrop: (OutlinerDropPlacement) -> Bool
-
-    func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [UTType.plainText])
-    }
-
-    func dropEntered(info: DropInfo) {
-        geometry.placement = OutlinerDropZone.placement(locationX: info.location.x, locationY: info.location.y, rowHeight: geometry.height, depth: depth)
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        dropEntered(info: info)
-        return DropProposal(operation: .move)
-    }
-
-    func dropExited(info: DropInfo) { geometry.placement = nil }
-
-    func performDrop(info: DropInfo) -> Bool {
-        defer { geometry.placement = nil }
-        return onDrop(OutlinerDropZone.placement(
-            locationX: info.location.x,
-            locationY: info.location.y,
-            rowHeight: geometry.height,
-            depth: depth
-        ))
-    }
-}
-
-#endif
 
 @MainActor
 private enum LGRichBlockExtension {
@@ -167,51 +126,16 @@ private enum LGRichBlockExtension {
 private struct LGRichBlock: View {
     let context: LUIAppleExtensionViewContext
     let playback: LGYouTubePlaybackState
-    @State private var dropGeometry = OutlinerRowDropGeometry()
     @Environment(\.lgPropertyValue) private var propertyValue
     private var interaction: String { stringProperty("interaction") }
     private var isPreview: Bool { interaction == "preview" }
 
     var body: some View {
-        #if os(iOS)
         if isPreview {
             content.lineLimit(5).allowsHitTesting(false).accessibilityHidden(true)
-        } else if interaction == "read-only" || insideNativeOutlinerRow {
-            content
         } else {
             content
-                .modifier(OutlinerSelectionSwipe {
-                    guard context.isUserInteractionEnabled else { return }
-                    try? context.emit(name: "toggle-selection", values: ["uuid": .string(blockID)])
-                })
-                .overlay { OutlinerDropIndicator(placement: dropGeometry.placement, depth: 0) }
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                    dropGeometry.height = height
-                }
-                .onDrag {
-                    emitDragStart()
-                    return NSItemProvider(object: blockID as NSString)
-                }
-                .onDrop(
-                    of: [UTType.plainText],
-                    delegate: OutlinerRowDropDelegate(
-                        geometry: dropGeometry,
-                        onDrop: emitDrop
-                    )
-                )
         }
-        #else
-        content
-        #endif
-    }
-
-    private var insideNativeOutlinerRow: Bool {
-        var ancestor = context.parentID(of: context.nodeID)
-        while let id = ancestor {
-            if context.extensionIdentifier(of: id) == "outliner-block-row" { return true }
-            ancestor = context.parentID(of: id)
-        }
-        return false
     }
 
     private var content: some View {
@@ -315,27 +239,6 @@ private struct LGRichBlock: View {
             try context.emit(name: "edit", values: ["uuid": .string(blockID)])
         } catch {
             logger.error("Could not emit rich block event: \(String(describing: error))")
-        }
-    }
-
-    private func emitDragStart() {
-        do {
-            try context.emit(name: "drag-start", values: ["uuid": .string(blockID)])
-        } catch {
-            logger.error("Could not emit block drag event: \(String(describing: error))")
-        }
-    }
-
-    private func emitDrop(_ placement: OutlinerDropPlacement) -> Bool {
-        do {
-            try context.emit(name: "drop", values: [
-                "uuid": .string(blockID),
-                "placement": .string(placement.eventValue),
-            ])
-            return true
-        } catch {
-            logger.error("Could not emit block drop event: \(String(describing: error))")
-            return false
         }
     }
 }
