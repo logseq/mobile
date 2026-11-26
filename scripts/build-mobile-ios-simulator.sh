@@ -46,6 +46,10 @@ if [[ ${LOGSEQ_IOS_PRINT_BUILD_SETTINGS:-0} == 1 ]]; then
   exit 0
 fi
 
+mkdir -p "$core_build_dir"
+exec 9>>"$core_build_dir/../.build-lock"
+python3 -c 'import fcntl; fcntl.flock(9, fcntl.LOCK_EX)'
+
 if [[ ! -x $target_prefix/bin/ocamlopt.opt ]]; then
   "$repo_root/scripts/bootstrap-ios-ocaml.sh" simulator >/dev/null
 fi
@@ -53,7 +57,6 @@ fi
 ocaml_lib="$target_prefix/lib/ocaml"
 clang=$(xcrun --sdk iphonesimulator --find clang)
 clangxx=$(xcrun --sdk iphonesimulator --find clang++)
-mkdir -p "$core_build_dir"
 
 # Apple marks libffi unavailable in the iOS SDK headers; ctypes-foreign's stub
 # build needs real libffi headers and the final link needs a real libffi.a.
@@ -89,15 +92,9 @@ for source in logseq_https_darwin.m logseq_crypto_darwin.m; do
     -o "$core_build_dir/${source%.m}.o"
 done
 
-native_link_fingerprint=$(shasum -a 256 \
-  "$core_object" "$https_object" "$crypto_object" "$ocaml_lib/libthreadsnat.a" \
-  | shasum -a 256 | cut -d ' ' -f 1)
-native_link_dir="$core_build_dir/native-link-inputs/$native_link_fingerprint"
-fingerprinted_core_object="$native_link_dir/logseq_runtime.o"
-mkdir -p "$native_link_dir"
-[[ -s $fingerprinted_core_object ]] || cp "$core_object" "$fingerprinted_core_object"
-native_link_inputs="$fingerprinted_core_object:$https_object:$crypto_object:$ocaml_lib/libthreadsnat.a:-L$ffi_prefix/lib"
-printf '%s' "$native_link_inputs" > "$core_build_dir/native-link-inputs.txt"
+native_link_inputs=$(python3 "$repo_root/scripts/publish-ios-native-link-inputs.py" \
+  "$core_build_dir" "$core_object" "$https_object" "$crypto_object" \
+  "$ocaml_lib/libthreadsnat.a" "$ffi_prefix/lib")
 
 swift_build_args=(
   # The bundle assembler and runtime checks use the native SwiftPM layout.

@@ -34,8 +34,6 @@ esac
 ios_root="$toolchain_root/ios"
 host_prefix="$ios_root/host-$ocaml_version"
 target_prefix="$ios_root/$swift_target-$ocaml_version"
-host_source="$ios_root/ocaml-$ocaml_version-host"
-target_source="$ios_root/ocaml-$ocaml_version-$platform"
 host_stamp="$host_prefix/.logseq-toolchain-complete"
 target_stamp="$target_prefix/.logseq-toolchain-complete"
 
@@ -49,19 +47,20 @@ ld=$(xcrun --sdk "$sdk" --find ld)
 ranlib=$(xcrun --sdk "$sdk" --find ranlib)
 strip=$(xcrun --sdk "$sdk" --find strip)
 mkdir -p "$ios_root"
+exec 8>>"$ios_root/.build-lock"
+python3 -c 'import fcntl; fcntl.flock(8, fcntl.LOCK_EX)'
 
-clone_release() {
-  local destination=$1
-  if [[ ! -d $destination/.git ]]; then
-    git clone --depth 1 --branch "$ocaml_version" \
-      https://github.com/ocaml/ocaml.git "$destination"
-  fi
+checkout_ocaml_source() {
+  source_dir=$(mktemp -d "${TMPDIR:-/tmp}/logseq-ocaml.XXXXXX")
+  trap 'rm -rf -- "$source_dir"' EXIT
+  git clone --depth 1 --branch "$ocaml_version" \
+    https://github.com/ocaml/ocaml.git "$source_dir"
+  cd "$source_dir"
 }
 
-if [[ ! -f $host_stamp ]]; then
-  clone_release "$host_source"
+if [[ ! -f $host_stamp || ! -x $host_prefix/bin/ocamlopt.opt ]]; then
   (
-    cd "$host_source"
+    checkout_ocaml_source
     ./configure \
       --disable-ocamldoc \
       --disable-ocamltest \
@@ -71,17 +70,16 @@ if [[ ! -f $host_stamp ]]; then
     make -j"$jobs"
     make install
   )
-  touch "$host_stamp"
 fi
 
 host_version=$("$host_prefix/bin/ocamlopt.opt" -version)
 [[ $host_version == "$ocaml_version" ]] \
   || die "host compiler version is $host_version, expected $ocaml_version"
+[[ -f $host_stamp ]] || touch "$host_stamp"
 
-if [[ ! -f $target_stamp ]]; then
-  clone_release "$target_source"
+if [[ ! -f $target_stamp || ! -x $target_prefix/bin/ocamlopt.opt ]]; then
   (
-    cd "$target_source"
+    checkout_ocaml_source
     PATH="$host_prefix/bin:$PATH" \
       ac_cv_func___secure_getenv=no \
       ac_cv_func_accept4=no \
@@ -111,11 +109,11 @@ if [[ ! -f $target_stamp ]]; then
     PATH="$host_prefix/bin:$PATH" make crossopt -j"$jobs"
     PATH="$host_prefix/bin:$PATH" make installcross
   )
-  touch "$target_stamp"
 fi
 
 target_version=$("$target_prefix/bin/ocamlopt.opt" -version)
 [[ $target_version == "$ocaml_version" ]] \
   || die "target compiler version is $target_version, expected $ocaml_version"
+[[ -f $target_stamp ]] || touch "$target_stamp"
 
 echo "$target_prefix"

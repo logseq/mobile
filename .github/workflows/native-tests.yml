@@ -163,9 +163,8 @@ jobs:
         with:
           path: |
             _build/android-toolchain
-            _build/android-dependency-sources
             _build/android-sqlite-host
-          key: android-toolchain-${{ runner.os }}-x86_64-5.5.0-${{ hashFiles('scripts/bootstrap-android-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
+          key: android-toolchain-${{ runner.os }}-x86_64-5.5.0-${{ hashFiles('scripts/bootstrap-android-ocaml.sh', 'scripts/build-mobile-libffi.sh', 'scripts/build-android-sqlite.sh') }}
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

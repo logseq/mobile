@@ -18,7 +18,7 @@ signing_keychain_password=${LOGSEQ_IOS_KEYCHAIN_PASSWORD-}
 sdk_path=$(xcrun --sdk iphoneos --show-sdk-path)
 triple="arm64-apple-ios${deployment_target}"
 target_prefix=${LOGSEQ_IOS_TOOLCHAIN_PREFIX:-$toolchain_root/ios/$triple-$ocaml_version}
-swift_scratch_dir=${LOGSEQ_IOS_SWIFT_SCRATCH_PATH:-$repo_root/apple/.build/ios-device}
+swift_scratch_dir=${LOGSEQ_IOS_SWIFT_SCRATCH_PATH:-$repo_root/apple/.build}
 swift_build_dir="$swift_scratch_dir/arm64-apple-ios/$build_configuration"
 core_build_dir="$repo_root/_build/ios-core/device"
 https_object="$core_build_dir/logseq_https_darwin.o"
@@ -26,8 +26,6 @@ crypto_object="$core_build_dir/logseq_crypto_darwin.o"
 app_dir="$repo_root/apple/.build/Logseq-device.app"
 profile_plist="$core_build_dir/profile.plist"
 entitlements="$core_build_dir/entitlements.plist"
-
-mkdir -p "$core_build_dir"
 
 die() {
   echo "error: $*" >&2
@@ -70,6 +68,10 @@ if [[ ${LOGSEQ_IOS_PRINT_BUILD_SETTINGS:-0} == 1 ]]; then
   echo "configuration=$build_configuration swift-build-dir=$swift_build_dir ocaml-version=$ocaml_version target=$triple toolchain-root=$toolchain_root toolchain-prefix=$target_prefix profile=$profile signing-identity=$signing_identity"
   exit 0
 fi
+
+mkdir -p "$core_build_dir"
+exec 9>>"$core_build_dir/../.build-lock"
+python3 -c 'import fcntl; fcntl.flock(9, fcntl.LOCK_EX)'
 
 # Signing assets are only needed when assembling the dev-profile .app; the
 # LOGSEQ_IOS_LINK_INPUTS_ONLY release path produces OCaml objects for the
@@ -146,17 +148,11 @@ for source in logseq_https_darwin.m logseq_crypto_darwin.m; do
     -o "$core_build_dir/${source%.m}.o"
 done
 
-native_link_fingerprint=$(shasum -a 256 \
-  "$core_object" "$https_object" "$crypto_object" "$ocaml_lib/libthreadsnat.a" \
-  | shasum -a 256 | cut -d ' ' -f 1)
-native_link_dir="$core_build_dir/native-link-inputs/$native_link_fingerprint"
-fingerprinted_core_object="$native_link_dir/logseq_runtime.o"
-mkdir -p "$native_link_dir"
-[[ -s $fingerprinted_core_object ]] || cp "$core_object" "$fingerprinted_core_object"
-native_link_inputs="$fingerprinted_core_object:$https_object:$crypto_object:$ocaml_lib/libthreadsnat.a:-L$ffi_prefix/lib"
 # Both build paths must publish the current core. A later archive can follow a
 # development build and must not reuse a manifest from an older core build.
-printf '%s' "$native_link_inputs" > "$core_build_dir/native-link-inputs.txt"
+native_link_inputs=$(python3 "$repo_root/scripts/publish-ios-native-link-inputs.py" \
+  "$core_build_dir" "$core_object" "$https_object" "$crypto_object" \
+  "$ocaml_lib/libthreadsnat.a" "$ffi_prefix/lib")
 
 # Release path: xcodebuild archives the app via the Xcode project and links
 # the OCaml core through LOGSEQ_NATIVE_LINK_INPUTS. Emit just the inputs so

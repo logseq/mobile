@@ -122,27 +122,11 @@ if grep -q 'rm -f "$swift_build_dir/LogseqShell"' "$device_build_script"; then
 fi
 
 for marker in \
-  'native_link_fingerprint=$(' \
-  'native-link-inputs/$native_link_fingerprint' \
-  'native_link_inputs=' \
-  'swift_scratch_dir=${LOGSEQ_IOS_SWIFT_SCRATCH_PATH:-$repo_root/apple/.build/ios-device}' \
+  'publish-ios-native-link-inputs.py' \
+  'swift_scratch_dir=${LOGSEQ_IOS_SWIFT_SCRATCH_PATH:-$repo_root/apple/.build}' \
   '--scratch-path "$swift_scratch_dir"'; do
   if ! grep -Fq -- "$marker" "$device_build_script"; then
-    echo "not ok - device build does not content-address native link inputs: $marker" >&2
-    failures=$((failures + 1))
-  fi
-done
-
-native_fingerprint_block=$(sed -n \
-  '/native_link_fingerprint=$(/,/^)/p' \
-  "$device_build_script")
-for input in \
-  '$core_object' \
-  '$https_object' \
-  '$crypto_object' \
-  '$ocaml_lib/libthreadsnat.a'; do
-  if [[ $native_fingerprint_block != *"$input"* ]]; then
-    echo "not ok - native link fingerprint omits input: $input" >&2
+    echo "not ok - device build is missing: $marker" >&2
     failures=$((failures + 1))
   fi
 done
@@ -204,7 +188,7 @@ check_succeeds() {
 
 check_succeeds \
   "device build defaults to optimized release configuration" \
-  "configuration=release swift-build-dir=$repo_root/apple/.build/ios-device/arm64-apple-ios/release" \
+  "configuration=release swift-build-dir=$repo_root/apple/.build/arm64-apple-ios/release" \
   env LOGSEQ_IOS_BUNDLE_ID=com.logseq.logseq \
     LOGSEQ_IOS_PRINT_BUILD_SETTINGS=1 \
     "$repo_root/scripts/build-mobile-ios-device.sh"
@@ -239,14 +223,14 @@ check_succeeds \
 
 check_succeeds \
   "device build selects release configuration" \
-  "configuration=release swift-build-dir=$repo_root/apple/.build/ios-device/arm64-apple-ios/release" \
+  "configuration=release swift-build-dir=$repo_root/apple/.build/arm64-apple-ios/release" \
   env LOGSEQ_IOS_BUILD_CONFIGURATION=release \
     LOGSEQ_IOS_PRINT_BUILD_SETTINGS=1 \
     "$repo_root/scripts/build-mobile-ios-device.sh"
 
 check_succeeds \
   "device build keeps debug configuration available" \
-  "configuration=debug swift-build-dir=$repo_root/apple/.build/ios-device/arm64-apple-ios/debug" \
+  "configuration=debug swift-build-dir=$repo_root/apple/.build/arm64-apple-ios/debug" \
   env LOGSEQ_IOS_BUILD_CONFIGURATION=debug \
     LOGSEQ_IOS_PRINT_BUILD_SETTINGS=1 \
     "$repo_root/scripts/build-mobile-ios-device.sh"

@@ -60,6 +60,8 @@ For a physical device, set `LOGSEQ_IOS_BUNDLE_ID`, `LOGSEQ_IOS_PROFILE`, and `LO
 
 Device builds default to Release. Use `LOGSEQ_IOS_BUILD_CONFIGURATION=debug` for an unoptimized build, and use Release when measuring performance. Set `LOGSEQ_APPLE_TOOLCHAIN_ROOT` to share the compiler cache or `LOGSEQ_IOS_TOOLCHAIN_PREFIX` to use a compatible compiler you already built.
 
+The simulator and device scripts share SwiftPM dependencies in `apple/.build`, with build products in separate target directories. Both accept `LOGSEQ_IOS_SWIFT_SCRATCH_PATH` to override that location. The iOS core build retains the current native link snapshot and one previous snapshot per platform.
+
 To work on the LUI backend with a sibling checkout, use `swift package --package-path apple edit lui --path ../lui`. Restore the pinned version with `swift package --package-path apple unedit lui`.
 
 ### Android

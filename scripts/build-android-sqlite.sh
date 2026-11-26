@@ -3,23 +3,32 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-source_root="$repo_root/_build/android-dependency-sources/sqlite"
-host_build="$repo_root/_build/android-sqlite-host"
 sqlite_revision=4ebc7fdcf459e8d88eb5b019c2949bda86565528
+cache_root="$repo_root/_build/android-sqlite-host"
+host_build="$cache_root/$sqlite_revision"
 
-if [[ ! -d $source_root/.git ]]; then
-  git clone https://github.com/sqlite/sqlite.git "$source_root" >&2
-fi
-git -C "$source_root" fetch origin "$sqlite_revision" >&2
-git -C "$source_root" checkout --detach "$sqlite_revision" >&2
+mkdir -p "$cache_root"
+exec 9>>"$cache_root/.build-lock"
+python3 -c 'import fcntl; fcntl.flock(9, fcntl.LOCK_EX)'
 
-if [[ ! -f $host_build/sqlite3.c || ! -f $host_build/sqlite3.h ]]; then
-  mkdir -p "$host_build"
+if [[ ! -s $host_build/sqlite3.c || ! -s $host_build/sqlite3.h ]]; then
+  staging=$(mktemp -d "$cache_root/.build.XXXXXX")
+  trap 'rm -rf -- "$staging"' EXIT
+  source_root="$staging/sqlite"
+  git init --quiet "$source_root"
+  git -C "$source_root" fetch --quiet --depth=1 --no-tags \
+    https://github.com/sqlite/sqlite.git "$sqlite_revision" >&2
+  git -C "$source_root" checkout --quiet --detach FETCH_HEAD >&2
+
+  mkdir "$staging/build" "$staging/amalgamation"
   (
-    cd "$host_build"
+    cd "$staging/build"
     "$source_root/configure" --disable-shared --disable-static >&2
     make sqlite3.c sqlite3.h >&2
+    mv sqlite3.c sqlite3.h "$staging/amalgamation/"
   )
+  rm -rf -- "$host_build"
+  mv "$staging/amalgamation" "$host_build"
 fi
 
 echo "$host_build"

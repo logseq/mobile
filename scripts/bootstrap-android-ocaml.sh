@@ -30,8 +30,6 @@ esac
 target="${target_arch}-linux-android${api_level}"
 host_prefix="$toolchain_root/host-$ocaml_version"
 target_prefix="$toolchain_root/$target-$ocaml_version"
-host_source="$toolchain_root/ocaml-$ocaml_version-host"
-target_source="$toolchain_root/ocaml-$ocaml_version-$target_arch"
 
 case "$(uname -s)" in
   Darwin)
@@ -59,20 +57,20 @@ ndk_bin="$ndk_root/toolchains/llvm/prebuilt/$ndk_host/bin"
 [[ -x $ndk_bin/clang ]] || die "Android NDK clang was not found: $ndk_bin/clang"
 
 mkdir -p "$toolchain_root"
+exec 8>>"$toolchain_root/.build-lock"
+python3 -c 'import fcntl; fcntl.flock(8, fcntl.LOCK_EX)'
 
-clone_release() {
-  local destination=$1
-  if [[ ! -e $destination/.git ]]; then
-    git clone --depth 1 --branch "$ocaml_version" \
-      https://github.com/ocaml/ocaml.git \
-      "$destination"
-  fi
+checkout_ocaml_source() {
+  source_dir=$(mktemp -d "${TMPDIR:-/tmp}/logseq-ocaml.XXXXXX")
+  trap 'rm -rf -- "$source_dir"' EXIT
+  git clone --depth 1 --branch "$ocaml_version" \
+    https://github.com/ocaml/ocaml.git "$source_dir"
+  cd "$source_dir"
 }
 
 build_host_compiler() {
-  clone_release "$host_source"
   (
-    cd "$host_source"
+    checkout_ocaml_source
     ./configure \
       --disable-ocamldoc \
       --disable-ocamltest \
@@ -85,9 +83,8 @@ build_host_compiler() {
 }
 
 build_target_compiler() {
-  clone_release "$target_source"
   (
-    cd "$target_source"
+    checkout_ocaml_source
     PATH="$host_prefix/bin:$PATH" ./configure \
       --disable-function-sections \
       --without-zstd \
