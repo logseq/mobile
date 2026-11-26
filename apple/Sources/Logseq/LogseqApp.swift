@@ -1035,13 +1035,13 @@ public struct LogseqRootView : View {
     public func runExclusiveBackgroundSync() async -> Bool {
         await syncCoordinator.runBackground { [self] in
             await waitForLocalLaunchLoad()
-            let graph = store.snapshot.selectedGraphId
-            let cursor = store.snapshot.appliedServerT
+            guard !Task.isCancelled else { return false }
             widgetContent.requestBackgroundRefresh()
             let synced = await syncFromStoredConnection()
-            if graph != store.snapshot.selectedGraphId || cursor != store.snapshot.appliedServerT {
-                widgetContent.requestBackgroundRefresh()
-            }
+            guard !Task.isCancelled else { return false }
+            // The persisted projection can change without a new server cursor.
+            // The core reuses the widget snapshot if its database is unchanged.
+            widgetContent.requestBackgroundRefresh()
             await widgetContent.waitForPendingRefresh()
             return synced
         }
