@@ -62,7 +62,6 @@ val load_older_journals : mobile_graph -> unit
 val has_older_journals : mobile_graph -> bool
 val journal_page_uuid : mobile_graph -> int -> string option
 val stage :
-  ?journal_tasks:Journal_task_dates.cache ->
   mobile_graph -> Pending_ops.pending_operation -> (unit, string) result
 val prepare_sync :
   mobile_graph ->

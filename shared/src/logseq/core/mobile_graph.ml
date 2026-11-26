@@ -176,9 +176,9 @@ let journal_page_uuid (host : mobile_graph) day =
   | Some opened -> Runtime.journal_page_uuid opened.read_runtime day
   | None -> None
 
-let stage ?journal_tasks (host : mobile_graph) operation =
+let stage (host : mobile_graph) operation =
   match !(host.current) with
-  | Some opened -> Runtime.stage ?journal_tasks opened.read_runtime operation
+  | Some opened -> Runtime.stage opened.read_runtime operation
   | None -> Error "graph runtime is not open"
 
 let prepare_sync (host : mobile_graph) operation =

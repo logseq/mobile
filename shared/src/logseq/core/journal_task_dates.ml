@@ -180,50 +180,6 @@ let create_cache () : cache = ref []
 let remove_cached_graph cache graph = cache := List.remove_assoc graph !cache
 let clear_cache cache = cache := []
 
-let cached_result cache ~graph =
-  Option.map (fun cached -> cached.result) (List.assoc_opt graph !cache)
-
-let preserve_for_local_edit cache ~before ~after changes =
-  let ordinary_attr = function
-    | "block/uuid" | "block/title" | "block/order" | "block/page" | "block/parent"
-    | "block/created-at" | "block/updated-at" | "block/refs" | "block/tags"
-    | "logseq.property/status" -> true
-    | _ -> false in
-  let changed = Hashtbl.create 4 in
-  let hierarchy = Hashtbl.create 4 in
-  if List.for_all (fun (d : Ds.datom) ->
-    Hashtbl.replace changed d.e ();
-    if List.mem d.a ["block/order"; "block/page"; "block/parent"] then
-      Hashtbl.replace hierarchy d.e ();
-    ordinary_attr d.a) changes then
-    List.iter (fun (_, cached) ->
-      if member "success" cached.result = `Bool true
-         && Option.exists ((==) before) (Weak.get cached.db 0) then begin
-        let today db id = Read.int_value (Read.value db id "block/journal-day") = Some cached.day in
-        let unreferenced db eid =
-          List.for_all (fun attr -> Seq.is_empty (Datascript_value.datoms_by_ref db Ds.Aevt attr eid))
-            ["block/refs"; "block/tags"; "logseq.property/status"; "logseq.property/priority";
-             "logseq.property/asset"; "logseq.property/order-list-type"]
-          && (not (Hashtbl.mem hierarchy eid)
-              || Seq.is_empty (Datascript_value.datoms_by_ref db Ds.Aevt "block/parent" eid)) in
-        let local_body db eid = match Read.uuid_for_eid db eid with
-          | None -> Seq.is_empty (Ds.Db.datoms db Ds.Eavt ~e:eid ())
-          | Some _ ->
-            Read.value db eid "db/ident" = None && Read.value db eid "block/name" = None
-            && Read.value db eid "block/closed-value-property" = None
-            && match Read.ref_eids db eid "block/page" with
-            | [id] -> today before id && today after id
-            | _ -> false in
-        (* Ordinary journal blocks can still render through embeds or references. *)
-        let no_embeds db = Seq.is_empty (Ds.Db.datoms db Ds.Aevt ~a:"block/link" ()) in
-        if no_embeds before && no_embeds after
-           && Hashtbl.fold (fun eid () safe ->
-             safe && local_body before eid && local_body after eid
-             && Read.status_for_eid identity before eid = None && Read.status_for_eid identity after eid = None
-             && unreferenced before eid && unreferenced after eid) changed true
-        then Weak.set cached.db 0 (Some after)
-      end) !cache
-
 let project ?read_rows ?actor cache ~graph ~now ~force db =
   let read_rows = Option.value ~default:(rows ?actor) read_rows in
   let day = Cache_model.journal_day_for_ms now in
