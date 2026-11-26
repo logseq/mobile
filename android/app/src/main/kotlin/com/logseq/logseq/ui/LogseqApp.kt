@@ -301,6 +301,7 @@ private fun AudioRecordingDialog(recorder: com.logseq.logseq.AndroidAudioRecorde
 private fun DeleteConfirmationDialog() {
     val request = LogseqDialogs.deleteConfirmation ?: return
     AlertDialog(
+        modifier = androidx.compose.ui.Modifier.semantics { testTagsAsResourceId = true },
         onDismissRequest = { request.result.complete(false) },
         title = { Text(if (request.multiple) "Delete blocks?" else "Delete block?") },
         text = {
