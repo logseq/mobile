@@ -103,9 +103,9 @@ jobs:
         id: cache-week
         run: date -u '+value=%G-W%V' >> "$GITHUB_OUTPUT"
 
-      - name: Cache iOS Simulator Dune outputs
+      - name: Restore iOS Simulator Dune outputs
         id: ios-dune
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/.cache/dune
           key: ios-smoke-dune-v1-${{ runner.arch }}-xcode26.3-${{ steps.cache-week.outputs.value }}
@@ -140,7 +140,7 @@ jobs:
           key: ${{ steps.ios-toolchain.outputs.cache-primary-key }}
 
       - name: Bound the iOS Simulator Dune cache
-        if: steps.ios-dune.outputs.cache-hit != 'true'
+        if: github.ref == 'refs/heads/main' && steps.ios-dune.outputs.cache-hit != 'true'
         run: opam exec -- dune cache trim --size=512MiB
 
       - name: Select an iOS simulator
@@ -155,7 +155,15 @@ jobs:
       - name: Run iOS simulator smoke test
         env:
           LOGSEQ_RUNTIME_CHECK_BOOT_SIMULATOR: "1"
+          LOGSEQ_RUNTIME_CHECK_KEEP_INSTALLED: "1"
         run: python3 apple/Tests/UI/run-simulator-runtime-check.py apple/Tests/UI/offline-smoke.swift OfflineSmokeCheck
+
+      - name: Save iOS Simulator Dune outputs
+        if: github.ref == 'refs/heads/main' && steps.ios-dune.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/dune
+          key: ${{ steps.ios-dune.outputs.cache-primary-key }}
 
   ios-live-e2e:
     name: iOS live e2e

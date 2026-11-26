@@ -163,7 +163,8 @@ import SwiftUI
             # Simulator startup can contend with the Swift compiler on CI.
             print("Waiting for the simulator to boot", flush=True)
             run(["xcrun", "simctl", "bootstatus", SIMULATOR, "-b"])
-        terminate_app(SIMULATOR, bundle)
+        else:
+            terminate_app(SIMULATOR, bundle)
         print("Installing the simulator runtime check", flush=True)
         run(["xcrun", "simctl", "install", SIMULATOR, str(app)])
         launch_environment = os.environ.copy()
@@ -185,7 +186,7 @@ import SwiftUI
         timeout = 180 if testing else (90 if benchmark else int(os.environ.get("LOGSEQ_RUNTIME_CHECK_TIMEOUT", "30")))
         try:
             print("Launching the simulator runtime check", flush=True)
-            output = subprocess.run(["xcrun", "simctl", "launch", "--console", SIMULATOR, bundle],
+            output = subprocess.run(["xcrun", "simctl", "launch", "--console", "--terminate-running-process", SIMULATOR, bundle],
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                     timeout=timeout, env=launch_environment)
             print(output.stdout, flush=True)
