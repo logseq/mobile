@@ -89,8 +89,9 @@ jobs:
 
       - uses: ./.github/actions/ocaml-vendor
 
-      - name: Cache the iOS OCaml toolchain
-        uses: actions/cache@v4
+      - name: Restore the iOS OCaml toolchain
+        id: ios-toolchain
+        uses: actions/cache/restore@v4
         with:
           path: |
             _build/apple-toolchains/ios/host-5.5.0
@@ -107,8 +108,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/dune
-          key: ios-simulator-dune-v2-${{ runner.arch }}-xcode26.3-${{ steps.cache-week.outputs.value }}
-          restore-keys: ios-simulator-dune-v2-${{ runner.arch }}-xcode26.3-
+          key: ios-smoke-dune-v1-${{ runner.arch }}-xcode26.3-${{ steps.cache-week.outputs.value }}
+          restore-keys: |
+            ios-smoke-dune-v1-${{ runner.arch }}-xcode26.3-
+            ios-simulator-dune-v2-${{ runner.arch }}-xcode26.3-
 
       - name: Cache Swift package downloads
         uses: actions/cache@v4
@@ -116,24 +119,40 @@ jobs:
           path: apple/.build/repositories
           key: ios-simulator-swift-downloads-v2-${{ runner.arch }}-xcode26.3-${{ hashFiles('apple/Package.resolved') }}
 
-      - name: Boot the simulator
-        run: |
-          runtime_id=$(xcrun simctl list -j runtimes | python3 -c 'import json,sys; rs=[r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable") and ".iOS-" in r["identifier"]]; print(max(rs, key=lambda r: tuple(map(int, r["version"].split("."))))["identifier"])')
-          udid=$(xcrun simctl create "CI iPhone" com.apple.CoreSimulator.SimDeviceType.iPhone-16 "$runtime_id")
-          xcrun simctl boot "$udid"
-          echo "LOGSEQ_IOS_SIMULATOR=$udid" >> "$GITHUB_ENV"
-
       - name: Build iOS simulator smoke test
         run: opam exec -- ./scripts/build-mobile-ios-simulator.sh
+
+      - name: Save iOS OCaml toolchain
+        # Keep a completed toolchain even if a later compilation failed.
+        if: >-
+          !cancelled() && steps.ios-toolchain.outputs.cache-primary-key != '' &&
+          steps.ios-toolchain.outputs.cache-hit != 'true' &&
+          hashFiles('_build/apple-toolchains/ios/host-5.5.0/.logseq-toolchain-complete') != '' &&
+          hashFiles('_build/apple-toolchains/ios/arm64-apple-ios17.0-simulator-5.5.0/.logseq-toolchain-complete') != '' &&
+          hashFiles('_build/apple-toolchains/ios/libffi-arm64-apple-ios17.0-simulator/.libffi-*-complete') != '' &&
+          hashFiles('_build/apple-toolchains/ios/libffi-arm64-apple-ios17.0-simulator/lib/libffi.a') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            _build/apple-toolchains/ios/host-5.5.0
+            _build/apple-toolchains/ios/arm64-apple-ios17.0-simulator-5.5.0
+            _build/apple-toolchains/ios/libffi-arm64-apple-ios17.0-simulator
+          key: ${{ steps.ios-toolchain.outputs.cache-primary-key }}
 
       - name: Bound the iOS Simulator Dune cache
         if: steps.ios-dune.outputs.cache-hit != 'true'
         run: opam exec -- dune cache trim --size=512MiB
 
-      - name: Run iOS simulator smoke test
+      - name: Boot the simulator
+        # Keep simulator startup from competing with the native and Swift builds.
         run: |
-          xcrun simctl bootstatus "$LOGSEQ_IOS_SIMULATOR" -b
-          python3 apple/Tests/UI/run-simulator-runtime-check.py apple/Tests/UI/offline-smoke.swift OfflineSmokeCheck
+          runtime_id=$(xcrun simctl list -j runtimes | python3 -c 'import json,sys; rs=[r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable") and ".iOS-" in r["identifier"]]; print(max(rs, key=lambda r: tuple(map(int, r["version"].split("."))))["identifier"])')
+          udid=$(xcrun simctl create "CI iPhone" com.apple.CoreSimulator.SimDeviceType.iPhone-16 "$runtime_id")
+          echo "LOGSEQ_IOS_SIMULATOR=$udid" >> "$GITHUB_ENV"
+          xcrun simctl bootstatus "$udid" -b
+
+      - name: Run iOS simulator smoke test
+        run: python3 apple/Tests/UI/run-simulator-runtime-check.py apple/Tests/UI/offline-smoke.swift OfflineSmokeCheck
 
   ios-live-e2e:
     name: iOS live e2e
