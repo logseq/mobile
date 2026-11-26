@@ -34,7 +34,8 @@ appId: com.logseq.logseq
     id: "toggle.settings.tab.flashcards"
 - assertVisible:
     id: "toggle.settings.tab.graphs"
-- tapOn: "Settings"
+- tapOn:
+    id: "button.connection.cancel"
 - assertVisible:
     id: "screen.settings"
 - scrollUntilVisible:
