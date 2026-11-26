@@ -865,6 +865,8 @@ let outliner_action_context session context message =
       | _ -> blocks) [] missing in
     So.with_extra_blocks context extra, metadata || extra <> []
 
+let search_result_page_size = 20
+
 let search_page session ?journal_day ~offset ~limit query =
   let h = host session in
   let journal_day =
@@ -894,10 +896,17 @@ let rec changes_title = function
 let refresh_retained_search session =
   let current = state session in
   if current.search_result_pages <> [] && not (String_kit.is_blank current.search_query) then (
-    let found, has_more = search_page session ?journal_day:current.search_journal_day
-      ~offset:0 ~limit:(max 20 current.search_result_count) current.search_query in
-    session.Types.state := {current with search_result_pages = [found];
-      search_result_count = List.length found; search_has_more = has_more})
+    let target_count = max search_result_page_size current.search_result_count in
+    let rec refresh pages offset =
+      let limit = min search_result_page_size (target_count - offset) in
+      let found, has_more = search_page session ?journal_day:current.search_journal_day
+        ~offset ~limit current.search_query in
+      let count = offset + List.length found in
+      let pages = found :: pages in
+      if has_more && count > offset && count < target_count then refresh pages count
+      else pages, count, has_more in
+    let search_result_pages, search_result_count, search_has_more = refresh [] 0 in
+    session.Types.state := {current with search_result_pages; search_result_count; search_has_more})
 
 let dispatch_outliner_event session payload =
   match Rpc.outliner_message payload with
@@ -3051,7 +3060,7 @@ let rec dispatch session action payload =
     let valid = offset = 0 || (offset = s.search_result_count && query = s.search_query) in
     let found, has_more =
       if not valid || String_kit.is_blank query then [], false
-      else search_page session ?journal_day ~offset ~limit:20 query in
+      else search_page session ?journal_day ~offset ~limit:search_result_page_size query in
     if valid then session.Types.state :=
       { !(session.state) with search_query = query; search_journal_day = journal_day; search_has_more = has_more;
         search_result_pages = (if offset = 0 then [found] else found :: s.search_result_pages);

@@ -511,7 +511,14 @@ let page_rename_updates_lookup_search_and_references () =
 
 let retained_search_shows_saved_block_title () =
   let old_title = "Searchable original" and new_title = "Searchable edited" in
-  let db = Ds.db_with [put Q.alpha "block/title" (Ds.String old_title)] (R.fixture ()) in
+  let extra = List.init 121 (fun index ->
+    let uuid = Printf.sprintf "60000000-0000-4000-8000-%012d" index in
+    [Ds.Add (Ds.Entity_id (960000 + index), "block/uuid", Ds.Uuid uuid);
+     put uuid "block/title" (Ds.String (Printf.sprintf "Searchable result %03d" index));
+     put uuid "block/page" (Ds.Ref_to (Q.ref_uuid Q.page));
+     put uuid "block/parent" (Ds.Ref_to (Q.ref_uuid Q.page));
+     put uuid "block/order" (Ds.String (Printf.sprintf "z%03d" index))]) |> List.concat in
+  let db = Ds.db_with (put Q.alpha "block/title" (Ds.String old_title) :: extra) (R.fixture ()) in
   Graph_runtime_test.with_search_runtime db (fun _ _ runtime ->
     let session = Rpc_session.create_session {Rpc_session.default_options with
       load_graph_catalog = Some (fun () -> Some Rpc_test.plain_graph_catalog);
@@ -530,19 +537,32 @@ let retained_search_shows_saved_block_title () =
       List.find_map (fun hit ->
         if member "uuid" hit = `String Q.alpha then Some (member "title" hit) else None)
         (items "searchResults" response) in
-    check_eq (title (send "searchNodes" "Searchable")) (Some (`String old_title));
+    let first = send "searchNodes" "Searchable" in
+    let rec load hits response =
+      if member "searchHasMore" response <> `Bool true then hits
+      else
+        let page = send "searchNodesPage" (J.to_string (`Assoc [
+          "query", `String "Searchable"; "offset", `Int (List.length hits)])) in
+        load (hits @ items "searchResults" page) page in
+    let loaded = load (items "searchResults" first) first in
+    check ~msg:"The loaded window exceeds the index page cap" (List.length loaded > 100);
+    check_eq (title (`Assoc ["searchResults", `List loaded])) (Some (`String old_title));
     ignore (send "openNode" (J.to_string (`Assoc ["uuid", `String Q.alpha; "reveal", `Bool true])));
     let event fields = ignore (send "outlinerEvent" (J.to_string (`Assoc fields))) in
     event ["type", `String "tapBlock"; "uuid", `String Q.alpha];
     event ["type", `String "textChanged"; "uuid", `String Q.alpha;
       "title", `String new_title; "caretUTF16Offset", `Int (String.length new_title)];
     event ["type", `String "toolbar"; "action", `String "hideKeyboard"];
-    let hits, _ = Graph_runtime.search_page runtime ~offset:0 ~limit:20 "Searchable" in
+    let hits, _ = Graph_runtime.search_page runtime ~offset:0 ~limit:20 "edited" in
     check ~msg:"the saved block is already visible in the search index"
       (List.exists (fun (hit : Search_index.indexed_search_hit) ->
         hit.uuid = Q.alpha && hit.title = new_title) hits);
+    let back = send "closeNode" "" in
+    check_eq ~msg:"Back preserves the loaded search window" (List.length (items "searchResults" back))
+      (List.length loaded);
     check_eq ~msg:"Back returns the retained query with the saved block title"
-      (title (send "closeNode" "")) (Some (`String new_title)))
+      (title back) (Some (`String new_title));
+    check_eq (member "searchHasMore" back) (`Bool false))
 
 let builtin_pages_hide_delete_and_reject_deletion_requests () =
   let base = R.fixture () in
