@@ -863,6 +863,40 @@ let outliner_action_context session context message =
       | _ -> blocks) [] missing in
     So.with_extra_blocks context extra, metadata || extra <> []
 
+let search_page session ?journal_day ~offset ~limit query =
+  let h = host session in
+  let journal_day =
+    let formatted_day = Option.bind (query_db session) (fun db ->
+      Dev_query.Date_time_util.journal_title_to_int ~formatters:[Journal.format db] (String.trim query)) in
+    match formatted_day with Some _ -> formatted_day | None -> journal_day in
+  match h.Types.graph_search_page with
+  | Some search -> search ?journal_day ~offset ~limit query
+  | None ->
+    let all = match h.Types.graph_search with Some search -> search query | None -> [] in
+    let journal = Option.bind journal_day (fun day ->
+      Option.bind (query_db session) (fun db -> Search_index.journal_search_hit db day)) in
+    let all = match journal with None -> all | Some journal ->
+      journal :: List.filter (fun (hit : Search_index.indexed_search_hit) -> hit.uuid <> journal.uuid) all in
+    let rec slice skip remaining acc = function
+      | [] -> List.rev acc, false
+      | _ when remaining = 0 && skip = 0 -> List.rev acc, true
+      | _ :: rest when skip > 0 -> slice (skip - 1) remaining acc rest
+      | hit :: rest -> slice 0 (remaining - 1) (hit :: acc) rest in
+    slice offset limit [] all
+
+let rec changes_title = function
+  | Ops.Save_title _ -> true
+  | Ops.Atomic intents -> List.exists changes_title intents
+  | _ -> false
+
+let refresh_retained_search session =
+  let current = state session in
+  if current.search_result_pages <> [] && not (String_kit.is_blank current.search_query) then (
+    let found, has_more = search_page session ?journal_day:current.search_journal_day
+      ~offset:0 ~limit:(max 20 current.search_result_count) current.search_query in
+    session.Types.state := {current with search_result_pages = [found];
+      search_result_count = List.length found; search_has_more = has_more})
+
 let dispatch_outliner_event session payload =
   match Rpc.outliner_message payload with
   | Error message -> Rpc.failure "invalid_outliner_event" message
@@ -936,6 +970,8 @@ let dispatch_outliner_event session payload =
         (match enqueue_result with
          | Error error -> Rpc.failure "outliner_effect_failed" error
          | Ok () ->
+           if List.exists (fun (operation : Ops.pending_operation) -> changes_title operation.intent) operations then
+             refresh_retained_search session;
            let page_scoped =
              aggregate <> None
              || (operations <> []
@@ -1117,35 +1153,6 @@ let with_object action payload missing handle =
             (action ^ " payload must be an object")))
   | None -> Rpc.failure "invalid_params" missing
 
-let search_page session ?journal_day ~offset ~limit query =
-  let h = host session in
-  let journal_day =
-    let formatted_day = Option.bind (query_db session) (fun db ->
-      Dev_query.Date_time_util.journal_title_to_int ~formatters:[Journal.format db] (String.trim query)) in
-    match formatted_day with Some _ -> formatted_day | None -> journal_day in
-  match h.Types.graph_search_page with
-  | Some search -> search ?journal_day ~offset ~limit query
-  | None ->
-    let all = match h.Types.graph_search with Some search -> search query | None -> [] in
-    let journal = Option.bind journal_day (fun day ->
-      Option.bind (query_db session) (fun db -> Search_index.journal_search_hit db day)) in
-    let all = match journal with None -> all | Some journal ->
-      journal :: List.filter (fun (hit : Search_index.indexed_search_hit) -> hit.uuid <> journal.uuid) all in
-    let rec slice skip remaining acc = function
-      | [] -> List.rev acc, false
-      | _ when remaining = 0 && skip = 0 -> List.rev acc, true
-      | _ :: rest when skip > 0 -> slice (skip - 1) remaining acc rest
-      | hit :: rest -> slice 0 (remaining - 1) (hit :: acc) rest in
-    slice offset limit [] all
-
-let refresh_retained_search session =
-  let current = state session in
-  if current.search_result_pages <> [] && not (String_kit.is_blank current.search_query) then (
-    let found, has_more = search_page session ?journal_day:current.search_journal_day
-      ~offset:0 ~limit:(max 20 current.search_result_count) current.search_query in
-    session.Types.state := {current with search_result_pages = [found];
-      search_result_count = List.length found; search_has_more = has_more})
-
 let stage_result_with ~after_stage session operation_id base_t intent =
   match
     enqueue_semantic session
@@ -1157,8 +1164,6 @@ let stage_result_with ~after_stage session operation_id base_t intent =
       }
   with
   | Ok () ->
-    let rec changes_title = function Ops.Save_title _ -> true
-      | Ops.Atomic intents -> List.exists changes_title intents | _ -> false in
     if changes_title intent then refresh_retained_search session;
     after_stage ();
     snapshot_visible session

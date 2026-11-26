@@ -509,6 +509,41 @@ let page_rename_updates_lookup_search_and_references () =
     let protected_session, _ = R.make_session protected in
     check_eq ~msg:"built-in pages do not expose Rename page" (member "rename" (member "nodeProperties" (result (read protected_session Q.page)))) `Null)
 
+let retained_search_shows_saved_block_title () =
+  let old_title = "Searchable original" and new_title = "Searchable edited" in
+  let db = Ds.db_with [put Q.alpha "block/title" (Ds.String old_title)] (R.fixture ()) in
+  Graph_runtime_test.with_search_runtime db (fun _ _ runtime ->
+    let session = Rpc_session.create_session {Rpc_session.default_options with
+      load_graph_catalog = Some (fun () -> Some Rpc_test.plain_graph_catalog);
+      outliner_projection_limit = Some 32;
+      graph_db = Some (fun () -> Some (Graph_runtime.db runtime));
+      sync_cursor = Some (fun () -> Some (Graph_runtime.state runtime).server_t);
+      stage_operation = Some (Graph_runtime.stage runtime);
+      prepare_operation = Some (Graph_runtime.prepare_sync runtime);
+      graph_node_destination = Some (fun uuid ->
+        Graph_read.node_destination (fun value -> Ok value) (Graph_runtime.db runtime) uuid);
+      graph_page_blocks = Some (fun uuid -> Some (Graph_runtime.blocks_for_page runtime uuid));
+      graph_search_page = Some (Graph_runtime.search_page runtime)}
+      |> Rpc_test.configure_plain_session in
+    let send action payload = result (Rpc_test.dispatch_json session action payload) in
+    let title response =
+      List.find_map (fun hit ->
+        if member "uuid" hit = `String Q.alpha then Some (member "title" hit) else None)
+        (items "searchResults" response) in
+    check_eq (title (send "searchNodes" "Searchable")) (Some (`String old_title));
+    ignore (send "openNode" (J.to_string (`Assoc ["uuid", `String Q.alpha; "reveal", `Bool true])));
+    let event fields = ignore (send "outlinerEvent" (J.to_string (`Assoc fields))) in
+    event ["type", `String "tapBlock"; "uuid", `String Q.alpha];
+    event ["type", `String "textChanged"; "uuid", `String Q.alpha;
+      "title", `String new_title; "caretUTF16Offset", `Int (String.length new_title)];
+    event ["type", `String "toolbar"; "action", `String "hideKeyboard"];
+    let hits, _ = Graph_runtime.search_page runtime ~offset:0 ~limit:20 "Searchable" in
+    check ~msg:"the saved block is already visible in the search index"
+      (List.exists (fun (hit : Search_index.indexed_search_hit) ->
+        hit.uuid = Q.alpha && hit.title = new_title) hits);
+    check_eq ~msg:"Back returns the retained query with the saved block title"
+      (title (send "closeNode" "")) (Some (`String new_title)))
+
 let builtin_pages_hide_delete_and_reject_deletion_requests () =
   let base = R.fixture () in
   let today = Cache_model.journal_day_for_ms (Session_types.now_ms ()) in
@@ -1010,6 +1045,7 @@ let cases = [
   case "Rename page uses the protected shared native editor" native_page_rename_uses_shared_editor;
   case "page rename guards match master names, built-ins and duplicate scopes" page_rename_guards_follow_master;
   case "page rename updates lookup, live search, references and sync" page_rename_updates_lookup_search_and_references;
+  case "retained search shows saved block title after Back" retained_search_shows_saved_block_title;
   case "dates and datetimes display, edit and clear without epoch labels" temporal_properties_display_and_edit;
   case "properties follow node navigation without expanding ordinary blocks" projection_and_navigation;
   case "inherited empty properties, hidden metadata and closed values" inherited_empty_and_closed_values;
