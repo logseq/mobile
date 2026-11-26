@@ -3079,6 +3079,38 @@ let is_datalog_clause (e : query_form) : bool =
           && String.length s > 0 && s.[0] = '?'
       | _ -> false)
 
+let canonicalize_entity_refs resolve source =
+  let marker_prefix = "logseq.mobile/query-ref-" in
+  if String_kit.includes ~sub:marker_prefix source then source
+  else
+    let next = ref 0 in
+    let marker () =
+      let name = marker_prefix ^ string_of_int !next in
+      incr next;
+      name in
+    let marked = rewrite_unquoted_page_refs (fun _ -> Some (" :" ^ marker () ^ " ")) source in
+    if !next = 0 then source
+    else match (try Some (Parser.read_edn (pre_transform marked)) with _ -> None) with
+      | None -> source
+      | Some form ->
+        (* Only boolean expressions recurse into DSL operands. Other predicates
+           interpret page-shaped arguments as names, dates, or scalar values. *)
+        let refs = Hashtbl.create !next in
+        let rec collect = function
+          | QueryFormKeyword name when String.starts_with ~prefix:marker_prefix name -> Hashtbl.replace refs name ()
+          | form ->
+            (match coll_elems form with
+             | (QueryFormSymbol op | QueryFormKeyword op) :: rest
+                 when List.mem (Unicode.lowercase (name_of_form (sym op))) ["and"; "or"; "not"] ->
+               List.iter collect rest
+             | _ -> ()) in
+        collect form;
+        if Hashtbl.length refs = 0 then source
+        else (
+          next := 0;
+          rewrite_unquoted_page_refs (fun name ->
+            if Hashtbl.mem refs (marker ()) then resolve name else None) source)
+
 let rec build_query (e : query_form) (env : env) (level : int)
     (current_filter : string option) : built option =
   let fe : query_form option =

@@ -1123,10 +1123,30 @@ let existing_query_definition_preserves_string_literals () =
     check_eq (Graph_read.unique_named_uuid false db "Query literal only") None)
 
 let simple_query_keeps_page_reference_after_rename () =
-  R.with_runtime (fun session runtime _ ->
+  R.with_runtime (fun session runtime conn ->
+    ignore (Ds.transact_conn conn [
+      put Q.page "block/tags" (Ds.Ref_to (Ds.Ident "logseq.class/Journal"));
+      put Q.page "block/journal-day" (Ds.Int64 20261001L);
+      put R.day_a "block/name" (Ds.String "october 1st, 2026");
+      put R.text_a "block/title" (Ds.String "Workspace")]);
+    Graph_runtime.rebase runtime (Graph_runtime.state runtime).server_t [] [];
     let expected = Pending_ops.semantic_value_json (Pending_ops.Ref_uuid Q.definition) in
-    ignore (save_query_source session Q.owner "#Project" expected "(or [[Project]] [[Missing Query Page]])");
     let query () = member "query" (Q.dispatch session "queryBlock" Q.owner) in
+    let current_source = ref "#Project" in
+    List.iter (fun (source, expected_hit) ->
+      ignore (save_query_source session Q.owner !current_source expected source);
+      let db = Graph_runtime.db runtime in
+      let definition = Option.get (Ds.entid db "block/uuid" (Ds.Uuid Q.definition)) in
+      current_source := Option.get (Graph_read.string_value (Graph_read.value db definition "block/title"));
+      let response = query () in
+      check_eq ~msg:source (member "error" response) `Null;
+      check ~msg:("Saved query matches the expected block: " ^ source)
+        (List.mem expected_hit (Q.row_ids response))) [
+      "(page [[Workspace]])", Q.alpha;
+      "(between [[October 1st, 2026]] [[October 1st, 2026]])", Q.alpha;
+      ("(property :" ^ R.summary ^ " [[Workspace]])"), Q.alpha;
+      "[[Project]]", Q.alpha];
+    ignore (save_query_source session Q.owner !current_source expected "(or [[Project]] [[Missing Query Page]])");
     let before = Q.row_ids (query ()) in
     check ~msg:"The query finds blocks referencing the original page" (List.mem Q.alpha before);
     check_eq (Graph_read.unique_named_uuid false (Graph_runtime.db runtime) "Missing Query Page") None;
