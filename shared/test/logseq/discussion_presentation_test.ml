@@ -75,7 +75,19 @@ let task_comment_links_follow_local_and_confirmed_renames () =
     expect_label "See Confirmed title" confirmed;
     check_eq confirmed (project true))
 
+let leaving_notifications_cancels_an_unresolved_push () =
+  let graph = Q.page and id = Q.alpha in
+  let current = {(Model.initial ()) with selected_graph_id = Some graph} in
+  let opened = Model.update current (Model.OpenPushedDiscussion (graph, id)) in
+  check_eq opened.destination Model.NotificationsDestination;
+  check_eq opened.pending_push_route (Some (graph, id));
+  List.iter (fun destination ->
+    let left = Model.update opened destination in
+    check_eq left.pending_push_route None)
+    [Model.ShowJournals; Model.ShowTasks]
+
 let cases = [
   case "discussion presentation" comments_and_reactions_have_distinct_presentation;
+  case "leaving Notifications cancels an unresolved push" leaving_notifications_cancels_an_unresolved_push;
   case "task comment UUID links follow local and confirmed renames" task_comment_links_follow_local_and_confirmed_renames;
 ]

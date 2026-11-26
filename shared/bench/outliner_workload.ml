@@ -82,7 +82,7 @@ let result raw =
   if member "ok" response <> `Bool true then failwith raw;
   member "result" response
 
-let with_session ?show_journal_tasks db f =
+let with_session ?show_journal_tasks ?show_notifications db f =
   let path = Filename.temp_file "outliner-workload" ".sqlite" in
   let checkpoint_path = path ^ ".checkpoint" in
   let host = Mobile_session.create (fun _ -> failwith "Unexpected crypto call in the plaintext fixture") in
@@ -103,6 +103,7 @@ let with_session ?show_journal_tasks db f =
       let session = Session.create_session ~journal_tasks {Session.default_options with
         outliner_projection_limit = options.outliner_projection_limit;
         show_journal_tasks = options.show_journal_tasks;
+        show_notifications;
         load_graph_catalog = Some (fun () -> Some {|{"graphs":[{"graph-id":"outliner-perf","graph-name":"Outliner benchmark","graph-e2ee?":false,"graph-ready-for-use?":true}]}|});
         sync_cursor = options.sync_cursor;
         apply_sync_event = options.apply_sync_event;

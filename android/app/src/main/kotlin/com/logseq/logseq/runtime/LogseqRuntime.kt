@@ -27,7 +27,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
@@ -50,8 +49,9 @@ internal class LogseqRuntime(
     private val scope = CoroutineScope(parentScope.coroutineContext + runtimeJob)
     private var ownsCore = false
     private var widgetRefreshJob: Job? = null
-    private var clipboardImageJob: Job? = null
+    private var activityStopped = false
     private var widgetRefreshPending = false
+    private var clipboardImageJob: Job? = null
 
     val platformServices = AndroidPlatformServices(activity)
     val authentication = CognitoAuthProvider(activity.applicationContext)
@@ -323,7 +323,6 @@ internal class LogseqRuntime(
     }.await()
 
     fun onLifecycleResumed(resumed: Boolean) {
-        if (resumed && ownsCore) scheduleWidgetRefresh()
         appIsForeground = resumed
         updateCatalogPolling("lifecycle")
         ensureGraphEventsSync()
@@ -452,7 +451,6 @@ internal class LogseqRuntime(
     // snapshot; cache them so the WebSocket loop can pull entity changes
     // without holding client-side state of its own (iOS snapshot fields).
     private fun trackSyncState(response: String) {
-        scheduleWidgetRefresh()
         graphSyncEligibility.update(response)
         if (!graphSyncEligibility.canSync(hasAuthenticatedSession, hasOpenGraph)) {
             pendingSyncRequested = false
@@ -469,12 +467,22 @@ internal class LogseqRuntime(
         }
     }
 
-    private fun scheduleWidgetRefresh() {
+    fun onActivityStarted() {
+        activityStopped = false
+        widgetRefreshJob?.cancel()
+    }
+
+    fun onActivityStopped() {
+        activityStopped = true
+        scheduleStoppedWidgetRefresh()
+    }
+
+    private fun scheduleStoppedWidgetRefresh() {
+        if (!activityStopped || !ownsCore) return
         widgetRefreshPending = true
         if (widgetRefreshJob?.isActive == true) return
         widgetRefreshJob = scope.launch {
-            while (widgetRefreshPending) {
-                delay(750)
+            while (activityStopped && widgetRefreshPending) {
                 widgetRefreshPending = false
                 AndroidWidgetContent.refresh(activity.applicationContext, bridge::callCore)
             }
@@ -711,6 +719,7 @@ internal class LogseqRuntime(
         }
         val resolution = executor.execute(effect)
         if (resolution is NativeEffectResolution.CoreResponse) trackSyncState(resolution.response)
+        if (effect.kind == "save-outliner-editing" && resolution.succeeded) scheduleStoppedWidgetRefresh()
         if (deletingOpenGraph) {
             if (resolution.succeeded) {
                 platformEffects.persistSelectedGraphId("")

@@ -7,7 +7,11 @@ final class EditorModel: ObservableObject {
     @Published var blockID = "original"
     @Published var inputPolicy = "{}"
     @Published var caret = "First block".utf16.count
+    @Published var selectionRevision = 0
     var returns = 0
+    var submittedTitles: [String] = []
+    var backspaceSources: [String] = []
+    var policyAfterSplit: String?
     var pendingCarets: [Int]?
     func moveCaret(_ caret: Int) {
         if pendingCarets != nil {
@@ -18,9 +22,19 @@ final class EditorModel: ObservableObject {
     }
     func enter(_ title: String, _ caret: Int) {
         returns += 1
+        submittedTitles.append(title)
         self.title = String((title as NSString).substring(from: caret))
         self.caret = 0
         blockID = "new-\(returns)"
+        if let policyAfterSplit { inputPolicy = policyAfterSplit }
+        selectionRevision += 1
+    }
+    func backspace(_ title: String, _ selectionLength: Int) {
+        backspaceSources.append(blockID)
+        blockID = "merged-\(backspaceSources.count)"
+        self.title = title
+        self.caret = 0
+        selectionRevision += 1
     }
 }
 
@@ -37,9 +51,10 @@ private struct EditorHost: View {
                 BulletMarker().frame(width: 24, height: 24)
                 OutlinerInlineEditor(text: model.title, blockID: model.blockID,
                     desiredCaretUTF16Offset: model.caret, inputPolicy: model.inputPolicy,
+                    selectionRevision: model.selectionRevision,
                     onTextChange: { model.title = $0; model.caret = $1 },
                     onReturn: model.enter,
-                    onBackspace: { _, _ in },
+                    onBackspace: model.backspace,
                     onCaretChange: model.moveCaret)
             }
             Spacer()
@@ -116,6 +131,55 @@ struct ReturnHandoffCheck {
         if model.returns != beforeRapid + 1 || model.title != "\nAfter" || editor().selectedRange.location != 6 {
             print("FAIL: rapid Enter, Shift+Enter, and typing must preserve the new block text; returns=\(model.returns) expected=\(beforeRapid + 1) title=\(model.title.debugDescription) caret=\(editor().selectedRange.location)"); failures += 1
         }
+        model.title = "First"; model.blockID = "burst"; model.caret = 5
+        await settle()
+        let beforeBurst = model.returns
+        type("\n", in: editor())
+        type("Second", in: editor())
+        for _ in 0..<7 { type("\n", in: editor()) }
+        for _ in 0..<20 where model.returns < beforeBurst + 8 { await settle() }
+        let submitted = Array(model.submittedTitles.dropFirst(beforeBurst))
+        if submitted != ["First", "Second", "", "", "", "", "", ""] || !model.title.isEmpty {
+            print("FAIL: a burst of eight Return presses must split each acknowledged block in order; titles=\(submitted)")
+            failures += 1
+        }
+        model.title = "Alpha"; model.blockID = "split-merge"; model.caret = 0
+        model.selectionRevision += 1
+        await settle()
+        let beforeMerge = model.returns
+        type("\n", in: editor())
+        type("\n", in: editor())
+        type("", in: editor())
+        for _ in 0..<20 where model.backspaceSources.isEmpty { await settle() }
+        if model.returns != beforeMerge + 2 || model.backspaceSources != ["new-\(beforeMerge + 2)"] {
+            print("FAIL: both Returns must precede Backspace on the new block; sources=\(model.backspaceSources)")
+            failures += 1
+        }
+        model.title = ""; model.blockID = "typed-backspace"; model.caret = 0
+        model.selectionRevision += 1
+        await settle()
+        type("\n", in: editor())
+        type("x😀", in: editor())
+        type("", in: editor())
+        await settle()
+        if model.title != "x" || model.backspaceSources.count != 1 {
+            print("FAIL: buffered Backspace must delete one character after buffered typing")
+            failures += 1
+        }
+        model.inputPolicy = #"{"multiline":true,"code":true}"#
+        model.title = "x^2"; model.blockID = "code-to-plain"; model.caret = 3
+        model.selectionRevision += 1
+        model.policyAfterSplit = "{}"
+        await settle()
+        let beforeCodeSplit = model.returns
+        shiftEnter()
+        type("\n", in: editor())
+        for _ in 0..<20 where model.returns < beforeCodeSplit + 2 { await settle() }
+        if model.returns != beforeCodeSplit + 2 || !model.title.isEmpty {
+            print("FAIL: Return after splitting code must use the plain block's input policy")
+            failures += 1
+        }
+        model.policyAfterSplit = nil
         for code in [true, false] {
             model.inputPolicy = "{\"multiline\":\(code),\"code\":\(code)}"
             model.title = "x^2"; model.blockID = code ? "code" : "math"; model.caret = 3

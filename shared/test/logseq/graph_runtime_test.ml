@@ -881,6 +881,22 @@ let search_index_incrementally_follows_edits_and_splits () =
            (fun hit -> hit.Search_index.uuid = "search-new")
            (Runtime.search current "Tail")))
 
+let search_ack_keeps_already_indexed_rows () =
+  with_search_runtime (base_db "Old") (fun search_path conn current ->
+    let operation = save_title "search-ack" "Old" "New title" in
+    check (is_ok (Runtime.stage current operation));
+    Graph_sqlite.with_search_db search_path (fun connection ->
+      List.iter (fun event ->
+        check (Sqlite3.exec connection
+          ("CREATE TRIGGER reject_search_" ^ event ^ " BEFORE " ^ event ^
+           " ON blocks BEGIN SELECT RAISE(ABORT, 'already indexed'); END") = Sqlite3.Rc.OK))
+        ["UPDATE"; "DELETE"]);
+    ignore (Ds.transact_conn conn [add 10 "block/title" (Ds.String "New title")]);
+    Runtime.rebase current 43 ["search-ack"] ["block"];
+    check (Runtime.state current).search_index_is_fresh;
+    check (List.exists (fun (hit : Search.indexed_search_hit) -> hit.uuid = "block")
+      (Runtime.search current "New title")))
+
 let unavailable_search_index_preserves_projection_and_recovers () =
   List.iter
     (fun action ->
@@ -2015,6 +2031,7 @@ let cases =
     case "incomplete search index is not reused after restart" incomplete_search_index_is_not_reused_after_restart;
     case "search index incrementally follows edits and splits"
       search_index_incrementally_follows_edits_and_splits;
+    case "RTC acknowledgement keeps already indexed rows" search_ack_keeps_already_indexed_rows;
     case "unavailable search index preserves projection and recovers"
       unavailable_search_index_preserves_projection_and_recovers;
     case "remote search refresh preserves unrelated index rows"

@@ -111,10 +111,9 @@ enum InlineEditorHandoffMerge {
         desiredCaretUTF16Offset: Int?,
         bufferedTyping: String
     ) -> (text: String, caretUTF16Offset: Int) {
-        let caret = min(max(desiredCaretUTF16Offset ?? modelText.count, 0), modelText.count)
-        guard !bufferedTyping.isEmpty else { return (modelText, caret) }
         let value = modelText as NSString
         let nsCaret = min(max(desiredCaretUTF16Offset ?? value.length, 0), value.length)
+        guard !bufferedTyping.isEmpty else { return (modelText, nsCaret) }
         let text = value.replacingCharacters(
             in: NSRange(location: nsCaret, length: 0),
             with: bufferedTyping

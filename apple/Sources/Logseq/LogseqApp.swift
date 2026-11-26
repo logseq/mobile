@@ -110,7 +110,6 @@ public struct LogseqRootView : View {
             }
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }
-                runtime.refreshWidgetsOnActivation()
                 while !Task.isCancelled {
                     await runtime.refreshLocalJournalDay()
                     do { try await Task.sleep(for: .seconds(30)) } catch { return }
@@ -394,9 +393,8 @@ public struct LogseqRootView : View {
             platformCommandHandler: platformCommandRouter
         )
         self.lgRuntime = lgRuntime
-        lgRuntime.didApplyCoreResponse = { [weak self] in
-            guard let self, self.didFinishLaunchWork else { return }
-            self.widgetContent.scheduleRefresh()
+        lgRuntime.didSaveOutlinerEditing = { [weak self] in
+            self?.widgetContent.requestBackgroundRefresh()
         }
         responseRelay.apply = { [weak lgRuntime] response in
             do {
@@ -514,7 +512,6 @@ public struct LogseqRootView : View {
         }
         didFinishLaunchWork = true
         deliverPendingDiscussionPush()
-        refreshWidgetsOnActivation()
         await store.runPendingSyncLoop()
     }
 
@@ -909,11 +906,6 @@ public struct LogseqRootView : View {
         await widgetContent.refresh(forceRandomReload: true)
     }
 
-    func refreshWidgetsOnActivation() {
-        guard didFinishLaunchWork else { return }
-        widgetContent.scheduleRefresh(forceTaskReload: true)
-    }
-
     public func resumePendingWidgetRefresh() {
         widgetContent.protectedDataDidBecomeAvailable()
     }
@@ -1041,8 +1033,17 @@ public struct LogseqRootView : View {
     }
 
     public func runExclusiveBackgroundSync() async -> Bool {
-        await syncCoordinator.runBackground {
-            await LogseqLogseqRuntime.shared.syncFromStoredConnection()
+        await syncCoordinator.runBackground { [self] in
+            await waitForLocalLaunchLoad()
+            guard !Task.isCancelled else { return false }
+            widgetContent.requestBackgroundRefresh()
+            let synced = await syncFromStoredConnection()
+            guard !Task.isCancelled else { return false }
+            // The persisted projection can change without a new server cursor.
+            // The core reuses the widget snapshot if its database is unchanged.
+            widgetContent.requestBackgroundRefresh()
+            await widgetContent.waitForPendingRefresh()
+            return synced
         }
     }
 
