@@ -89,8 +89,8 @@ jobs:
 
       - uses: ./.github/actions/ocaml-vendor
 
-      - name: Restore iOS OCaml toolchain
-        uses: actions/cache/restore@v4
+      - name: Cache the iOS OCaml toolchain
+        uses: actions/cache@v4
         with:
           path: |
             _build/apple-toolchains/ios/host-5.5.0
@@ -98,15 +98,20 @@ jobs:
             _build/apple-toolchains/ios/libffi-arm64-apple-ios17.0-simulator
           key: apple-toolchain-${{ runner.os }}-xcode26.3-ios-simulator-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
 
-      - name: Restore iOS Simulator Dune cache
-        uses: actions/cache/restore@v4
+      - name: Select build cache week
+        id: cache-week
+        run: date -u '+value=%G-W%V' >> "$GITHUB_OUTPUT"
+
+      - name: Cache iOS Simulator Dune outputs
+        id: ios-dune
+        uses: actions/cache@v4
         with:
           path: ~/.cache/dune
-          key: ios-simulator-dune-v2-${{ runner.arch }}-xcode26.3-${{ hashFiles('logseq.opam.locked') }}
+          key: ios-simulator-dune-v2-${{ runner.arch }}-xcode26.3-${{ steps.cache-week.outputs.value }}
           restore-keys: ios-simulator-dune-v2-${{ runner.arch }}-xcode26.3-
 
-      - name: Restore Swift package downloads
-        uses: actions/cache/restore@v4
+      - name: Cache Swift package downloads
+        uses: actions/cache@v4
         with:
           path: apple/.build/repositories
           key: ios-simulator-swift-downloads-v2-${{ runner.arch }}-xcode26.3-${{ hashFiles('apple/Package.resolved') }}
@@ -120,6 +125,10 @@ jobs:
 
       - name: Build iOS simulator smoke test
         run: opam exec -- ./scripts/build-mobile-ios-simulator.sh
+
+      - name: Bound the iOS Simulator Dune cache
+        if: steps.ios-dune.outputs.cache-hit != 'true'
+        run: opam exec -- dune cache trim --size=512MiB
 
       - name: Run iOS simulator smoke test
         run: |

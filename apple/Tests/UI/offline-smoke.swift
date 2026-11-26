@@ -113,33 +113,30 @@ import LogseqModel
         try backend.performExtensionEvent(node: row, name: "edit", values: [
             "uuid": .string(firstCapture.uuid), "caret-utf16-offset": .int(firstCapture.title.utf16.count),
         ])
-        let editor = try await waitFor("native outliner editor") { () -> UITextView? in
-            guard let view = focusedInput(in: window) as? UITextView,
-                  view.accessibilityIdentifier == "field.outliner.block.\(firstCapture.uuid)" else { return nil }
-            return view
-        }
-        guard editor.delegate?.textView?(editor, shouldChangeTextIn: editor.selectedRange, replacementText: "\n") == false else {
-            throw failure("The outliner inserted a newline instead of creating a block")
-        }
-        var edited = try await waitFor("first new journal block") {
-            let current = try await currentSnapshot()
-            return current.outlinerRows.count == before.outlinerRows.count + 1 ? current : nil
-        }
-        for count in 2...3 {
-            let block = try require(edited.outlinerState.editing?.uuid, "Return did not move editing to the new block")
-            let nextEditor = try await waitFor("new outliner editor") { () -> Int? in
-                guard let id = extensionNode("outliner-editor"),
-                      case let .string(uuid) = backend.extensionModel(id: id)?.property("block-id"),
-                      uuid == block else { return nil }
-                return id
+        func focusedEditor(in view: UIView, blockID: String) -> UITextView? {
+            if let editor = view as? UITextView, editor.isFirstResponder,
+               editor.accessibilityIdentifier == "field.outliner.block.\(blockID)" {
+                return editor
             }
-            try backend.performExtensionEvent(node: nextEditor, name: "return", values: [
-                "title": .string(""), "caret-utf16-offset": .int(0),
-            ])
+            return view.subviews.lazy.compactMap { focusedEditor(in: $0, blockID: blockID) }.first
+        }
+        var edited = before
+        var currentBlockID = firstCapture.uuid
+        for count in 1...3 {
+            let editor = try await waitFor("native editor for \(currentBlockID)") {
+                focusedEditor(in: window, blockID: currentBlockID)
+            }
+            guard editor.delegate?.textView?(editor, shouldChangeTextIn: editor.selectedRange, replacementText: "\n") == false else {
+                throw failure("The outliner inserted a newline instead of creating a block")
+            }
             edited = try await waitFor("journal block \(count)") {
                 let current = try await currentSnapshot()
                 return current.outlinerRows.count == before.outlinerRows.count + count ? current : nil
             }
+            currentBlockID = try require(edited.outlinerState.editing?.uuid, "Return did not move editing to the new block")
+        }
+        _ = try await waitFor("native focus after the third Return") {
+            focusedEditor(in: window, blockID: currentBlockID)
         }
         let journalRows = edited.outlinerRows.filter { $0.block.pageId == firstCapture.pageId }
         let titles = journalRows.map(\.block.title)
@@ -158,12 +155,20 @@ import LogseqModel
         try backend.performExtensionEvent(node: search, name: "query-changed", values: ["query": .string(captures[0])])
         _ = try await waitFor("search result for the capture") { node("search.result.\(firstCapture.uuid)") }
         try backend.performExtensionEvent(node: search, name: "dismiss", values: [:])
-        await runtime.drainEffectsForTesting()
+        _ = try await waitFor("search dismissal") {
+            backend.extensionModel(id: search)?.property("presented") == .bool(false) ? true : nil
+        }
         try await press("button.sidebar")
+        let sidebar = try await waitFor("open sidebar") { () -> Int? in
+            guard let id = extensionNode("sidebar-overlay"),
+                  backend.extensionModel(id: id)?.property("open") == .bool(true) else { return nil }
+            return id
+        }
         _ = try await waitFor("sidebar settings") { node("button.sidebar.settings") }
-        let sidebar = try await waitFor("sidebar overlay") { extensionNode("sidebar-overlay") }
         try backend.performExtensionEvent(node: sidebar, name: "close", values: [:])
-        await runtime.drainEffectsForTesting()
+        _ = try await waitFor("closed sidebar") {
+            backend.extensionModel(id: sidebar)?.property("open") == .bool(false) ? true : nil
+        }
         print("PASS: opens and closes search and the sidebar")
 
         runtime.stop()
