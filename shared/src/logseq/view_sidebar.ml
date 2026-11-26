@@ -82,7 +82,7 @@ let sidebar_graph_context_item model_source graph_source send =
 
 let sidebar_graph_dropdown_item model_source graph_source send =
   let graph = sample graph_source in
-  dropdown_menu_item ~size:`sm
+  menu_item ~size:`sm
     ~icon:(reactive (fun model graph -> View_base.icon_of_wire_name (View_base.sidebar_graph_icon_name model graph)) model_source graph_source)
     ~selected:(reactive View_base.sidebar_graph_selected_ model_source graph_source)
     ~text:(reactive View_base.graph_title graph_source)
@@ -135,7 +135,13 @@ let android_graph_switch model_source send : t =
     (* Leave space for the header actions, margins, and chevron. *)
     if current.viewport_width > 0 then max 24 (min 280 (current.viewport_width - 236))
     else 160) model_source in
-  stack
+  custom (fun context parent ->
+    let node = Lui_ui.extension context "centered-popover" in
+    attach context parent node;
+    Lui_ui.on_event context node (function
+      | ExtensionEvent (_, _, "dismiss", _) -> ignore (send Model.DismissGraphMenu)
+      | _ -> ());
+    mount_children context node
     [View_base.with_label_signal (graph_switch_label model_source)
        (button ~variant:`ghost ~min_height:44 ~padding_horizontal:8 ~foreground:"muted-foreground"
           ~text:""
@@ -160,11 +166,9 @@ let android_graph_switch model_source send : t =
                 ~accessibility_identifier:"title.main" []);
            icon ~name:(`app "chevron-down") ~width:16 ~height:16 ~foreground:"muted-foreground" []]);
      if_ ~test:(Signal.map View_base.model_graph_menu_open_ model_source)
-       (dropdown_menu_view (dropdown_menu
-          ~target:(Menu_anchor { side = `below; align = `start; offset = 0. })
-          ~min_width:240 ~accessibility_identifier:"menu.graph-switch"
-          ~style_class:"anchored-popover" ~gap:0 ~on_dismiss:(press send Model.DismissGraphMenu)
-          (sidebar_graph_menu_items keyed_dropdown_menu_item sidebar_graph_dropdown_item model_source send)))]
+       (column ~accessibility_identifier:"menu.graph-switch" ~gap:0
+          (sidebar_graph_menu_items keyed sidebar_graph_dropdown_item model_source send))];
+    node)
 
 let sidebar_destination_row ?(icon_size = 22) context model_source send ~title ~id ~icon ~selected ~action : t =
   let value = View_base.tr (Signal.sample model_source) title in
@@ -185,10 +189,6 @@ let sidebar_destination_row ?(icon_size = 22) context model_source send ~title ~
         text ~value ~font_family:"system-ui" ~font_size:"21" ~font_weight:500
           ~style_class:"single-line" [];
       ]] else [])))
-
-let sidebar_journals_row context model_source send =
-  sidebar_destination_row context model_source send ~title:"Journals" ~id:"journals"
-    ~icon:(`app "calendar") ~selected:View_base.journals_sidebar_selected_ ~action:Model.ShowJournals
 
 let sidebar_flashcards_row context model_source send =
   let icon = `app (if Lui_ui.host context = KotlinHost then "sidebar-flashcards" else "flashcards") in
@@ -271,8 +271,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send ~settings : t =
     if native_sidebar then pages
     else scroll ~grow:1.0 ~accessibility_identifier:"scroll.sidebar.pages" [pages] in
   let content =
-    let shortcuts =
-      (if native_sidebar then [] else [sidebar_journals_row context model_source send]) @ [
+    let shortcuts = [
         if_ ~test:(Signal.map View_base.graphs_tab_visible_ model_source)
           (sidebar_graphs_row context model_source send);
         if_ ~test:(Signal.map View_base.flashcards_tab_visible_ model_source)

@@ -21,8 +21,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -114,9 +112,31 @@ fun logseqExtensionRegistry(
     registerProperties()
     registerTaskDateSheet()
     registerReactionSearchInput()
+    registerFilterSearchField()
     registerComposerTaskToggle()
     registerPdfWorkspace(loadImage)
     registerSidebarOverlay()
+    registerCenteredPopover()
+    registerTweak(
+        "tasks-menu-material",
+        "lui-tweak-v1|19:tasks-menu-material|profiles:android/kotlin|properties:",
+        properties = emptyList(),
+    ) {
+        val colors = MaterialTheme.colorScheme
+        MaterialTheme(colorScheme = colors.copy(
+            tertiaryContainer = Color.Transparent,
+            onTertiaryContainer = colors.onSurface,
+        )) { Children() }
+    }
+    registerTweak(
+        "settings-material-surface",
+        "lui-tweak-v1|25:settings-material-surface|profiles:android/kotlin|properties:",
+        properties = emptyList(),
+    ) {
+        val colors = MaterialTheme.colorScheme
+        val group = luiThemeColor("settings-group") ?: colors.surface
+        MaterialTheme(colorScheme = colors.copy(surface = group)) { Children() }
+    }
     register(
         "outliner-row-swipe",
         "lui-extension-v1|18:outliner-row-swipe|profiles:android/kotlin|standard-children:1|children:|properties:12:marker-inset:int:required:none,7:enabled:bool:required:none,8:block-id:string:required:none|events:16:toggle-selection[4:uuid:string:required]",
@@ -390,7 +410,7 @@ private fun NavigationBoundary(context: LuiExtensionContext) {
     val backDepth = context.int("back-depth") ?: depth
     val dismissesComposer = context.flag("composer-dismissal-enabled")
     val occupies = context.flag("bottom-occupies-layout-space")
-    BackHandler(enabled = backDepth > 0 || dismissesComposer) {
+    BackHandler(enabled = !LocalSidebarBlocksMain.current && (backDepth > 0 || dismissesComposer)) {
         if (dismissesComposer) {
             context.emit("dismiss-composer")
         } else if (backDepth > depth) {
@@ -471,6 +491,8 @@ private fun SearchPresentation(context: LuiExtensionContext) {
         return
     }
     val title = context.string("title").orEmpty().ifEmpty { "Search" }
+    val closeTitle = context.string("close-title") ?: "Close search"
+    val dismiss = { context.emit("dismiss") }
     val query = context.string("query").orEmpty()
     val depth = context.int("depth") ?: 0
     val focusRequester = remember { FocusRequester() }
@@ -500,9 +522,7 @@ private fun SearchPresentation(context: LuiExtensionContext) {
                     actions = {
                         if (depth > 0) {
                             context.children.getOrNull(1)?.let { context.child(it) }
-                            IconButton(onClick = { context.emit("dismiss") }) {
-                                Icon(Icons.Filled.Close, context.string("close-title") ?: "Close search")
-                            }
+                            SearchDismissButton(closeTitle, dismiss, Modifier.testTag("button.search.close"))
                         }
                     },
                 )
@@ -510,27 +530,18 @@ private fun SearchPresentation(context: LuiExtensionContext) {
             }
             if (depth == 0) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    var fieldValue by remember(query) { mutableStateOf(query) }
-                    androidx.compose.material3.OutlinedTextField(
-                        value = fieldValue,
-                        onValueChange = { fieldValue = it; context.emit("query-changed", "query" to it) },
-                        modifier = Modifier.weight(1f).focusRequester(focusRequester).testTag("field.search"),
-                        shape = MaterialTheme.shapes.small,
-                        textStyle = MaterialTheme.typography.bodyLarge,
-                        placeholder = { Text(title) },
-                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                        trailingIcon = if (fieldValue.isEmpty()) null else ({
-                            IconButton(onClick = { fieldValue = ""; context.emit("query-changed", "query" to "") }) {
-                                Icon(Icons.Filled.Close, context.string("clear-title") ?: "Clear")
-                            }
-                        }),
-                        singleLine = true,
+                    SearchField(
+                        query = query,
+                        onQueryChange = { context.emit("query-changed", "query" to it) },
+                        placeholder = title,
+                        label = title,
+                        clearLabel = context.string("clear-title") ?: "Clear",
+                        identifier = "field.search",
+                        modifier = Modifier.weight(1f).focusRequester(focusRequester),
                     )
-                    IconButton(onClick = { context.emit("dismiss") },
-                        modifier = Modifier.size(48.dp).testTag("button.search.close")) {
-                        Icon(Icons.Filled.Close, context.string("close-title") ?: "Close search")
-                    }
+                    SearchDismissButton(closeTitle, dismiss, Modifier.testTag("button.search.close"))
                 }
             }
         }

@@ -401,7 +401,7 @@ private fun Modifier.outlinerSelectionSwipe(
         val down = awaitFirstDown(requireUnconsumed = false)
         val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ ->
             val travel = change.position - down.position
-            if (abs(travel.x) > abs(travel.y) * 1.5f) change.consume()
+            if (travel.x < -abs(travel.y) * 1.5f) change.consume()
         } ?: return@awaitEachGesture
         var distance = down.position.x - start.position.x
         val leftSwipe = distance > 0

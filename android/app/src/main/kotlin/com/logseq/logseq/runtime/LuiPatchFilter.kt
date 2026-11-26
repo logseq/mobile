@@ -18,11 +18,19 @@ import org.json.JSONObject
 //   - style-class on dialog/sheet
 //   - icon-placement unless leading/trailing on (toggle-)button
 //   - role unless "treeitem" on row/column/panel/card/box/list-item
-// `size: icon` on buttons additionally synthesizes text-alignment:center
-// so the glyph centers in the touch target.
+// The app supplies defaults for button alignment and menu item icon colors.
 internal class LuiPatchFilter(private val backend: LuiBackend) {
     private val ignoredProperties = mutableSetOf<Pair<Long, String>>()
     private var snapshotGeneration = 0
+
+    private data class MenuAppearance(var foreground: String?, var destructive: Boolean, var enabled: Boolean) {
+        fun defaultForeground(): String? = when {
+            foreground != null -> null
+            !enabled -> "menu-disabled-foreground"
+            destructive -> "menu-destructive-foreground"
+            else -> "menu-foreground"
+        }
+    }
 
     fun applyJson(patch: String): LuiPatchBatch = apply(LuiPatchBatch.parse(patch))
 
@@ -43,12 +51,47 @@ internal class LuiPatchFilter(private val backend: LuiBackend) {
         val compatible = ArrayList<LuiPatchOp>(document.ops.size)
         val sourceOps = if (snapshot) JSONObject(snapshotSource).getJSONArray("ops") else null
         val snapshotOps = if (snapshot) JSONArray() else null
+        val menuAppearance = mutableMapOf<Long, MenuAppearance>()
+
+        fun appendString(id: Long, property: String, value: String) {
+            compatible.add(LuiPatchOp.SetProp(id, property, LuiWireValue.Str(value)))
+            snapshotOps?.put(JSONObject().put("op", "set-prop").put("id", id)
+                .put("property", property).put("value", value))
+        }
+
+        fun updateMenuAppearance(id: Long, property: String, value: LuiWireValue?): String? {
+            if (property != "foreground" && property != "variant" && property != "enabled") return null
+            val node = if (id in createdKinds) null else backend.node(id)
+            if ((createdKinds[id] ?: node?.kind) != LuiNodeKind.menuItem) return null
+            val appearance = menuAppearance.getOrPut(id) {
+                val previous = node?.properties.orEmpty()
+                val foreground = previous["foreground"]?.stringValue
+                    ?.takeUnless { it.isBlank() || it in menuForegroundDefaults }
+                MenuAppearance(foreground, previous["variant"]?.stringValue == "destructive",
+                    enabled = previous["enabled"]?.scalarValue != false)
+            }
+            when (property) {
+                "foreground" -> appearance.foreground = value?.stringValue?.takeUnless(String::isBlank)
+                "variant" -> appearance.destructive = value?.stringValue == "destructive"
+                "enabled" -> appearance.enabled = value?.scalarValue != false
+            }
+            return appearance.defaultForeground()
+        }
 
         for ((index, operation) in document.ops.withIndex()) {
+            var menuDefault: Pair<Long, String>? = null
             when (operation) {
-                is LuiPatchOp.CreateNode -> createdKinds[operation.id] = operation.kind
+                is LuiPatchOp.CreateNode -> {
+                    createdKinds[operation.id] = operation.kind
+                    if (operation.kind == LuiNodeKind.menuItem) {
+                        val appearance = MenuAppearance(null, destructive = false, enabled = true)
+                        menuAppearance[operation.id] = appearance
+                        menuDefault = operation.id to checkNotNull(appearance.defaultForeground())
+                    }
+                }
                 is LuiPatchOp.DropNode -> {
                     createdKinds.remove(operation.id)
+                    menuAppearance.remove(operation.id)
                     nextIgnored.removeIf { it.first == operation.id }
                 }
                 is LuiPatchOp.SetProp -> {
@@ -62,20 +105,25 @@ internal class LuiPatchFilter(private val backend: LuiBackend) {
                     if (operation.property == "size" && operation.value.stringValue == "icon" &&
                         kind in setOf("button", "toggle-button")) {
                         compatible.add(operation)
-                        compatible.add(LuiPatchOp.SetProp(operation.id, "text-alignment", LuiWireValue.Str("center")))
-                        snapshotOps?.put(sourceOps!!.get(index))?.put(JSONObject()
-                            .put("op", "set-prop").put("id", operation.id)
-                            .put("property", "text-alignment").put("value", "center"))
+                        snapshotOps?.put(sourceOps!!.get(index))
+                        appendString(operation.id, "text-alignment", "center")
                         continue
+                    }
+                    updateMenuAppearance(operation.id, operation.property, operation.value)?.let {
+                        menuDefault = operation.id to it
                     }
                 }
                 is LuiPatchOp.RemoveProp -> {
                     if (nextIgnored.remove(operation.id to operation.property)) continue
+                    updateMenuAppearance(operation.id, operation.property, null)?.let {
+                        menuDefault = operation.id to it
+                    }
                 }
                 else -> Unit
             }
             compatible.add(operation)
             snapshotOps?.put(sourceOps!!.get(index))
+            menuDefault?.let { (id, value) -> appendString(id, "foreground", value) }
         }
 
         val batch = LuiPatchBatch(document.generation, compatible)
@@ -93,6 +141,8 @@ internal class LuiPatchFilter(private val backend: LuiBackend) {
     }
 
     companion object {
+        private val menuForegroundDefaults = setOf("menu-foreground", "menu-destructive-foreground", "menu-disabled-foreground")
+
         fun isUnsupportedPresentationHint(
             kind: String?,
             property: String,

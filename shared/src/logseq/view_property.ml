@@ -127,8 +127,8 @@ let with_add_property_picker ?(in_tag_properties = false) model_source raw_sourc
       (View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Add property") ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
         ~accessibility_identifier:(add_id ^ ".sheet") ~on_dismiss:(fun _ -> Signal.set adding false) [
         Lui_elements.list ~grow:1.0 ~style:`inset_grouped [
-          search_field ~text_signal:(Signal.value search) ~placeholder:(View_base.tr (Signal.sample model_source) "Select a property") ~label:(View_base.tr (Signal.sample model_source) "Search")
-            ~accessibility_identifier:(add_id ^ ".search") ~on_input:(local_input (Signal.set search)) [];
+          View_base.filter_search_field ~model_source ~text_signal:(Signal.value search) ~placeholder:(View_base.tr (Signal.sample model_source) "Select a property") ~label:(View_base.tr (Signal.sample model_source) "Search")
+            ~accessibility_identifier:(add_id ^ ".search") ~on_input:(local_input (Signal.set search)) ();
           list_section [keyed_list_section_item ~source:available ~key:(fun property -> text (field "attr" property)) ~cmp:String.compare
             ~mount:(fun property_source -> let property = Signal.sample property_source in
               let attr = text (field "attr" property) in

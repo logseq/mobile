@@ -148,7 +148,9 @@ let bottom_tab_row ~android ~tab_width ~action_width model_source send : t =
     if name = "notifications" then View_collaboration.notification_label current else View_base.tr current title in
   let navigate destination action =
     let current : Model.logseq_model = Signal.sample model_source in
-    if current.destination <> destination || current.app_navigation_path <> []
+    if android && destination = Model.JournalsDestination then
+      ignore (send Model.ScrollHomeToTop)
+    else if current.destination <> destination || current.app_navigation_path <> []
        || (destination = Model.JournalsDestination && current.selected_page <> None)
     then ignore (send action) in
   let tab (destination, title, name, image, selected_image, action) =
@@ -464,7 +466,7 @@ let root_outliner_view ?scroll_to_top (context : Lui_ui.ui_context) model_source
 let retained_journal_pane (context : Lui_ui.ui_context) model_source send
     : t =
   let scroll_to_top =
-    if uses_ios_native_header context then
+    if uses_ios_native_header context || Lui_ui.host context = KotlinHost then
       Some (Signal.map (fun (current : Model.logseq_model) ->
         if current.home_scroll_request = 0 then ""
         else "home-top-" ^ string_of_int current.home_scroll_request) model_source)
@@ -638,7 +640,7 @@ let open_sync_status model_source send () =
 
 let journal_overflow_menu ~android model_source send =
   box ~width:44 ~height:44 [
-    menu ~icon:(`app (if android then "more-vert" else "more-horiz"))
+    menu ~icon:(`app "more-horiz")
       ?foreground:(if android then Some "foreground" else None)
       ?style_class:(if android then None else Some "capsule")
       ~label:(View_base.tr (Signal.sample model_source) "More")
@@ -655,27 +657,30 @@ let journal_overflow_menu ~android model_source send =
       ]
   ]
 
-let main_header_primary_action (context : Lui_ui.ui_context) model_source send : t =
-  if uses_ios_native_header context then box [] else
-  row ~cross:`center [
-      if_
-        ~test:
-          (Signal.map (fun current -> View_base.connection_control_visible_ current
-            && not (View_base.journal_home_visible_ current || View_collaboration.notification_root current)) model_source)
-        (View_base.with_label_signal
-           (Signal.map View_base.sync_indicator_label model_source)
-           (icon_button ~label:(View_base.tr (Signal.sample model_source) "Sync status")
-              ~icon:(`app "status-dot")
-              ~variant:`ghost ~size:`icon
-              ~foreground_signal:
-                (Signal.map View_base.sync_indicator_foreground
-                   model_source)
-              ~accessibility_identifier_signal:
-                (Signal.map View_base.sync_accessibility_identifier
-                   model_source)
-              ~on_press:(fun _ -> open_sync_status model_source send ())
-              []));
-  ]
+let android_header_action action =
+  column ~width:44 ~height:44 ~corner_radius:22
+    ~background:"glass" ~main:`center ~cross:`center [action]
+
+let tasks_options_visible current =
+  View_base.tasks_destination_ current && View_base.node_navigation_inactive_ current
+
+let header_sync_visible current =
+  View_base.connection_control_visible_ current
+  && not (View_base.journal_home_visible_ current || View_collaboration.notification_root current
+          || tasks_options_visible current)
+
+let header_sync_action model_source send =
+  View_base.with_label_signal
+    (Signal.map View_base.sync_indicator_label model_source)
+    (icon_button ~label:(View_base.tr (Signal.sample model_source) "Sync status")
+       ~icon:(`app "status-dot") ~variant:`ghost ~size:`icon
+       ~foreground_signal:(Signal.map View_base.sync_indicator_foreground model_source)
+       ~accessibility_identifier_signal:(Signal.map View_base.sync_accessibility_identifier model_source)
+       ~on_press:(fun _ -> open_sync_status model_source send ()) [])
+
+let main_header_primary_action context model_source send : t =
+  if uses_ios_native_header context then box []
+  else if_ ~test:(Signal.map header_sync_visible model_source) (header_sync_action model_source send)
 
 let active_overflow_menu model_source send : t =
  custom @@ fun context parent ->
@@ -795,8 +800,9 @@ let active_overflow_menu model_source send : t =
      ]
    in
    let menu = if kotlin_host then
-     menu ~icon:(`app "more-vert") ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "More")
-       ~accessibility_identifier:"button.overflow-menu" entries
+     android_header_action
+       (menu ~icon:(`app "more-horiz") ~foreground:"foreground" ~label:(View_base.tr (Signal.sample model_source) "More")
+          ~accessibility_identifier:"button.overflow-menu" entries)
    else
      box ~width:44 ~height:44
        [ menu ~icon:(`app "more-horiz") ~style_class:"capsule" ~label:(View_base.tr (Signal.sample model_source) "More")
@@ -827,32 +833,32 @@ let selection_done model_source send =
     ~accessibility_identifier:"button.outliner.selection.done"
     ~on_press:(press send (Model.PerformOutlinerToolbarAction "unselect")) []
 
+let header_trailing_actions context model_source send =
+  let android = Lui_ui.host context = KotlinHost in
+  let wrap action = if android then android_header_action action else action in
+  let visible current test = View_base.connection_control_visible_ current && test current in
+  [
+    if_ ~test:(Signal.map (fun current -> View_collaboration.notification_root current
+      && View_collaboration.ready current) model_source)
+      (wrap (View_collaboration.notification_menu ~android model_source send));
+    if_ ~test:(Signal.map (fun current ->
+      uses_ios_native_header context && visible current View_base.graphs_destination_) model_source)
+      (icon_button ~icon:(`app "add") ~variant:`ghost ~width:44 ~height:44
+         ~style_class:"system-toolbar-icon"
+         ~label:(View_base.tr (Signal.sample model_source) "Add sync graph")
+         ~accessibility_identifier:"button.graph-add" ~on_press:(press send Model.OpenCreateGraph) []);
+    if_ ~test:(Signal.map (fun current -> visible current View_base.journal_home_visible_) model_source)
+      (wrap (journal_overflow_menu ~android model_source send));
+    if_ ~test:(Signal.map (fun current ->
+      (android || uses_ios_native_header context) && visible current tasks_options_visible) model_source)
+      (wrap (View_outliner.tasks_menu ~android model_source send));
+    if_ ~test:(Signal.map (fun current -> visible current View_base.active_page_actions_visible_) model_source)
+      (active_overflow_menu model_source send);
+  ]
+
 let main_header_connection model_source send : t = custom @@ fun context parent ->
   let selecting = Signal.map header_selection_active model_source in
-  let controls = stack
-    [
-      if_ ~test:(Signal.map (fun current -> View_collaboration.notification_root current
-        && View_collaboration.ready current) model_source)
-        (View_collaboration.notification_menu ~android:(Lui_ui.host context = KotlinHost) model_source send);
-      if_
-        ~test:(Signal.map View_base.connection_control_visible_ model_source)
-        (custom @@ fun context parent ->
-          mount context ?parent (stack [
-               if_ ~test:(Signal.map (fun current ->
-                 uses_ios_native_header context && View_base.graphs_destination_ current) model_source)
-                 (icon_button ~icon:(`app "add") ~variant:`ghost ~width:44 ~height:44
-                   ~style_class:"system-toolbar-icon"
-                   ~label:(View_base.tr (Signal.sample model_source) "Add sync graph")
-                   ~accessibility_identifier:"button.graph-add" ~on_press:(press send Model.OpenCreateGraph) []);
-               if_ ~test:(Signal.map View_base.journal_home_visible_ model_source)
-                 (journal_overflow_menu ~android:(Lui_ui.host context = KotlinHost) model_source send);
-               if_ ~test:(Signal.map (fun current ->
-                 uses_ios_native_header context && View_base.tasks_destination_ current
-                 && View_base.node_navigation_inactive_ current) model_source)
-                 (View_outliner.tasks_menu model_source send);
-               if_ ~test:(Signal.map View_base.active_page_actions_visible_ model_source)
-                 (active_overflow_menu model_source send)]));
-    ] in
+  let controls = stack (header_trailing_actions context model_source send) in
   if Lui_ui.host context = SwiftUIHost then
     mount context ?parent (stack [box [controls]; box [selection_done model_source send]])
   else
@@ -989,35 +995,34 @@ let native_search_view ?base (_context : Lui_ui.ui_context) model_source send :
      node)
 
 let android_main_header context model_source send =
-  let round_action action =
-    column ~width:44 ~height:44 ~corner_radius:22
-      ~background:"glass" ~main:`center ~cross:`center [action] in
   let header controls =
     row ~cross:`center ~gap:8 ~height:64 ~padding_horizontal:16
       ~accessibility_identifier:"header.main"
-      (round_action (main_header_leading context model_source send) :: controls) in
-  let title = dyn (fun journals ->
-      if journals then column ~grow:1.0 ~cross:`center [View_sidebar.android_graph_switch model_source send]
-      else main_header_title context model_source)
-    (Signal.map (fun current -> View_base.journals_sidebar_selected_ current
-      && View_base.app_navigation_depth current = 0) model_source) in
+      (android_header_action (main_header_leading context model_source send) :: controls) in
+  let title = dyn (function
+      | `Journals -> column ~grow:1.0 ~cross:`center [View_sidebar.android_graph_switch model_source send]
+      | `Tasks -> box ~grow:1.0 []
+      | `Page -> main_header_title context model_source)
+    (Signal.map (fun current ->
+      if View_base.journals_sidebar_selected_ current && View_base.app_navigation_depth current = 0
+      then `Journals
+      else if tasks_options_visible current then `Tasks
+      else `Page) model_source) in
   let default_header = header [
     title;
     reactive (fun selecting ->
-      if selecting then round_action (selection_done model_source send)
-      else box ~corner_radius:22 ~background:"glass" ~padding_horizontal:6
-        [row ~cross:`center ~gap:4 [
-          main_header_primary_action context model_source send;
-          main_header_connection model_source send;
-        ]]) (Signal.map header_selection_active model_source);
+      if selecting then android_header_action (selection_done model_source send)
+      else
+        row ~cross:`center ~gap:8
+          (if_ ~test:(Signal.map header_sync_visible model_source)
+             (android_header_action (header_sync_action model_source send))
+           :: header_trailing_actions context model_source send))
+      (Signal.map header_selection_active model_source);
   ] in
   let flashcard_header =
     View_flashcards.android_flashcard_header model_source send
       ~render:(fun menu add ->
-        header [column ~grow:1.0 ~cross:`center [menu];
-          box ~corner_radius:22 ~background:"glass" ~padding_horizontal:6 [
-            add
-          ]]) in
+        header [column ~grow:1.0 ~cross:`center [menu]; android_header_action add]) in
   if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> not current.search_open) model_source)
     (dyn (fun flashcards -> if flashcards then flashcard_header else default_header)
        (Signal.map View_base.flashcards_destination_ model_source))

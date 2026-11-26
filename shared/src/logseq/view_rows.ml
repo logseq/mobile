@@ -156,6 +156,12 @@ let windowed_keyed ?scroll_target ?first_section ?reset_key
        "data-first-section-count", string_of_int first_count;
        "data-first-section-inset", "136";
        "data-pinned-index", string_of_int pinned_index]) window layout) in
+    let request =
+      match reset_key with
+      | Some reset when Lui_ui.host context = Lui_protocol.KotlinHost ->
+        own (Signal.map2 (fun target key ->
+          if key = "" then target else Some (key, 0)) request reset)
+      | _ -> request in
     let metadata = own (Signal.map2 (fun metadata request ->
       match request with None -> metadata | Some (uuid, index) ->
         ("data-scroll-key", uuid) :: ("data-scroll-index", string_of_int index) :: metadata)
@@ -279,8 +285,6 @@ type placeholder = {
 }
 type page_entry = Outline_entry of retained_row | Reference_entry of reference_entry
   | Placeholder_entry of placeholder
-  | Journal_task_gap
-  | Journal_task_heading of string
   | Tasks_page_heading of string * string * string
   | Journal_task_row of Yojson.Basic.t * bool
   | Journal_task_error
@@ -335,21 +339,10 @@ let journal_task_editing (current : Model.logseq_model) task =
 let journal_task_editing_row (current : Model.logseq_model) =
   match current.outliner_edit_scope with
   | Some (scope, _) when String.starts_with ~prefix:"journal-task." scope ->
-    ["today"; "upcoming"; "overdue"; "doing"; "planned"] |> List.find_map (fun section ->
+    ["today"; "upcoming"] |> List.find_map (fun section ->
       Option.bind (List.find_opt (journal_task_editing current) (task_list current.journal_tasks section))
         (fun task -> Response_snapshot.related_row (task_field "block" task)))
   | _ -> None
-
-let task_rows current =
-  let collapsed = Model.journal_tasks_collapsed current in
-  let section name = match task_field name current.Model.journal_tasks with
-    | `List (_ :: _ as rows) ->
-      Journal_task_heading name ::
-      (if List.mem name collapsed then [] else
-        List.map (fun task -> Journal_task_row (task, journal_task_editing current task)) rows)
-    | _ -> [] in
-  (if task_field "error" current.journal_tasks = `Bool true then [Journal_task_error] else [])
-  @ section "overdue" @ section "doing" @ section "planned"
 
 let tasks_view_rows (current : Model.logseq_model) =
   let options = current.tasks_view in
@@ -390,31 +383,25 @@ let tasks_view_rows (current : Model.logseq_model) =
       | 0 -> String.compare (journal_task_uuid left) (journal_task_uuid right)
       | order -> order) tasks
     |> List.map (fun task -> Journal_task_row (task, journal_task_editing current task)) in
-  match task_field section agenda with
-  | `List rows ->
-    let tasks = List.filter display rows in
-    let entries = if not options.group_by_page then render tasks else
-      let groups = Hashtbl.create 16 in
-      List.iter (fun task ->
-        let id = page_id task in
-        let previous = Option.value ~default:[] (Hashtbl.find_opt groups id) in
-        Hashtbl.replace groups id (task :: previous)) tasks;
-      Hashtbl.to_seq_values groups |> List.of_seq
-      |> List.sort (fun left right -> compare_pages (List.hd left) (List.hd right))
-      |> List.concat_map (function
-        | task :: _ as tasks ->
-          let page = page_id task in
-          let key = Journal_task_dates.task_group_key section page in
-          Tasks_page_heading (key, page, page_title task) ::
-          (if List.mem key (Model.journal_tasks_collapsed current) then [] else render tasks)
-        | [] -> []) in
-    (if task_field "error" agenda = `Bool true then [Journal_task_error] else []) @ entries
-  | _ -> if options.tab = TasksToday then task_rows current else []
+  let tasks = List.filter display (task_list agenda section) in
+  let entries = if not options.group_by_page then render tasks else
+    let groups = Hashtbl.create 16 in
+    List.iter (fun task ->
+      let id = page_id task in
+      let previous = Option.value ~default:[] (Hashtbl.find_opt groups id) in
+      Hashtbl.replace groups id (task :: previous)) tasks;
+    Hashtbl.to_seq_values groups |> List.of_seq
+    |> List.sort (fun left right -> compare_pages (List.hd left) (List.hd right))
+    |> List.concat_map (function
+      | task :: _ as tasks ->
+        let page = page_id task in
+        let key = Journal_task_dates.task_group_key section page in
+        Tasks_page_heading (key, page, page_title task) ::
+        (if List.mem key (Model.journal_tasks_collapsed current) then [] else render tasks)
+      | [] -> []) in
+  (if task_field "error" agenda = `Bool true then [Journal_task_error] else []) @ entries
 
-let embedded_task_rows current =
-  match task_rows current with [] -> [] | entries -> Journal_task_gap :: entries
-
-let journal_entries ~include_tasks rows (current : Model.logseq_model) =
+let journal_entries rows (current : Model.logseq_model) =
   let groups = Hashtbl.create 16 and sequence = ref [] in
   List.iter (fun row ->
     let page = row.value.Model.page_id in
@@ -434,26 +421,20 @@ let journal_entries ~include_tasks rows (current : Model.logseq_model) =
     if Hashtbl.mem groups page.uuid then sections
     else insert_empty (page.uuid, Some page.title, Some day, []) sections) sections current.empty_journals in
   let entries = List.mapi (fun index (page, title, day, rows) ->
-    let tasks = match day with
-      | Some day when include_tasks && task_field "day" current.journal_tasks = `Int day -> embedded_task_rows current
-      | _ -> [] in
     let needs_button = needs_placeholder rows in
     let outline = outline_entries rows in
-    let outline = match title, day with
-    (* Keep the add-block space before the agenda while an empty row becomes
-       nonempty. Otherwise typing the first character shifts every task row. *)
-    | Some title, Some day when needs_button || tasks <> [] ->
+    match title, day with
+    | Some title, Some day when needs_button ->
       outline @ [Placeholder_entry {parent_uuid = page;
         journal_heading = (if rows = [] then Some (title, day, index > 0) else None);
-        show_button = needs_button && placeholder_button_visible current rows}]
-    | _ -> outline in
-    outline @ tasks) sections in
+        show_button = placeholder_button_visible current rows}]
+    | _ -> outline) sections in
   List.rev (List.fold_left (fun acc section -> List.rev_append section acc) [] entries)
 
-let page_entries ?(include_tasks = true) rows current =
+let page_entries rows current =
   let journal_home = View_base.journal_home_visible_ current in
   let outline =
-    if journal_home then journal_entries ~include_tasks rows current
+    if journal_home then journal_entries rows current
     else if View_base.current_content_is_tag_ current || View_base.current_content_is_property_ current then []
     else
       let outline = outline_entries rows in
@@ -463,16 +444,10 @@ let page_entries ?(include_tasks = true) rows current =
         && View_base.page_content_ready_ current && parent <> ""
         && (match Model.active_page current with
           | Some page -> String.lowercase_ascii page.title <> "library" | None -> true) in
-      let tasks =
-        if include_tasks && task_field "page" current.journal_tasks = `String parent
-        then embedded_task_rows current else [] in
-      let outline = if not allowed then outline else
-        let needs_button = needs_placeholder rows in
-        if needs_button || tasks <> [] then
-          outline @ [Placeholder_entry {parent_uuid = parent; journal_heading = None;
-            show_button = needs_button && placeholder_button_visible current rows}]
-        else outline in
-      outline @ tasks in
+      if allowed && needs_placeholder rows then
+        outline @ [Placeholder_entry {parent_uuid = parent; journal_heading = None;
+          show_button = placeholder_button_visible current rows}]
+      else outline in
   let references =
     List.map (fun row -> Reference_entry row) (reference_entries current) in
   if not journal_home || references = [] then List.rev_append (List.rev outline) references
@@ -480,9 +455,7 @@ let page_entries ?(include_tasks = true) rows current =
     let page = function
       | Outline_entry row -> Some row.value.page_id
       | Placeholder_entry value -> Some value.parent_uuid
-      | Journal_task_gap | Journal_task_heading _ | Tasks_page_heading _ | Journal_task_row _ | Journal_task_error ->
-        (match task_field "page" current.journal_tasks with `String page -> Some page | _ -> None)
-      | Reference_entry _ -> None in
+      | Reference_entry _ | Tasks_page_heading _ | Journal_task_row _ | Journal_task_error -> None in
     match outline with
     | [] -> references
     | first :: _ ->
@@ -498,8 +471,6 @@ let page_entry_identifier = function
   | Reference_entry row -> "reference." ^ reference_entry_identifier row
   | Placeholder_entry {parent_uuid; journal_heading = Some _; _} -> "placeholder.journal-heading." ^ parent_uuid
   | Placeholder_entry value -> "placeholder." ^ value.parent_uuid
-  | Journal_task_gap -> "journal-tasks.gap"
-  | Journal_task_heading section -> "journal-tasks." ^ section
   | Tasks_page_heading (key, _, _) -> key
   | Journal_task_row (task, _) -> journal_task_scope (journal_task_uuid task)
   | Journal_task_error -> "journal-tasks.error"
@@ -512,7 +483,7 @@ let page_entry_reference = function
   | Reference_entry row -> row
   | _ -> invalid_arg "page_entry_reference requires a reference entry"
 
-let first_journal_section_count ?include_tasks current =
+let first_journal_section_count current =
   if not (View_base.journal_home_visible_ current) then 0 else
   let section_page = function
     | Outline_entry row when row.value.journal_title <> None -> Some row.value.page_id
@@ -525,7 +496,7 @@ let first_journal_section_count ?include_tasks current =
       | Some first, Some page when first <> page -> index
       | None, (Some _ as page) -> count (index + 1) page rest
       | _ -> count (index + 1) first_page rest in
-  count 0 None (page_entries ?include_tasks (retained_outliner_rows current) current)
+  count 0 None (page_entries (retained_outliner_rows current) current)
 
 let unloaded_entry_id = function
   | Outline_entry row when not row.value.Model.row_loaded -> Some row.value.row_uuid

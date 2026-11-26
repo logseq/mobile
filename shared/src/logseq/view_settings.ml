@@ -541,11 +541,14 @@ let settings_toggle_spell_check send enabled =
 let settings_toggle_auto_correction send enabled =
   ignore (send (Model.ToggleAutoCorrection enabled))
 
+let android_settings_group ?gap ?padding ?padding_horizontal ?style_class ?accessibility_identifier children =
+  column ?gap ?padding ?padding_horizontal ?style_class ?accessibility_identifier
+    ~cross:`stretch ~background:"settings-group" ~corner_radius:24 children
+
 let settings_general_card (context : Lui_ui.ui_context) model_source send :
     t =
   if Lui_ui.host context = KotlinHost then
-    column ~gap:0 ~cross:`stretch
-      ~accessibility_identifier:"layout.settings.general-card"
+    android_settings_group ~gap:0 ~accessibility_identifier:"layout.settings.general-card"
       [
         settings_appearance_control context model_source send;
         settings_dark_theme_control context model_source send;
@@ -622,7 +625,7 @@ let settings_general_card (context : Lui_ui.ui_context) model_source send :
 let settings_editor_card model_source (context : Lui_ui.ui_context) spell_check_source
     auto_correction_source send : t =
   if Lui_ui.host context = KotlinHost then
-    column ~gap:0 ~cross:`stretch ~padding_horizontal:16
+    android_settings_group ~gap:0 ~padding_horizontal:16
       [
         switch_ ~min_height:56 ~checked_signal:spell_check_source
           ~accessibility_identifier:"switch.settings.spell-check"
@@ -782,7 +785,6 @@ let sign_out_dialog model_source (context : Lui_ui.ui_context) send : t =
 
 let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
     send : t =
-  let card_bg = "background" in
   column ~gap:24 ~padding_horizontal:8 ~padding_vertical:16 ~cross:`stretch
     ~accessibility_identifier:"screen.settings"
     [
@@ -791,7 +793,7 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
           text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
             ~accessibility_identifier:"label.settings.account"
             ~value:(View_base.tr (Signal.sample model_source) "Account") [];
-          column ~padding_horizontal:16 ~background:card_bg
+          android_settings_group ~padding_horizontal:16
             [settings_account_row model_source send];
         ];
       column ~gap:8 ~cross:`stretch
@@ -816,7 +818,7 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
           text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
             ~accessibility_identifier:"label.settings.push"
             ~value:(View_base.tr (Signal.sample model_source) "System notifications") [];
-          column ~cross:`stretch ~padding_horizontal:16
+          android_settings_group ~padding_horizontal:16
             (settings_push_controls context model_source send);
         ];
       column ~gap:8 ~cross:`stretch
@@ -824,7 +826,7 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
           text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
             ~accessibility_identifier:"label.settings.sync-server"
             ~value:(View_base.tr (Signal.sample model_source) "Sync server") [];
-          column ~gap:8 ~padding:16 ~cross:`stretch ~style_class:"form" ~background:card_bg
+          android_settings_group ~gap:8 ~padding:16 ~style_class:"form"
             [
               text_field
                 ~text_signal:
@@ -849,7 +851,7 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
              text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
                ~accessibility_identifier:"label.settings.advanced"
                ~value:(View_base.tr (Signal.sample model_source) "Advanced") [];
-             column ~padding:16 ~background:card_bg
+             android_settings_group ~padding:16
                [ settings_export_row model_source context send ];
            ]);
       column ~gap:8 ~cross:`stretch
@@ -857,7 +859,7 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
           text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
             ~accessibility_identifier:"label.settings.about"
             ~value:(View_base.tr (Signal.sample model_source) "About") [];
-          column ~gap:12 ~padding:16 ~background:card_bg
+          android_settings_group ~gap:12 ~padding:16
             [
               row
                 [
@@ -885,7 +887,7 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
           text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
             ~accessibility_identifier:"label.settings.community"
             ~value:(View_base.tr (Signal.sample model_source) "Community") [];
-          column ~gap:12 ~padding:16 ~background:card_bg
+          android_settings_group ~gap:12 ~padding:16
             [
               keyed
                 ~source:
@@ -898,7 +900,7 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
                     link_source send);
             ];
         ];
-      column ~padding:16 ~background:card_bg
+      android_settings_group ~padding:16
         [
           list_item ~icon:(`app "open-external") ~padding:0
             ~accessibility_identifier:"link.settings.account-deletion"
@@ -910,7 +912,7 @@ let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
             ~text:(View_base.tr (Signal.sample model_source) "Privacy Policy") [];
         ];
       if_ ~test:(Signal.map (fun current -> not (View_base.authentication_required_ current)) model_source)
-        (column ~padding_horizontal:16 ~background:card_bg [settings_sign_out_row model_source context send]);
+        (android_settings_group ~padding_horizontal:16 [settings_sign_out_row model_source context send]);
     ]
 
 (* Native grouped-settings form: a `form`-styled content column whose
@@ -1049,7 +1051,7 @@ let settings_tabs_sheet (context : Lui_ui.ui_context) model_source send :
           [
             settings_tabs_screen context model_source send;
             row ~padding_horizontal:16 ~padding_vertical:12
-              ~background:"surface-container-low"
+              ~background:"background"
               ~accessibility_identifier:"toolbar.settings.actions"
               [
                 button ~variant:`secondary ~grow:1.0
@@ -1079,7 +1081,7 @@ let settings_tabs_sheet (context : Lui_ui.ui_context) model_source send :
 let runtime_log_actions model_source (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then
     row ~gap:12 ~padding_horizontal:16 ~padding_vertical:12
-      ~background:"surface-container-low"
+      ~background:"background"
       ~accessibility_identifier:"toolbar.settings.actions"
       [
         button ~variant:`secondary ~grow:1.0
@@ -1140,7 +1142,7 @@ let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
           [
             scroll ~grow:1.0 [ settings_screen context model_source send ];
             row ~gap:12 ~main:`end_ ~padding_horizontal:24 ~padding_vertical:16
-              ~background:"surface-container-low"
+              ~background:"background"
               ~accessibility_identifier:"toolbar.settings.actions"
               [
                 spacer ~grow:1.0 [];
@@ -1190,18 +1192,18 @@ let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
 
 let settings_sheet (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
-    stack
-      [
-        if_
-          ~test:(Signal.map View_base.settings_main_visible_ model_source)
+    custom (fun context parent ->
+      let node = Lui_ui.platform_tweak context "settings-material-surface" in
+      ignore (mount context ~parent:node (stack [
+        if_ ~test:(Signal.map View_base.settings_main_visible_ model_source)
           (settings_main_sheet context model_source send);
-        if_
-          ~test:(Signal.map View_base.settings_tabs_visible_ model_source)
+        if_ ~test:(Signal.map View_base.settings_tabs_visible_ model_source)
           (settings_tabs_sheet context model_source send);
-        if_
-          ~test:(Signal.map View_base.runtime_log_visible_ model_source)
+        if_ ~test:(Signal.map View_base.runtime_log_visible_ model_source)
           (runtime_log_sheet context model_source send);
-      ]
+      ]));
+      attach context parent node;
+      node)
   else settings_main_sheet context model_source send
 
 let page_delete_dialog model_source (context : Lui_ui.ui_context) send : t =

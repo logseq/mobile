@@ -53,6 +53,22 @@ class LuiPatchFilterTest {
         }
     }
 
+    @Test fun menuIconsUseThemeColorsAndPreserveOverrides() {
+        val h = Harness("menu-item")
+        assertEquals("menu-foreground", h.property("foreground"))
+        h.send("""{"op":"set-prop","id":3,"property":"variant","value":"destructive"}""")
+        assertEquals("menu-destructive-foreground", h.property("foreground"))
+        h.send("""{"op":"set-prop","id":3,"property":"foreground","value":"link"},
+            {"op":"remove-prop","id":3,"property":"variant"}""")
+        assertEquals("link", h.property("foreground"))
+        h.send("""{"op":"remove-prop","id":3,"property":"foreground"}""")
+        assertEquals("menu-foreground", h.property("foreground"))
+        h.send("""{"op":"set-prop","id":3,"property":"enabled","value":false}""")
+        assertEquals("menu-disabled-foreground", h.property("foreground"))
+        h.send("""{"op":"remove-prop","id":3,"property":"enabled"}""")
+        assertEquals("menu-foreground", h.property("foreground"))
+    }
+
     @Test fun presentationRulesRemainSpecificToNodeKindAndValue() {
         val button = Harness("button")
         button.send("""{"op":"set-prop","id":3,"property":"icon-placement","value":"leading"}""")

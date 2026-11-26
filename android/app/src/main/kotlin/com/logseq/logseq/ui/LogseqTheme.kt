@@ -120,7 +120,7 @@ internal object LogseqTheme {
         surfaceContainer = Color(0xff222224),
         surfaceContainerHigh = Color(0xff28282a),
         surfaceContainerHighest = Color(0xff303032),
-    )
+    ).withMenuSelectionColors()
 
     fun colorScheme(dark: Boolean, darkTheme: String): ColorScheme = when {
         !dark -> lightScheme
@@ -138,6 +138,9 @@ internal object LogseqTheme {
             "background" to scheme.background,
             "surface" to groupedRowBackground,
             "card" to groupedRowBackground,
+            "menu-foreground" to scheme.onSurface,
+            "menu-destructive-foreground" to scheme.error,
+            "menu-disabled-foreground" to scheme.onSurface.copy(alpha = 0.38f),
             "code-container" to scheme.surfaceContainerHighest,
         )
     }

@@ -381,13 +381,20 @@ let settings_sheet mode owner feature view_source model_source send close : t =
         ~accessibility_identifier:(id "values.done") ~on_press:(fun _ -> set_value (Signal.sample (Signal.value selection)); Signal.set selecting false) [] in
       let toolbar_done_ = Lui_elements.toolbar_button ~text:(View_base.tr (Signal.sample model_source) "Done") ~variant:`ghost ~style_class:"confirmation-action" ~foreground:"foreground"
         ~accessibility_identifier:(id "values.done") ~on_press:(fun _ -> set_value (Signal.sample (Signal.value selection)); Signal.set selecting false) [] in
+      let value_search = scoped (fun context ->
+        let label = View_base.tr (Signal.sample model_source) "Search values" in
+        let accessibility_identifier = id "values.search" in
+        let text_signal = Signal.value query in
+        let on_input = local_input (Signal.set query) in
+        if Lui_ui.host context = KotlinHost then
+          View_base.filter_search_field ~model_source ~placeholder:label ~label
+            ~accessibility_identifier ~text_signal ~on_input ()
+        else text_field ~placeholder:label ~label ~accessibility_identifier ~text_signal ~on_input []) in
       View_base.sheet ~model_source ~title:(reactive (own (Signal.map2 property_title model_source col)))
         ~style_class:"navigation-list navigation-inline-title" ~detents:"medium,large"
         ~accessibility_identifier:(id "values.sheet") ~on_dismiss:(fun _ -> Signal.set selecting false) [
         list ~grow:1.0 ~style:`inset_grouped [
-          list_section [list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [text_field ~placeholder:(View_base.tr (Signal.sample model_source) "Search values") ~label:(View_base.tr (Signal.sample model_source) "Search values")
-            ~accessibility_identifier:(id "values.search") ~text_signal:(Signal.value query)
-            ~on_input:(local_input (Signal.set query)) []]];
+          list_section [list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [value_search]];
           list_section [list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [option "empty" "Empty" (`String "empty")];
             list_section_item ~padding_vertical:0 ~padding_horizontal:16 ~min_height:44 [option "any" "Any value" `Null]];
           reactive (fun col -> if jfield "kind" col = `String "checkbox" then
@@ -667,9 +674,9 @@ let property_editor ?(owner = "") ?(send = fun _ -> false) ?open_node ?(open_nod
             ~accessibility_identifier:("view.edit.bool." ^ string_of_bool value ^ "." ^ view.id)
             ~disabled_signal:(waiting model_source view.id) ~on_press:(fun _ -> submit (string_of_bool value)) []]) [true; false])]
         else [
-          search_field ~container_relative_frame:`horizontal ~padding_horizontal:16
+          View_base.filter_search_field ~model_source ~container_relative_frame:`horizontal ~padding_horizontal:16
             ~text_signal:(Signal.value query) ~placeholder:(View_base.tr (Signal.sample model_source) "Select a choice") ~label:(View_base.tr (Signal.sample model_source) "Search")
-            ~accessibility_identifier:("view.edit.value." ^ view.id) ~on_input:(local_input (Signal.set query)) [];
+            ~accessibility_identifier:("view.edit.value." ^ view.id) ~on_input:(local_input (Signal.set query)) ();
           list_section [
             if_list_section_item ~test:loading (list_section_item [spinner ~accessibility_identifier:("view.edit.loading." ^ id) []]);
 
@@ -1093,8 +1100,8 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
             ["list", "List"; "table", "Table"; "gallery", "Gallery"]);
       ];
       if_ ~test:(Signal.value search_open)
-        (row ~cross:`center [search_field ~grow:1.0 ~text_signal:(Signal.value search) ~placeholder:(View_base.tr (Signal.sample model_source) "Search results") ~label:(View_base.tr (Signal.sample model_source) "Search results")
-          ~accessibility_identifier:("view.search." ^ owner) ~on_input:(local_input (Signal.set search)) []]);
+        (row ~cross:`center [View_base.filter_search_field ~model_source ~grow:1.0 ~text_signal:(Signal.value search) ~placeholder:(View_base.tr (Signal.sample model_source) "Search results") ~label:(View_base.tr (Signal.sample model_source) "Search results")
+          ~accessibility_identifier:("view.search." ^ owner) ~on_input:(local_input (Signal.set search)) ()]);
 
       if_ ~test:rows_loading (spinner ~accessibility_identifier:("view.rows.loading." ^ view.id) []);
       if_ ~test:(own (Signal.map ((<>) "") rows_error)) (row ~gap:8 [

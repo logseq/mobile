@@ -9,6 +9,12 @@ val sheet :
   ?detents_signal:string Signal.signal -> ?accessibility_identifier:string ->
   ?on_dismiss:(unit -> unit) -> title:string -> ?title_signal:string Signal.signal ->
   Lui_elements.t list -> Lui_elements.t
+val filter_search_field :
+  model_source:Model.logseq_model Signal.signal ->
+  ?grow:float -> ?padding_horizontal:int -> ?container_relative_frame:Lui_elements.frame_axes ->
+  ?autofocus:bool -> ?disabled_signal:bool Signal.signal -> text_signal:string Signal.signal ->
+  placeholder:string -> label:string -> accessibility_identifier:string ->
+  on_input:(string -> unit) -> unit -> Lui_elements.t
 val outliner_node_icon : Model.logseq_model -> Model.outline_row -> string
 val node_icon : Model.logseq_model -> string -> string
 val node_icon_view : ?muted:bool -> size:int -> string Signal.signal -> Lui_elements.t

@@ -14,10 +14,6 @@ val native_graph_switch :
 val android_graph_switch :
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
-val sidebar_journals_row :
-  Lui_ui.ui_context ->
-  Model.logseq_model Signal.signal ->
-  (Model.logseq_action -> bool) -> Lui_elements.t
 val sidebar_flashcards_row :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
