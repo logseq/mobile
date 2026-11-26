@@ -513,7 +513,7 @@ let referring_uuids db uuid =
   match Ds.entid db "block/uuid" (Ds.Uuid uuid) with
   | Some eid ->
     List.of_seq
-      (Ds.Db.datoms db Ds.Aevt ~a:"block/refs" ~v:(Ds.Ref eid) ())
+      (Datascript_value.datoms_by_ref db Ds.Aevt "block/refs" eid)
     |> List.filter_map (fun (datom : Ds.datom) ->
       Graph.uuid_value (Graph.value db datom.e "block/uuid"))
   | None -> []

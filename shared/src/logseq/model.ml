@@ -2568,7 +2568,15 @@ let rec update (current : logseq_model) action =
       | Some `Null -> {applied with collaboration = `Null; reaction_picker = None; discussion_target = None; discussion_composition = None;
           expanded_discussions = []; saved_discussion_drafts = []}
       | Some data when Option.map (fun graph -> `String graph) applied.selected_graph_id
-           = Some (collaboration_field "graphId" data) -> {applied with collaboration = data}
+           = Some (collaboration_field "graphId" data) ->
+        let collaboration =
+          match data, collaboration_field "inbox" applied.collaboration with
+          | `Assoc fields, (`List _ as inbox) when not (List.mem_assoc "inbox" fields)
+            && collaboration_field "graphId" applied.collaboration = collaboration_field "graphId" data
+            && collaboration_field "account" applied.collaboration = collaboration_field "account" data ->
+            `Assoc (("inbox", inbox) :: fields)
+          | _ -> data in
+        {applied with collaboration}
       | _ -> applied in
     let applied = match applied.pending_push_route with
       | Some (graph, id) when applied.selected_graph_id = Some graph

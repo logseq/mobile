@@ -281,12 +281,20 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             context.coordinator.isApplyingModel = true
             defer { context.coordinator.isApplyingModel = false }
             let wasAwaitingHandoff = context.coordinator.isAwaitingBlockHandoff
-            let bufferedTyping = wasAwaitingHandoff
-                ? context.coordinator.pendingHandoffTyping : ""
-            context.coordinator.pendingHandoffTyping = ""
+            let waitsForAcknowledgement = wasAwaitingHandoff && !handoffAcknowledged
+                && !context.coordinator.pendingHandoffReturns.isEmpty
+            let nextReturn = wasAwaitingHandoff && !waitsForAcknowledgement
+                ? context.coordinator.pendingHandoffReturns.popFirst() : nil
+            let bufferedTyping = wasAwaitingHandoff && !waitsForAcknowledgement
+                ? nextReturn ?? context.coordinator.pendingHandoffTyping : ""
+            if !waitsForAcknowledgement && nextReturn == nil {
+                context.coordinator.pendingHandoffTyping = ""
+            }
             context.coordinator.localText = nil
-            context.coordinator.isAwaitingBlockHandoff = false
-            context.coordinator.handoffSelectionRevision = nil
+            if !waitsForAcknowledgement {
+                context.coordinator.isAwaitingBlockHandoff = false
+                context.coordinator.handoffSelectionRevision = nil
+            }
             let selection = textView.selectedRange
             if wasAwaitingHandoff {
                 let merged = InlineEditorHandoffMerge.merged(
@@ -301,7 +309,9 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                     location: merged.caretUTF16Offset,
                     length: 0
                 )
-                if !bufferedTyping.isEmpty {
+                if nextReturn != nil {
+                    context.coordinator.replayReturn(on: textView, title: merged.text, caret: merged.caretUTF16Offset)
+                } else if !bufferedTyping.isEmpty {
                     context.coordinator.selectionRevision = selectionRevision
                     context.coordinator.localText = merged.text
                     let onTextChange = context.coordinator.parent.onTextChange
@@ -413,6 +423,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         var isAwaitingBlockHandoff = false
         var handoffSelectionRevision: Int?
         var pendingHandoffTyping = ""
+        var pendingHandoffReturns: ArraySlice<String> = []
         var activeBlockID: String
         var isApplyingModel = false
         var selectionRevision: Int
@@ -423,6 +434,28 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             self.parent = parent
             activeBlockID = parent.blockID
             selectionRevision = parent.selectionRevision
+        }
+
+        func replayReturn(on textView: UITextView, title: String, caret: Int) {
+            let uuid = parent.blockID
+            let revision = parent.selectionRevision
+            selectionRevision = revision
+            localText = title
+            isAwaitingBlockHandoff = true
+            handoffSelectionRevision = revision
+            DispatchQueue.main.async { [weak self, weak textView] in
+                guard let self, self.parent.blockID == uuid,
+                      self.handoffSelectionRevision == revision else { return }
+                guard textView?.isFirstResponder == true, self.parent.focusEnabled else {
+                    self.pendingHandoffReturns = []
+                    self.pendingHandoffTyping = ""
+                    self.isAwaitingBlockHandoff = false
+                    self.handoffSelectionRevision = nil
+                    self.localText = nil
+                    return
+                }
+                self.parent.onReturn(title, caret)
+            }
         }
 
         func highlight(_ textView: UITextView) {
@@ -507,13 +540,13 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             let isInlineLineBreak = isShiftReturn && !(NativeEditorInputPolicy.usesCodePresentation(parent.inputPolicy)
                 && NativeEditorInputPolicy.allowsLineBreak(parent.inputPolicy))
             if isAwaitingBlockHandoff {
-                // Structure events are serialized and rebound to the latest
-                // editor by the store. Forward them immediately so fast
-                // Return/Backspace input is never swallowed during handoff.
+                // A second Return belongs to the editor that is about to
+                // receive focus. Keep the typing that precedes each split.
                 if isInlineLineBreak {
                     pendingHandoffTyping += "\n"
                 } else if replacement == "\n" {
-                    parent.onReturn(textView.text, range.location)
+                    pendingHandoffReturns.append(pendingHandoffTyping)
+                    pendingHandoffTyping = ""
                 } else if replacement.isEmpty, range.location == 0, range.length == 0 {
                     parent.onBackspace(textView.text, range.length)
                 } else if replacement.isEmpty {

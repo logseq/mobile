@@ -7,7 +7,9 @@ final class EditorModel: ObservableObject {
     @Published var blockID = "original"
     @Published var inputPolicy = "{}"
     @Published var caret = "First block".utf16.count
+    @Published var selectionRevision = 0
     var returns = 0
+    var submittedTitles: [String] = []
     var pendingCarets: [Int]?
     func moveCaret(_ caret: Int) {
         if pendingCarets != nil {
@@ -18,9 +20,11 @@ final class EditorModel: ObservableObject {
     }
     func enter(_ title: String, _ caret: Int) {
         returns += 1
+        submittedTitles.append(title)
         self.title = String((title as NSString).substring(from: caret))
         self.caret = 0
         blockID = "new-\(returns)"
+        selectionRevision += 1
     }
 }
 
@@ -37,6 +41,7 @@ private struct EditorHost: View {
                 BulletMarker().frame(width: 24, height: 24)
                 OutlinerInlineEditor(text: model.title, blockID: model.blockID,
                     desiredCaretUTF16Offset: model.caret, inputPolicy: model.inputPolicy,
+                    selectionRevision: model.selectionRevision,
                     onTextChange: { model.title = $0; model.caret = $1 },
                     onReturn: model.enter,
                     onBackspace: { _, _ in },
@@ -115,6 +120,18 @@ struct ReturnHandoffCheck {
         await settle()
         if model.returns != beforeRapid + 1 || model.title != "\nAfter" || editor().selectedRange.location != 6 {
             print("FAIL: rapid Enter, Shift+Enter, and typing must preserve the new block text; returns=\(model.returns) expected=\(beforeRapid + 1) title=\(model.title.debugDescription) caret=\(editor().selectedRange.location)"); failures += 1
+        }
+        model.title = "First"; model.blockID = "burst"; model.caret = 5
+        await settle()
+        let beforeBurst = model.returns
+        type("\n", in: editor())
+        type("Second", in: editor())
+        for _ in 0..<7 { type("\n", in: editor()) }
+        for _ in 0..<20 where model.returns < beforeBurst + 8 { await settle() }
+        let submitted = Array(model.submittedTitles.dropFirst(beforeBurst))
+        if submitted != ["First", "Second", "", "", "", "", "", ""] || !model.title.isEmpty {
+            print("FAIL: a burst of eight Return presses must split each acknowledged block in order; titles=\(submitted)")
+            failures += 1
         }
         for code in [true, false] {
             model.inputPolicy = "{\"multiline\":\(code),\"code\":\(code)}"

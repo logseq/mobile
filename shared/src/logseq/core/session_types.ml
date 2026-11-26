@@ -81,6 +81,7 @@ type host_options =
   ; storage : Datascript.storage option
   ; outliner_projection_limit : int option
   ; show_journal_tasks : (unit -> bool) option
+  ; show_notifications : (unit -> bool) option
   ; open_graph : (string -> (unit, string) result) option
   ; close_graph : (string -> (unit, string) result) option
   ; import_snapshot : (string -> (unit, string) result) option
@@ -201,6 +202,7 @@ let default_options =
     storage = None;
     outliner_projection_limit = None;
     show_journal_tasks = None;
+    show_notifications = None;
     open_graph = None;
     close_graph = None;
     import_snapshot = None;

@@ -4,6 +4,8 @@ Logseq uses native SwiftUI on iOS and Kotlin/Jetpack Compose on Android, backed 
 
 See [Mobile UX Rules](UX_RULES.md) when changing navigation, safe areas, or outliner interactions.
 
+Follow [Mobile Performance Rules](PERFORMANCE.md) when changing code that runs during outliner editing, property interactions, or composer use on iOS or Android. This includes shared core, sync, and rendering changes.
+
 ## Testing
 
 - Do NOT run `swift test` (xctest). It hangs indefinitely in this

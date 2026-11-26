@@ -48,6 +48,27 @@ let benchmark db iterations =
     ((Unix.gettimeofday () -. started) *. 1000., Gc.allocated_bytes () -. before,
       List.fold_left (fun size response -> size + String.length response) 0 responses))
 
+let check_notification_demand db =
+  let visible = ref false in
+  Workload.with_session ~show_notifications:(fun () -> !visible) db (fun session ->
+    let inbox response =
+      match Workload.member "collaboration" (Workload.result response) with
+      | `Assoc _ as data -> Workload.member "inbox" data
+      | _ -> `Null in
+    let journal = Workload.open_journal session in
+    assert (inbox journal = `Null);
+    assert (Workload.member "account" (Workload.member "collaboration" (Workload.result journal)) <> `Null);
+    let transport = Workload.connected session in
+    let changed = transport ["type", `String "frame";
+      "body", `String {|{"type":"changed","t":43}|}] in
+    assert (Workload.member "isPendingSyncPatch" (Workload.result changed) = `Bool true);
+    assert (String.length changed < 2_048);
+    assert (inbox changed = `Null);
+    visible := true;
+    assert (inbox (Workload.dispatch session "clearSelectedPage" "") = `List []);
+    visible := false;
+    assert (inbox (Workload.open_journal session) = `Null))
+
 let check_rtc_and_tasks db =
   Workload.with_session ~show_journal_tasks:(fun () -> false) db (fun session ->
     Workload.editing session;
@@ -172,6 +193,6 @@ let check db =
 let () =
   let db = Workload.fixture () in
   match Array.to_list Sys.argv with
-  | [_] -> check db; check_rtc_and_tasks db
+  | [_] -> check db; check_notification_demand db; check_rtc_and_tasks db
   | [_; "--bench"; count] when int_of_string count > 0 -> benchmark db (int_of_string count)
   | _ -> failwith "usage: outliner_perf [--bench ITERATIONS]"

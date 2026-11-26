@@ -143,11 +143,11 @@ let host_options ?journal_tasks (database : Database.mobile_database) ring catal
       Some (fun day -> Graph.journal_page_uuid graph day);
   }
 
-let create_rpc_session ?show_journal_tasks database ring catalog =
+let create_rpc_session ?show_journal_tasks ?show_notifications database ring catalog =
   let journal_tasks = Journal_task_dates.create_cache () in
-  Rpc.create_session ~journal_tasks { (host_options ~journal_tasks database ring catalog) with show_journal_tasks }
+  Rpc.create_session ~journal_tasks { (host_options ~journal_tasks database ring catalog) with show_journal_tasks; show_notifications }
 
-let create ?show_journal_tasks crypto_call =
+let create ?show_journal_tasks ?show_notifications crypto_call =
   let ring = Platform.create_keyring crypto_call Http.send in
   let graph =
     Graph.create
@@ -162,7 +162,7 @@ let create ?show_journal_tasks crypto_call =
       }
   in
   let database = Database.create graph in
-  let session = create_rpc_session ?show_journal_tasks database ring None in
+  let session = create_rpc_session ?show_journal_tasks ?show_notifications database ring None in
   session.Types.state :=
     { !(session.Types.state) with Types.sidebar_deferred = true };
   { database; keyring = ring; session = ref session }
@@ -171,15 +171,16 @@ let call (host : mobile_session) request =
   match Payload.database_open_path request with
   | Some path ->
     let catalog = Database.open_catalog host.database path in
-    let show_journal_tasks = (Types.host !(host.session)).show_journal_tasks in
-    let session = create_rpc_session ?show_journal_tasks host.database host.keyring (Some catalog) in
+    let options = Types.host !(host.session) in
+    let session = create_rpc_session ?show_journal_tasks:options.show_journal_tasks
+      ?show_notifications:options.show_notifications host.database host.keyring (Some catalog) in
     session.Types.state :=
       { !(session.Types.state) with Types.sidebar_deferred = true };
     host.session := session;
     Rpc.call session snapshot_request
   | None -> Rpc.call !(host.session) request
 
-let start ?show_journal_tasks crypto_call =
-  let host = create ?show_journal_tasks crypto_call in
+let start ?show_journal_tasks ?show_notifications crypto_call =
+  let host = create ?show_journal_tasks ?show_notifications crypto_call in
   Callback.register "logseq_mobile_call" (fun request -> call host request);
   host

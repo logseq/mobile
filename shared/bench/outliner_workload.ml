@@ -82,7 +82,7 @@ let result raw =
   if member "ok" response <> `Bool true then failwith raw;
   member "result" response
 
-let with_session ?show_journal_tasks db f =
+let with_session ?show_journal_tasks ?show_notifications db f =
   let path = Filename.temp_file "outliner-workload" ".sqlite" in
   Fun.protect ~finally:(fun () ->
     List.iter (fun path -> if Sys.file_exists path then Sys.remove path)
@@ -103,6 +103,7 @@ let with_session ?show_journal_tasks db f =
       let session = Session.create_session ~journal_tasks {Session.default_options with
         outliner_projection_limit = Some 32;
         show_journal_tasks;
+        show_notifications;
         load_graph_catalog = Some (fun () -> Some {|{"graphs":[{"graph-id":"outliner-perf","graph-name":"Outliner benchmark","graph-e2ee?":false,"graph-ready-for-use?":true}]}|});
         sync_cursor = Some (fun () -> Some (Runtime.state runtime).server_t);
         apply_sync_event = Some apply_sync_event;

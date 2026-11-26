@@ -318,21 +318,27 @@ let with_pdf_update session result =
 let collaboration_json session =
   match collaboration_identity session, query_db session with
   | Some (graph_id, actor), Some db ->
-    let inbox = match !(session.Types.collaboration_inbox) with
-      | Some (previous, previous_actor, inbox) when previous == db && previous_actor = actor -> inbox
-      | _ ->
-        let since = Collaboration.inbox_cutoff Collaboration.inbox_max_months in
-        let inbox = Collaboration.inbox db ~actor ~since ~preview:(Node_presentation.preview db) in
-        session.collaboration_inbox := Some (db, actor, inbox);
-        inbox in
+    let inbox =
+      if not (Option.fold ~none:true ~some:(fun visible -> visible ()) (host session).Types.show_notifications)
+      then begin
+        session.collaboration_inbox := None;
+        []
+      end else
+        let items = match !(session.Types.collaboration_inbox) with
+          | Some (previous, previous_actor, inbox) when previous == db && previous_actor = actor -> inbox
+          | _ ->
+            let since = Collaboration.inbox_cutoff Collaboration.inbox_max_months in
+            let inbox = Collaboration.inbox db ~actor ~since ~preview:(Node_presentation.preview db) in
+            session.collaboration_inbox := Some (db, actor, inbox);
+            inbox in
+        ["inbox", `List items] in
     let discussion = match !(session.discussion) with
       | Some (graph, target) when graph = graph_id ->
         (match Collaboration.discussion db ~actor ~target ~preview:(Node_presentation.preview db) with
          | Some (`Assoc fields) -> `Assoc (("target", `String target) :: fields)
          | Some _ | None -> `Assoc ["target", `String target; "error", `String "This discussion is unavailable"])
       | _ -> `Null in
-    `Assoc ["graphId", `String graph_id; "account", `String actor; "inbox", `List inbox;
-      "discussion", discussion]
+    `Assoc (["graphId", `String graph_id; "account", `String actor; "discussion", discussion] @ inbox)
   | _ ->
     session.Types.collaboration_inbox := None;
     `Null
@@ -758,9 +764,7 @@ let graph_catalog_snapshot session =
        ; ("isGraphCatalogPatch", `Bool true)
        ])
 
-let pending_sync_patch session =
-  success session
-    (Rpc.json_object
+let pending_sync_fields session =
        [
          ("revision", `Int (state session).model.revision)
        ; ("blocks", Rpc.json_list [])
@@ -774,7 +778,9 @@ let pending_sync_patch session =
        ; ( "hasPendingSemanticOperations"
          , `Bool (has_pending_operations session) )
        ; ("isPendingSyncPatch", `Bool true)
-       ])
+       ]
+
+let pending_sync_patch session = success session (Rpc.json_object (pending_sync_fields session))
 
 let reconcile_authoritative_blocks session =
   match (Model.unsynced_blocks (state session).model,
@@ -2050,10 +2056,15 @@ let sync_transport_editing session =
   Outliner.editing_uuid s.outliner_state <> None
   || List.exists (fun (route : Types.node_route) -> Outliner.editing_uuid route.state <> None) s.node_routes
 
-let publish_sync_transport session transport =
-  session.Types.state := { (state session) with
-    sync_transport = transport; sync_connected = Sync_driver.connected transport };
-  snapshot_visible session
+let publish_sync_transport ?(projection_changed = true) session transport =
+  let current = state session in
+  let sync_connected = Sync_driver.connected transport in
+  session.Types.state := { current with sync_transport = transport; sync_connected };
+  if projection_changed || current.sync_connected <> sync_connected
+     || (host session).Types.show_notifications = None then snapshot_visible session
+  else
+    Rpc.success (Rpc.json_object (("syncTransport", Sync_driver.to_yojson transport)
+      :: pending_sync_fields session))
 
 let begin_sync_transport session _input _fields =
   match (state session).config with
@@ -2072,7 +2083,7 @@ let sync_transport_event session _input fields =
   if field "generation" <> `Int (Sync_driver.generation previous)
      || field "graphId" <> `String current_graph
      || current_graph <> Sync_driver.graph_id previous then
-    publish_sync_transport session (Sync_driver.without_commands previous)
+    publish_sync_transport ~projection_changed:false session (Sync_driver.without_commands previous)
   else
     let message = match field "message" with `String value -> value | _ -> "Transport failed" in
     let event = match field "type" with
@@ -2087,6 +2098,8 @@ let sync_transport_event session _input fields =
     match event with
     | None -> Rpc.failure "invalid_sync_transport_event" "Sync event requires a supported type and payload"
     | Some event ->
+      let previous_db = query_db session in
+      let previous_revision = (state session).model.revision in
       let apply_frame body = match (host session).Types.apply_sync_event with
         | None -> Error "Graph sync transport is unavailable"
         | Some apply ->
@@ -2116,7 +2129,12 @@ let sync_transport_event session _input fields =
               receive (Sync_driver.Submission_response (active.id, body, server_t))
           else receive event
         | _ -> receive event in
-      publish_sync_transport session transport
+      let projection_changed = previous_revision <> (state session).model.revision ||
+        match previous_db, query_db session with
+        | Some before, Some after -> before != after
+        | None, None -> false
+        | _ -> true in
+      publish_sync_transport ~projection_changed session transport
 
 let child_context session parent_id =
   let current = outliner_context session in
