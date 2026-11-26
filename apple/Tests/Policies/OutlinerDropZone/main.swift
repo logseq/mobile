@@ -1,14 +1,14 @@
 import Foundation
 
-// The central, left-hand part of a target row is a sibling drop on mobile.
-// Otherwise moving a child out next to its parent almost always nests it again.
-precondition(OutlinerDropZone.placement(locationY: 14, rowHeight: 28) == .after,
-             "Dropping child 3 onto the middle of parent 2 must allow a sibling move")
-precondition(OutlinerDropZone.placement(locationY: 1, rowHeight: 28) == .before)
-precondition(OutlinerDropZone.placement(locationY: 27, rowHeight: 28) == .after)
-precondition(OutlinerDropZone.placement(locationX: 50, locationY: 14, rowHeight: 28) == .after)
-precondition(OutlinerDropZone.placement(locationX: 101, locationY: 14, rowHeight: 28) == .inside)
-precondition(OutlinerDropZone.placement(locationX: 101, locationY: 14, rowHeight: 28, depth: 2) == .after)
-precondition(OutlinerDropZone.placement(locationX: 145, locationY: 14, rowHeight: 28, depth: 2) == .inside)
-precondition(OutlinerDropZone.placement(locationX: 150, locationY: 1, rowHeight: 28) == .before)
+func placement(from start: CGFloat, to drop: CGFloat, rowX: CGFloat, rowY: CGFloat = 14, depth: Int = 0) -> OutlinerDropPlacement {
+    OutlinerDropZone.placement(startX: start, dropX: drop, rowX: rowX, rowY: rowY, rowHeight: 28, depth: depth)
+}
+
+precondition(placement(from: 150, to: 150, rowX: 140) == .after, "A vertical drag must remain a sibling")
+precondition(placement(from: 150, to: 125, rowX: 115) == .after, "Dragging left must allow outdenting")
+precondition(placement(from: 100, to: 121, rowX: 111) == .after)
+precondition(placement(from: 100, to: 122, rowX: 112) == .inside)
+precondition(placement(from: 45, to: 75, rowX: 65, depth: 2) == .after)
+precondition(placement(from: 45, to: 76, rowX: 66, depth: 2) == .inside)
+precondition(placement(from: 100, to: 150, rowX: 140, rowY: 1) == .before)
 print("Outliner drop policy checks passed")

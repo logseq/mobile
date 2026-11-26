@@ -256,7 +256,7 @@ let handle_block_menu_event model_source row_source send = function
      | _ -> ())
   | input -> ignore (View_base.handle_outliner_block_content_event input model_source send)
 
-let outliner_rich_block_view ?(show_code_language = true) model_source row_source send : t =
+let outliner_rich_block_view ?(show_code_language = true) ~allow_drag model_source row_source send : t =
  custom @@ fun context parent ->
    let row_actions = if Lui_ui.host context <> KotlinHost then None else Some (
        Signal.map2 (fun current row ->
@@ -270,6 +270,7 @@ let outliner_rich_block_view ?(show_code_language = true) model_source row_sourc
          StringValue (Yojson.Basic.to_string (`Assoc [
            "selectionMode", `Bool (View_base.outliner_selection_active_ current);
            "selectionMember", `Bool (View_base.row_selected_ current row);
+           "allowsDrag", `Bool allow_drag;
            "isTask", `Bool is_task;
            "discussionsAvailable", `Bool (current.collaboration <> `Null && metadata_member "discussionKind" row <> `String "thread");
            "isComment", `Bool (metadata_member "discussionKind" row = `String "comment");
@@ -573,7 +574,7 @@ let code_language_control context model_source row_source send : t =
       ~accessibility_identifier:("outliner.code.language-header." ^ current_row.row_uuid)
       [box ~height:28 [trigger]])
 
-let code_block_content model_source retained_source row_source send : t =
+let code_block_content ~allow_drag model_source retained_source row_source send : t =
  custom @@ fun context parent ->
   let current_row = Signal.sample row_source in
   let source = Signal.map (fun retained -> if View_rows.retained_row_editing_ retained then
@@ -595,7 +596,7 @@ let code_block_content model_source retained_source row_source send : t =
           Some (fun _ -> ignore (send (Model.LongPressOutlinerBlock (Signal.sample row_source).row_uuid))))
         [reactive (fun calculator -> if calculator then
           text ~value:(reactive source) ~font_family:"monospace" ~font_size:"17" ~padding:12 [] else
-          outliner_rich_block_view ~show_code_language:false model_source row_source send) calculator]);
+          outliner_rich_block_view ~show_code_language:false ~allow_drag model_source row_source send) calculator]);
   ] in
   mount context ?parent (column ~gap:0 ~cross:`stretch ~corner_radius:8
     ~background_signal:(Signal.map (fun retained ->
@@ -623,7 +624,7 @@ let annotation_page_link row_source send =
         let page = try Yojson.Basic.Util.(value |> member "page" |> to_int) with _ -> 0 in
         "📌 P" ^ string_of_int page) reference) ~style_class:"caption" []])
 
-let outliner_row_main_content (context : Lui_ui.ui_context) model_source
+let outliner_row_main_content ?(allow_drag = true) (context : Lui_ui.ui_context) model_source
     retained_row_source row_source send : t =
   let current_row = Signal.sample row_source in
   let block_id_source =
@@ -662,12 +663,12 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
       column ~gap:2 ~grow:1.0 ~cross:`start
         ~accessibility_identifier:("outliner.title-and-tags." ^ current_row.row_uuid)
         [
-          reactive (fun code -> if code then code_block_content model_source retained_row_source row_source send else
+          reactive (fun code -> if code then code_block_content ~allow_drag model_source retained_row_source row_source send else
             column ~gap:0 ~cross:`stretch [
               if_ ~test:editing_source
                 (outliner_editor_view model_source block_id_source editing_title_source editing_caret_source send);
               if_ ~test:not_editing_source
-                (outliner_rich_block_view model_source row_source send)])
+                (outliner_rich_block_view ~allow_drag model_source row_source send)])
             (Signal.map (fun (row : Model.outline_row) -> row.row_display_type = Some "code") row_source);
           if_ ~test:has_tags_source
             (row ~gap:6
@@ -690,7 +691,7 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
            [ outliner_collapse_button context model_source row_source send ]);
     ]
 
-let outliner_row_content context model_source retained_row_source
+let outliner_row_content ?(allow_drag = true) context model_source retained_row_source
     row_source send : t =
   row ~gap:0 ~cross:`start ~padding_vertical:2
     [
@@ -698,7 +699,7 @@ let outliner_row_content context model_source retained_row_source
         (Signal.map View_base.outliner_row_indent row_source);
       outliner_zoom_control context model_source row_source send;
       box ~width:2 [];
-      outliner_row_main_content context model_source retained_row_source
+      outliner_row_main_content ~allow_drag context model_source retained_row_source
         row_source send;
     ]
 
@@ -760,7 +761,7 @@ let native_outliner_row ~allow_drag ~trailing_inset model_source retained_source
       "tags", `List (List.map summary row.tags)]) in
   Lui_ui.extension_property_signal context node "payload"
     (Signal.map2 (fun current retained -> StringValue (payload current retained)) model_source retained_source);
-  ignore (mount context ~parent:node (reactive (fun code -> if code then code_block_content model_source retained_source row_source send else
+  ignore (mount context ~parent:node (reactive (fun code -> if code then code_block_content ~allow_drag model_source retained_source row_source send else
     if_ ~test:(reactive View_rows.retained_row_editing_ retained_source)
       (box ~padding:0 [outliner_editor_view model_source (Signal.map View_base.outliner_row_uuid row_source)
         (Signal.map View_rows.retained_row_editing_title retained_source)
@@ -872,7 +873,7 @@ let outliner_row_body ?(allow_drag = true) ?(trailing_inset = 0) (context : Lui_
                            (Model.LongPressOutlinerBlock
                               (Signal.sample row_source : Model.outline_row).row_uuid)))
                     [
-                      outliner_row_main_content context model_source
+                      outliner_row_main_content ~allow_drag context model_source
                         retained_row_source row_source send;
                     ]));
            ]);
@@ -889,7 +890,7 @@ let outliner_row_body ?(allow_drag = true) ?(trailing_inset = 0) (context : Lui_
               (Signal.map View_base.outliner_row_identifier row_source)
             ~padding:0 ~corner_radius:10
             [
-              swipe (outliner_row_content context model_source
+              swipe (outliner_row_content ~allow_drag context model_source
                 retained_row_source row_source send);
             ]))
 

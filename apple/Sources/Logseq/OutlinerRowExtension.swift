@@ -3,7 +3,6 @@ import SwiftUI
 import LogseqModel
 import LUIAppleBackend
 #if os(iOS)
-import UniformTypeIdentifiers
 import UIKit
 #endif
 
@@ -107,13 +106,26 @@ struct OutlinerRowPayload: Decodable, Equatable {
 }
 
 #if os(iOS)
-@MainActor final class OutlinerBlockInteractions: NSObject, UIContextMenuInteractionDelegate, UIDragInteractionDelegate, UIGestureRecognizerDelegate {
+@MainActor final class OutlinerBlockInteractions: NSObject, UIContextMenuInteractionDelegate, UIDragInteractionDelegate, UIDropInteractionDelegate, UIGestureRecognizerDelegate {
+    struct DropTarget {
+        let id: String
+        let depth: Int
+        let showPlacement: (OutlinerDropPlacement?) -> Void
+        let drop: (OutlinerDropPlacement) -> Void
+    }
+
     struct Configuration {
         let menu: () -> UIMenu?
         let openReactionMenu: (() -> Void)?
         let dragID: String?
         let beginDrag: () -> Void
         let previewBackground: UIColor
+        var dropTarget: DropTarget? = nil
+    }
+
+    private struct DragOrigin {
+        let id: String
+        let x: CGFloat
     }
 
     private lazy var dragInteraction = UIDragInteraction(delegate: self)
@@ -139,6 +151,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
     func install(on view: UIView) {
         // UIKit can hand off from the context menu to drag when they share a view.
         view.addInteraction(dragInteraction)
+        view.addInteraction(UIDropInteraction(delegate: self))
         view.addInteraction(UIContextMenuInteraction(delegate: self))
         view.addGestureRecognizer(reactionPress)
     }
@@ -148,6 +161,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
         switch press.state {
         case .began:
             pressOrigin = dragActive ? nil : point
+            if !dragActive { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
         case .changed:
             if let origin = pressOrigin,
                hypot(point.x - origin.x, point.y - origin.y) > press.allowableMovement {
@@ -195,7 +209,8 @@ struct OutlinerRowPayload: Decodable, Equatable {
     }
 
     func dragInteraction(_ interaction: UIDragInteraction, itemsForBeginning session: any UIDragSession) -> [UIDragItem] {
-        guard let id = configuration?.dragID else { return [] }
+        guard let id = configuration?.dragID, let window = interaction.view?.window else { return [] }
+        session.localContext = DragOrigin(id: id, x: session.location(in: window).x)
         return [UIDragItem(itemProvider: NSItemProvider(object: id as NSString))]
     }
 
@@ -208,6 +223,45 @@ struct OutlinerRowPayload: Decodable, Equatable {
 
     func dragInteraction(_ interaction: UIDragInteraction, session: any UIDragSession, didEndWith operation: UIDropOperation) {
         dragActive = false
+    }
+
+    private func origin(for session: any UIDropSession) -> DragOrigin? {
+        guard let target = configuration?.dropTarget,
+              let origin = session.localDragSession?.localContext as? DragOrigin,
+              origin.id != target.id else { return nil }
+        return origin
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, canHandle session: any UIDropSession) -> Bool {
+        origin(for: session) != nil
+    }
+
+    private func placement(for interaction: UIDropInteraction, session: any UIDropSession) -> OutlinerDropPlacement? {
+        guard let origin = origin(for: session), let target = configuration?.dropTarget,
+              let view = interaction.view, let window = view.window else { return nil }
+        let point = session.location(in: view)
+        return OutlinerDropZone.placement(startX: origin.x, dropX: session.location(in: window).x,
+            rowX: point.x, rowY: point.y, rowHeight: view.bounds.height, depth: target.depth)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: any UIDropSession) -> UIDropProposal {
+        let placement = placement(for: interaction, session: session)
+        configuration?.dropTarget?.showPlacement(placement)
+        return UIDropProposal(operation: placement == nil ? .cancel : .move)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, performDrop session: any UIDropSession) {
+        guard let placement = placement(for: interaction, session: session) else { return }
+        configuration?.dropTarget?.drop(placement)
+        configuration?.dropTarget?.showPlacement(nil)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidExit session: any UIDropSession) {
+        configuration?.dropTarget?.showPlacement(nil)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: any UIDropSession) {
+        configuration?.dropTarget?.showPlacement(nil)
     }
 }
 
@@ -304,7 +358,7 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
     let context: LUIAppleExtensionViewContext
     let row: OutlinerRowPayload
     let playback: LGYouTubePlaybackState
-    @State private var dropGeometry = OutlinerRowDropGeometry()
+    @State private var dropPlacement: OutlinerDropPlacement?
     @State private var titleWidth: CGFloat = 0
     #if os(iOS)
     @State private var blockActionsOpen = false
@@ -364,12 +418,7 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
                 }
             if row.allowsDrag != false {
                 selectable
-                .overlay { OutlinerDropIndicator(placement: dropGeometry.placement, depth: row.depth) }
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { dropGeometry.height = $0 }
-                .onDrop(of: [UTType.plainText], delegate: OutlinerRowDropDelegate(geometry: dropGeometry, depth: row.depth) {
-                    emit("drop", extra: ["placement": .string($0.eventValue)])
-                    return true
-                })
+                .overlay { OutlinerDropIndicator(placement: dropPlacement, depth: row.depth) }
             } else {
                 selectable
             }
@@ -415,7 +464,12 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
     }
 
     private var blockInteractions: OutlinerBlockInteractions.Configuration {
-        .init(
+        let dropTarget: OutlinerBlockInteractions.DropTarget? = context.isUserInteractionEnabled && row.allowsDrag != false
+            ? .init(id: row.uuid, depth: row.depth,
+                showPlacement: { dropPlacement = $0 },
+                drop: { emit("drop", extra: ["placement": .string($0.eventValue)]) })
+            : nil
+        return .init(
             menu: {
                 guard context.isUserInteractionEnabled, !hasReactionMenu else { return nil }
                 return UIMenu(children: blockMenuGroups().map { group in
@@ -425,7 +479,8 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
             openReactionMenu: hasReactionMenu ? { blockActionsOpen = true } : nil,
             dragID: context.isUserInteractionEnabled && row.allowsDrag != false && !row.journalBullet ? row.uuid : nil,
             beginDrag: { emit("drag-start") },
-            previewBackground: UIColor(semanticColors["surface"] ?? Color(uiColor: .secondarySystemBackground))
+            previewBackground: UIColor(semanticColors["surface"] ?? Color(uiColor: .secondarySystemBackground)),
+            dropTarget: dropTarget
         )
     }
 

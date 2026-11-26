@@ -2,6 +2,10 @@ package com.logseq.logseq
 
 import android.content.ClipboardManager
 import android.graphics.Bitmap
+import android.os.SystemClock
+import android.view.InputDevice
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,6 +55,9 @@ import org.junit.runner.RunWith
 import dev.lui.LocalLuiSemanticColors
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 
 @RunWith(AndroidJUnit4::class)
@@ -63,7 +70,8 @@ class AndroidRichContentTest {
         rowActions: JSONObject? = null,
         scrollState: ScrollState? = null,
         swipable: Boolean = false,
-        onOpenImage: ((String, String) -> Unit)? = null): LuiBackend {
+        onOpenImage: ((String, String) -> Unit)? = null,
+        haptics: HapticFeedback? = null): LuiBackend {
         val registry = logseqExtensionRegistry(onOpenImage = onOpenImage)
         val backend = LuiBackend(onEvent = { events.add(it) }, extensions = registry)
         val ops = JSONArray()
@@ -105,8 +113,10 @@ class AndroidRichContentTest {
         ui.setContent {
             MaterialTheme(colorScheme = if (dark) LogseqTheme.darkScheme else LogseqTheme.lightScheme,
                 typography = LogseqTheme.typography) {
-                CompositionLocalProvider(LocalLuiSemanticColors provides
-                    (linkColor?.let { mapOf("link" to it) } ?: emptyMap())) {
+                CompositionLocalProvider(
+                    LocalLuiSemanticColors provides (linkColor?.let { mapOf("link" to it) } ?: emptyMap()),
+                    LocalHapticFeedback provides (haptics ?: LocalHapticFeedback.current),
+                ) {
                     if (scrollState == null) {
                         Box(Modifier.fillMaxSize()) { backend.Content(1) }
                     } else {
@@ -145,15 +155,76 @@ class AndroidRichContentTest {
         assertLongPressSelects("""[{"type":"text","text":"Plain block"}]""", "Plain block")
 
     @Test fun longPressOnTaskOpensMenuWithoutEnteringSelection() {
-        render("""[{"type":"text","text":"Task block"}]""", rowActions = JSONObject().put("isTask", true))
+        val feedback = mutableListOf<HapticFeedbackType>()
+        render("""[{"type":"text","text":"Task block"}]""", rowActions = JSONObject().put("isTask", true),
+            haptics = object : HapticFeedback {
+                override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {
+                    feedback += hapticFeedbackType
+                }
+            })
         ui.onNodeWithTag("outliner-block-content-rich-block").performTouchInput { longClick() }
         ui.onNodeWithTag("outliner.block.menu").assertIsDisplayed()
         ui.onNodeWithText("Deadline").assertIsDisplayed()
-        ui.runOnIdle { assertTrue(events.filterIsInstance<LuiEvent.Extension>().isEmpty()) }
+        ui.runOnIdle {
+            assertTrue(events.filterIsInstance<LuiEvent.Extension>().isEmpty())
+            assertEquals(listOf(HapticFeedbackType.LongPress), feedback)
+        }
         ui.onNodeWithText("Scheduled").performClick()
         ui.runOnIdle {
             assertEquals(listOf("menu-action"), events.filterIsInstance<LuiEvent.Extension>().map { it.name })
         }
+    }
+
+    @Test fun draggingBlocksUsesTheDownAndReleasePositions() {
+        render(
+            """[{"type":"text","text":"Move this block"}]""",
+            secondMarkup = """[{"type":"text","text":"Drop target"}]""",
+            rowActions = JSONObject().put("isTask", false),
+            scrollState = ScrollState(0),
+        )
+        val origin = ui.onNodeWithTag("outliner-block-content-rich-block").fetchSemanticsNode().boundsInWindow.center
+        val target = ui.onNodeWithTag("outliner-block-content-timestamp-block").fetchSemanticsNode().boundsInWindow
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+
+        fun dragTo(drop: Offset, expected: String) {
+            ui.runOnIdle { events.clear() }
+            val downAt = SystemClock.uptimeMillis()
+            fun send(action: Int, point: Offset) {
+                val event = MotionEvent.obtain(downAt, SystemClock.uptimeMillis(), action, point.x, point.y, 0)
+                event.source = InputDevice.SOURCE_TOUCHSCREEN
+                try {
+                    check(automation.injectInputEvent(event, true)) { "Could not send action $action at $point" }
+                } finally { event.recycle() }
+            }
+            send(MotionEvent.ACTION_DOWN, origin)
+            val holdDuration = ViewConfiguration.getLongPressTimeout() + 100L
+            ui.mainClock.advanceTimeBy(holdDuration)
+            SystemClock.sleep(holdDuration)
+            // Pass through the same point for both drags. Only the final release should determine nesting.
+            val middle = Offset(target.center.x + target.width / 4, target.center.y)
+            send(MotionEvent.ACTION_MOVE, middle)
+            SystemClock.sleep(140)
+            send(MotionEvent.ACTION_MOVE, middle)
+            SystemClock.sleep(140)
+            send(MotionEvent.ACTION_MOVE, drop)
+            SystemClock.sleep(400)
+            send(MotionEvent.ACTION_UP, drop)
+            ui.runOnIdle {
+                assertTrue("The drag must lift the source at $origin, got $events",
+                    events.filterIsInstance<LuiEvent.Extension>().any { it.name == "drag-start" })
+            }
+            ui.waitUntil(5_000) { ui.runOnIdle { events.filterIsInstance<LuiEvent.Extension>().any { it.name == "drop" } } }
+            ui.runOnIdle {
+                val gestures = events.filterIsInstance<LuiEvent.Extension>()
+                    .filter { it.name == "drag-start" || it.name == "drop" }
+                assertEquals(listOf("drag-start", "drop"), gestures.map { it.name })
+                assertEquals("timestamp-block", gestures.last().values["uuid"])
+                assertEquals(expected, gestures.last().values["placement"])
+            }
+        }
+
+        dragTo(Offset(origin.x, target.center.y), "after")
+        dragTo(Offset(origin.x + target.width / 4, target.center.y), "inside")
     }
 
     @Test fun richBodyLongPressSelectsInsteadOfEditing() =

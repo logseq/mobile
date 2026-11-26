@@ -44,12 +44,14 @@ val outliner_status_control :
   Model.outline_row Signal.signal ->
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val outliner_row_main_content :
+  ?allow_drag:bool ->
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   View_rows.retained_row Signal.signal ->
   Model.outline_row Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
 val outliner_row_content :
+  ?allow_drag:bool ->
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   View_rows.retained_row Signal.signal ->
