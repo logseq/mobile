@@ -463,7 +463,7 @@ let empty_journals_json session =
     `Assoc ["uuid", `String page.uuid; "title", `String page.title;
       "journalDay", `Int day]) pages)
 
-let snapshot_with_agenda ?(graph_snapshot_recovery = false) session context_blocks blocks =
+let snapshot_with_agenda ?(graph_snapshot_recovery = false) ?(include_agenda = true) session context_blocks blocks =
   let s = state session in
   let h = host session in
   let sidebar = sidebar_pages session in
@@ -608,7 +608,7 @@ let snapshot_with_agenda ?(graph_snapshot_recovery = false) session context_bloc
          ; ( "hasPendingSemanticOperations"
            , `Bool (has_pending_operations session) )
          ; ("emptyJournals", empty_journals_json session)
-         ; ("journalTasks", journal_tasks_json session)
+         ; ("journalTasks", (if include_agenda then journal_tasks_json session else `Null))
          ; ( "hasOlderJournals"
            , `Bool
                (match h.Types.has_older_journals with
@@ -674,7 +674,7 @@ let structural_outliner_patch anchored session before_context before_state
   in
   outliner_patch_result session after_context blocks deleted splices
 
-let visible_snapshot ~graph_snapshot_recovery session =
+let visible_snapshot ~graph_snapshot_recovery ?(include_agenda = true) session =
   let s = state session in
   let h = host session in
   let context_blocks =
@@ -717,7 +717,7 @@ let visible_snapshot ~graph_snapshot_recovery session =
     then context_blocks
     else Model.visible_from s.model context_blocks
   in
-  snapshot_with_agenda ~graph_snapshot_recovery session context_blocks blocks
+  snapshot_with_agenda ~graph_snapshot_recovery ~include_agenda session context_blocks blocks
 
 let snapshot_visible session = visible_snapshot ~graph_snapshot_recovery:false session
 
@@ -1037,7 +1037,7 @@ let dispatch_outliner_event session payload =
             | None, Outliner.Toggle_collapsed _ -> So.persist_collapsed_nodes session
             | _ -> ());
            let editor_snapshot () =
-             visible_snapshot ~graph_snapshot_recovery:false session in
+             visible_snapshot ~graph_snapshot_recovery:false ~include_agenda:false session in
            if reference_toggle <> None || external_results || (state session).node_routes <> [] then
              editor_snapshot ()
            else
