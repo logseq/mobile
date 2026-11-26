@@ -21,6 +21,10 @@ appId: com.logseq.logseq
     id: "link.sidebar.flashcards"
 - assertVisible:
     id: "link.sidebar.graphs"
+- scrollUntilVisible:
+    element:
+      text: "E2E Page Target"
+    direction: DOWN
 - tapOn: "E2E Page Target"
 - extendedWaitUntil:
     visible:

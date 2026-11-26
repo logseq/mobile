@@ -7,6 +7,10 @@ appId: com.logseq.logseq
     timeout: 45000
 - tapOn:
     id: "button.sidebar"
+- scrollUntilVisible:
+    element:
+      text: "E2E Journal 08"
+    direction: DOWN
 - tapOn: "E2E Journal 08"
 - extendedWaitUntil:
     visible:
