@@ -231,12 +231,14 @@ let query_expansion_key session uuid =
 
 let query_projection session db uuid =
   if not (Query_block.is_query db uuid) then None
-  else if Outliner.Sset.mem (query_expansion_key session uuid) (state session).expanded_queries then
-    Option.map (function `Assoc fields -> `Assoc (("expanded", `Bool true) :: fields) | value -> value)
-      (query_for session db uuid)
-  else Some (`Assoc ["kind", `String "deferred"; "ownerUuid", `String uuid;
-    "featureType", `String "query-result"; "expanded", `Bool false;
-    "rows", `List []; "views", `List []; "error", `Null])
+  else
+    let definition = Result_view.query_definition_json db uuid in
+    if Outliner.Sset.mem (query_expansion_key session uuid) (state session).expanded_queries then
+      Option.map (function `Assoc fields -> `Assoc (["expanded", `Bool true; "definition", definition] @ fields)
+        | value -> value) (query_for session db uuid)
+    else Some (`Assoc ["kind", `String "deferred"; "ownerUuid", `String uuid;
+      "featureType", `String "query-result"; "expanded", `Bool false; "definition", definition;
+      "rows", `List []; "views", `List []; "error", `Null])
 
 let with_queries session result =
   match query_db session with

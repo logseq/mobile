@@ -1026,7 +1026,54 @@ let zoomed_journal_delete_effect_preserves_the_journal () =
     check ~msg:"the block and its descendants are removed" (not (exists Q.alpha || exists R.gamma));
     check ~msg:"the journal and other entries remain" (exists Q.page && exists Q.beta))
 
+let newly_tagged_query_can_be_defined () =
+  R.with_runtime (fun session runtime conn ->
+    let query_tag = Option.get (Ds.entid (Graph_runtime.db runtime) "db/ident" (Ds.Keyword "logseq.class/Query")) in
+    let query_tag_uuid = Option.get (Graph_read.uuid_for_eid (Graph_runtime.db runtime) query_tag) in
+    ignore (result (Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
+      "action", `String "setTags"; "blockUuid", `String Q.beta;
+      "selectedValues", `List [`String query_tag_uuid]]))));
+    let key = "query.definition." ^ Q.beta in
+    let source = "{:query [:find (pull ?b [*])\n :where [?b :block/title \"Alpha **result**\"]]}" in
+    Q.with_ui App_test.ios_backend (Rpc_session.snapshot_visible session) (fun app ->
+      let find id = App_test.descendant_with_identifier (Lui_app.runtime app) (Lui_app.root_node app) id in
+      let press id =
+        let node = find id in
+        check ~msg:id (node <> -1);
+        App_test.dispatch app (Lui_protocol.Press node); App_test.flush app in
+      check_eq ~msg:"A query without a definition does not offer empty results"
+        (find ("query.toggle." ^ Q.beta)) (-1);
+      press (key ^ ".open");
+      let input = find (key ^ ".input") in
+      check ~msg:"A new query has a definition editor" (input <> -1);
+      App_test.dispatch app (Lui_protocol.TextChanged (input, source)); App_test.flush app;
+      press (key ^ ".save");
+      let id, payload = List.find_map (function
+        | Model.NodePropertyEffect (id, editor, payload) when editor = key -> Some (id, payload)
+        | _ -> None) (App.model app).pending_effects |> Option.get in
+      App_test.send app (Model.DequeueEffect id);
+      let response = Core_effect_test.execute session "node-property" ["text", `String payload] in
+      ignore (result response);
+      App_test.send app (Model.ResolveEffect (id, true, J.to_string response));
+      (match Response_snapshot.decode_response (J.to_string response) with
+       | Ok projection -> App_test.send app (Model.ApplyCoreSnapshot projection)
+       | Error error -> fail error);
+      App_test.flush app;
+      check_eq (find (key ^ ".input")) (-1);
+      check (find ("query.toggle." ^ Q.beta) <> -1));
+    sync_all runtime conn;
+    check_eq (Graph_runtime.pending_operations runtime) [];
+    let db = Graph_runtime.db runtime in
+    let owner = Option.get (Ds.entid db "block/uuid" (Ds.Uuid Q.beta)) in
+    check_eq (Graph_read.value db owner "block/title") (Some (Ds.String "Beta result"));
+    let definition = List.hd (Graph_read.ref_eids db owner "logseq.property/query") in
+    check_eq (Graph_read.value db definition "block/title") (Some (Ds.String source));
+    let rendered = member "query" (Q.dispatch session "queryBlock" Q.beta) in
+    check_eq ~msg:(J.to_string rendered) (member "error" rendered) `Null;
+    check_eq (Q.row_ids rendered) [Q.alpha])
+
 let cases = [
+  case "a newly tagged Query block can save and run its own definition" newly_tagged_query_can_be_defined;
   case "deleting a zoomed journal block preserves its journal and siblings" zoomed_journal_delete_effect_preserves_the_journal;
   case "date editors open with empty NLP input and preserve existing values" date_editor_opens_empty_and_preserves_the_selected_date;
   case "Date properties accept natural language" date_properties_accept_natural_language;

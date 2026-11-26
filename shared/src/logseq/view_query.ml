@@ -1166,14 +1166,70 @@ let collection ?fill_height ~render_block model_source raw_source send : t = cus
   Lui_elements.mount context ?parent
     (collection_json ?fill_height ~render_block model_source parsed send)
 
+let definition_editor owner model_source definition send : t = custom @@ fun context parent ->
+  let own value = Signal.own_signal context.Lui_ui.ui_scope value in
+  let editing = Signal.state context.ui_scheduler None in
+  let draft = Signal.state context.ui_scheduler "" in
+  let key = "query.definition." ^ owner in
+  let feedback = own (feedback model_source key) in
+  let waiting = own (waiting model_source key) in
+  let close () = Signal.set editing None in
+  ignore (Signal.own context.ui_scope (Signal.observe feedback (function
+    | Some (_, _, None) -> close ()
+    | _ -> ())));
+  let tr text = View_base.tr (Signal.sample model_source) text in
+  let title = own (Signal.map (fun definition ->
+    tr (if String.trim (jtext (jfield "source" definition)) = "" then "Set query" else "Edit query")) definition) in
+  let submit () = match Signal.sample (Signal.value editing) with
+    | None -> ()
+    | Some definition ->
+      let graph = (Signal.sample model_source).Model.selected_graph_id in
+      ignore (send (Model.SubmitNodeProperty (key, Json.to_string (`Assoc ([
+        "action", `String "saveQueryDefinition"; "blockUuid", `String owner;
+        "expected", jfield "expected" definition; "source", jfield "source" definition;
+        "value", `String (Signal.sample (Signal.value draft))]
+        @ Option.fold ~none:[] ~some:(fun graph -> ["graphId", `String graph]) graph))))) in
+  let error = own (Signal.map (function Some (_, _, Some message) -> tr message | _ -> "") feedback) in
+  let changed = own (Signal.map2 (fun draft -> function
+    | Some definition -> `String draft <> jfield "source" definition
+    | None -> false) (Signal.value draft) (Signal.value editing)) in
+  let disabled = own (Signal.map2 (fun changed waiting -> waiting || not changed) changed waiting) in
+  mount context ?parent (column ~cross:`stretch ~gap:4 [
+    button ~variant:`ghost ~text:(reactive title) ~text_alignment:`start ~min_height:44
+      ~accessibility_identifier:(key ^ ".open") ~on_press:(fun _ ->
+        let current = Signal.sample definition in
+        Signal.set editing (Some current);
+        Signal.set draft (jtext (jfield "source" current))) [];
+    if_ ~test:(own (Signal.map Option.is_some (Signal.value editing)))
+      (View_base.sheet ~model_source ~title:(reactive title) ~detents:"large"
+        ~accessibility_identifier:(key ^ ".sheet") ~on_dismiss:(fun _ -> close ()) [
+        column ~padding:16 ~gap:12 ~cross:`stretch [
+          textarea ~min_height:120 ~max_height:260 ~submit_on_enter:false
+            ~text_signal:(Signal.value draft) ~label:(tr "property.built-in/query") ~autofocus:true
+            ~accessibility_identifier:(key ^ ".input") ~on_input:(Signal.set draft) [];
+          if_ ~test:(own (Signal.map ((<>) "") error))
+            (text ~value:(reactive error) ~foreground:"error-foreground" []);
+          row ~gap:8 [
+            button ~text:(tr "Cancel") ~variant:`ghost ~on_press:(fun _ -> close ()) [];
+            button ~text:(tr "Save") ~disabled_signal:disabled
+              ~accessibility_identifier:(key ^ ".save") ~on_press:(fun _ -> submit ()) []]]])])
+
 let view ~render_block model_source row_source send : t = custom @@ fun context parent ->
   let own value = Signal.own_signal context.Lui_ui.ui_scope value in
   let raw_source = own (Signal.cutoff String.equal
     (own (Signal.map (fun (row : Model.outline_row) -> row.query_json) row_source))) in
   let parsed = own (Signal.map (fun raw -> try Json.from_string raw with _ -> `Null) raw_source) in
-  Lui_elements.mount context ?parent (reactive (fun has_views ->
-    if has_views then if_ ~test:(Signal.map (fun (row : Model.outline_row) -> not row.is_collapsed) row_source)
-        (collection_json ~render_block model_source parsed send)
-    else legacy_view ~render_block model_source row_source send)
-    (own (Signal.cutoff Bool.equal (own (Signal.map (fun json -> saved_views_json json <> [] ||
-      member "expanded" json <> None) parsed)))))
+  let definition = own (Signal.map (jfield "definition") parsed) in
+  let visible = own (Signal.map (fun (row : Model.outline_row) -> not row.is_collapsed) row_source) in
+  let owner = (Signal.sample row_source).Model.row_uuid in
+  let show_editor = own (Signal.map ((<>) `Null) definition) in
+  let show_results = own (Signal.map (fun definition -> definition = `Null ||
+    String.trim (jtext (jfield "source" definition)) <> "") definition) in
+  Lui_elements.mount context ?parent (if_ ~test:visible (column ~gap:4 ~cross:`stretch [
+    if_ ~test:show_editor (definition_editor owner model_source definition send);
+    if_ ~test:show_results (reactive (fun has_views ->
+      if has_views then collection_json ~render_block model_source parsed send
+      else legacy_view ~render_block model_source row_source send)
+      (own (Signal.cutoff Bool.equal (own (Signal.map (fun json -> saved_views_json json <> [] ||
+        member "expanded" json <> None) parsed)))));
+  ]))

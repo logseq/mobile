@@ -24,4 +24,8 @@ val edit_property : ?text_value:bool -> ?allow_builtin:bool -> Datascript.db -> 
 val begin_text_edit : Datascript.db -> now:int -> fresh_uuid:(unit -> string) ->
   Yojson.Basic.t -> string * Pending_ops.pending_intent option
 
+val query_definition_json : Datascript.db -> string -> Yojson.Basic.t
+val save_query_definition : Datascript.db -> now:int -> fresh_uuid:(unit -> string) ->
+  Yojson.Basic.t -> Pending_ops.pending_intent
+
 val filter_values : Datascript.db -> owner:string -> feature:string -> attr:string -> Yojson.Basic.t
