@@ -70,15 +70,27 @@ let check_notification_demand db =
     assert (inbox (Workload.open_journal session) = `Null))
 
 let check_rtc_and_tasks db =
-  Workload.with_session ~show_journal_tasks:(fun () -> false) db (fun session ->
-    Workload.editing session;
-    let receive = Workload.receive_journal session in
-    let response, (_, allocated, size) = measure receive in
-    let result = Workload.result response in
-    assert (Workload.member "appliedServerT" result = `Int 43);
-    assert (Workload.member "journalTasks" result = `Null);
-    if allocated >= 24_000_000. || size >= 100_000 then
-      failwith (Printf.sprintf "RTC update during editing allocated %.0f bytes and returned %d bytes" allocated size));
+  let rtc_during_edit visit_tasks =
+    let visible = ref visit_tasks in
+    Workload.with_session ~show_journal_tasks:(fun () -> !visible) db (fun session ->
+      if visit_tasks then begin
+        let agenda response = Workload.member "journalTasks" (Workload.result response) in
+        assert (Json.Util.to_list (Workload.member "today" (agenda (Workload.open_journal session))) <> []);
+        visible := false
+      end;
+      Workload.editing session;
+      let receive = Workload.receive_journal session in
+      let response, (_, allocated, size) = measure receive in
+      let result = Workload.result response in
+      assert (Workload.member "appliedServerT" result = `Int 43);
+      assert (Workload.member "journalTasks" result = `Null);
+      if allocated >= 24_000_000. || size >= 100_000 then
+        failwith (Printf.sprintf "RTC update during editing allocated %.0f bytes and returned %d bytes" allocated size);
+      allocated) in
+  let cold = rtc_during_edit false in
+  let after_tasks = rtc_during_edit true in
+  if after_tasks > cold +. 64_000. then
+    failwith (Printf.sprintf "RTC update after leaving Tasks allocated %.0f extra bytes" (after_tasks -. cold));
   Workload.with_session ~show_journal_tasks:(fun () -> false) db (fun session ->
     let transport = Workload.connected session in
     Workload.editing session;

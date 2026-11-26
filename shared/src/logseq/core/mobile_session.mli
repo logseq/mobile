@@ -12,6 +12,7 @@ val snapshot_request : string
 val discard_value : ('a, string) result -> (unit, string) result
 val host_options :
   ?journal_tasks:Journal_task_dates.cache ->
+  ?show_journal_tasks:(unit -> bool) ->
   Mobile_database.mobile_database ->
   E2ee_keyring.e2ee_keyring ->
   Sqlite.session option ->

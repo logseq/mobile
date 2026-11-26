@@ -92,11 +92,14 @@ let with_session ?show_journal_tasks ?show_notifications db f =
       let conn = Ds.conn_from_db db in
       let runtime = Runtime.create_base path 42 conn Runtime.default_options in
       let journal_tasks = Journal_task_dates.create_cache () in
+      let visible_agenda () =
+        if Option.fold ~none:true ~some:(fun show -> show ()) show_journal_tasks then Some journal_tasks else None in
       let apply_sync_event body =
         let ( let* ) = Result.bind in
         let* journal = Journal_sync.decode body in
         let* applied = Journal_sync.apply Result.ok conn (Runtime.state runtime).server_t journal in
-        Runtime.rebase ~agenda_update:(journal_tasks, applied)
+        let agenda_update = Option.map (fun cache -> cache, applied) (visible_agenda ()) in
+        Runtime.rebase ?agenda_update
           ~changed_attributes:applied.changed_attributes
           runtime journal.t applied.operation_ids applied.changed_uuids;
         Ok () in
@@ -114,7 +117,7 @@ let with_session ?show_journal_tasks ?show_notifications db f =
         graph_tag_pages = Some (fun () -> Some (Runtime.tag_pages runtime));
         graph_node_destination = Some (Runtime.node_destination runtime);
         empty_journals = Some (fun () -> Runtime.empty_journals runtime);
-        stage_operation = Some (Runtime.stage ~journal_tasks runtime);
+        stage_operation = Some (fun operation -> Runtime.stage ?journal_tasks:(visible_agenda ()) runtime operation);
         pending_operations = Some (fun () -> Runtime.pending_operations runtime);
         prepare_operation = Some (Runtime.prepare_sync runtime)
       } in

@@ -43,7 +43,7 @@ let markup db eid ~title ~references ~tags =
     [M.Markup_emphasis ("heading-" ^ string_of_int level, content)]
   | _ -> parsed
 
-let preview db =
+let preview ?(on_reference = fun _ -> ()) db =
   let cache = Hashtbl.create 16 in
   let decode title = Ok title in
   let build eid =
@@ -66,6 +66,7 @@ let preview db =
           let title = Ref_text.to_text hide_uuid hide_uuid title in
           if String_kit.is_blank title || Ref_text.is_uuid (String.trim title) then None else Some title) in
       let extra = uuids block.title |> List.filter_map (fun uuid ->
+        on_reference uuid;
         Option.map (fun title -> {Cache_model.uuid; title}) (reference_title uuid)) in
       let missing uuid = if Ref_text.is_uuid uuid && not (List.exists (fun (item : Cache_model.entity_summary) ->
         item.uuid = uuid) extra) then hide_uuid uuid else None in
@@ -85,8 +86,8 @@ let preview db =
     | Some content -> content
     | None -> let content = build eid in Hashtbl.add cache eid content; content
 
-let decorate ?actor db =
-  let preview = preview db in
+let decorate ?actor ?on_comment_reference db =
+  let preview = preview ?on_reference:on_comment_reference db in
   let discussions = Hashtbl.create 16 in
   let discussion eid = match Hashtbl.find_opt discussions eid with
     | Some fields -> fields

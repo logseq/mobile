@@ -25,12 +25,15 @@ let discard_value result =
   | Ok _ -> Ok ()
   | Error message -> Error message
 
-let host_options ?journal_tasks (database : Database.mobile_database) ring catalog =
+let host_options ?journal_tasks ?show_journal_tasks (database : Database.mobile_database) ring catalog =
   let graph = database.graph in
+  let visible_agenda () =
+    if Option.fold ~none:true ~some:(fun show -> show ()) show_journal_tasks then journal_tasks else None in
   {
     Rpc.default_options with
     Types.configure_identity = Some (Graph.configure_identity graph);
     outliner_projection_limit = Some 32;
+    show_journal_tasks;
     Types.load_graph_catalog =
       (match catalog with
        | Some catalog ->
@@ -61,7 +64,7 @@ let host_options ?journal_tasks (database : Database.mobile_database) ring catal
     model_for_graph =
       Some (fun graph_id -> Database.model_for_graph database graph_id);
     apply_sync_event =
-      Some (fun body -> Graph.apply_sync_event ?journal_tasks graph body);
+      Some (fun body -> Graph.apply_sync_event ?journal_tasks:(visible_agenda ()) graph body);
     sync_cursor = Some (fun () -> Graph.sync_cursor graph);
     graph_blocks = Some (fun () -> Graph.blocks graph);
     empty_journals = Some (fun () -> Graph.empty_journals graph);
@@ -103,7 +106,7 @@ let host_options ?journal_tasks (database : Database.mobile_database) ring catal
     has_older_journals =
       Some (fun () -> Graph.has_older_journals graph);
     stage_operation =
-      Some (fun operation -> Graph.stage ?journal_tasks graph operation);
+      Some (fun operation -> Graph.stage ?journal_tasks:(visible_agenda ()) graph operation);
     prepare_operation =
       Some (fun operation -> Graph.prepare_sync graph operation);
     prepare_operations = Some (Graph.prepare_sync_batch graph);
@@ -145,7 +148,8 @@ let host_options ?journal_tasks (database : Database.mobile_database) ring catal
 
 let create_rpc_session ?show_journal_tasks ?show_notifications database ring catalog =
   let journal_tasks = Journal_task_dates.create_cache () in
-  Rpc.create_session ~journal_tasks { (host_options ~journal_tasks database ring catalog) with show_journal_tasks; show_notifications }
+  let options = host_options ~journal_tasks ?show_journal_tasks database ring catalog in
+  Rpc.create_session ~journal_tasks {options with show_notifications}
 
 let create ?show_journal_tasks ?show_notifications crypto_call =
   let ring = Platform.create_keyring crypto_call Http.send in
