@@ -9,13 +9,8 @@ import WidgetKit
 
     private var refreshTask: Task<Void, Never>?
     private var needsRefresh = false
+    private var needsBackgroundRefresh = false
     private var forceRandomReload = false
-
-    private func scheduleRefresh(forceRandomReload: Bool = false) {
-        needsRefresh = true
-        self.forceRandomReload = self.forceRandomReload || forceRandomReload
-        resumePendingRefresh()
-    }
 
     func protectedDataDidBecomeAvailable() {
         // WidgetKit may have built a fallback timeline while the snapshot was protected.
@@ -28,53 +23,66 @@ import WidgetKit
         WidgetCenter.shared.reloadTimelines(ofKind: "CaptureWidget")
     }
 
+    private var canRefreshInBackground: Bool {
+        needsBackgroundRefresh && UIApplication.shared.applicationState == .background
+    }
+
     private func resumePendingRefresh() {
-        guard needsRefresh, refreshTask == nil, UIApplication.shared.isProtectedDataAvailable else { return }
+        guard refreshTask == nil, UIApplication.shared.isProtectedDataAvailable,
+              needsRefresh || canRefreshInBackground else { return }
         refreshTask = Task {
-            while needsRefresh && UIApplication.shared.isProtectedDataAvailable {
+            defer { refreshTask = nil }
+            while UIApplication.shared.isProtectedDataAvailable && (needsRefresh || canRefreshInBackground) {
+                let explicit = needsRefresh
+                let random = forceRandomReload
+                let background = canRefreshInBackground
                 needsRefresh = false
-                let forceRandomReload = self.forceRandomReload
-                self.forceRandomReload = false
-                await publishSnapshot(forceRandomReload: forceRandomReload)
+                forceRandomReload = false
+                if background { needsBackgroundRefresh = false }
+                if await publishSnapshot(forceRandomReload: random) { continue }
+                needsRefresh = needsRefresh || explicit
+                forceRandomReload = forceRandomReload || random
+                needsBackgroundRefresh = needsBackgroundRefresh || background
+                return
             }
-            refreshTask = nil
         }
     }
 
     func refresh(forceRandomReload: Bool = false) async {
-        scheduleRefresh(forceRandomReload: forceRandomReload)
+        needsRefresh = true
+        self.forceRandomReload = self.forceRandomReload || forceRandomReload
+        resumePendingRefresh()
         await refreshTask?.value
     }
 
-    func refreshInBackground() async {
-        guard UIApplication.shared.applicationState == .background,
-              UIApplication.shared.isProtectedDataAvailable,
-              refreshTask == nil, !Task.isCancelled else { return }
-        await publishSnapshot(forceRandomReload: false, backgroundOnly: true)
+    func requestBackgroundRefresh() {
+        guard UIApplication.shared.applicationState == .background else { return }
+        needsBackgroundRefresh = true
+        resumePendingRefresh()
     }
 
-    private func publishSnapshot(
-        forceRandomReload: Bool, backgroundOnly: Bool = false
-    ) async {
+    func refreshInBackground() async {
+        guard !Task.isCancelled else { return }
+        requestBackgroundRefresh()
+        await refreshTask?.value
+    }
+
+    /// Returns false when data protection requires retrying the publication.
+    private func publishSnapshot(forceRandomReload: Bool) async -> Bool {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: SharedCaptureStorage.appGroupIdentifier
-        ) else { return }
+        ) else { return true }
         let file = container.appendingPathComponent("widget-content.json")
         let response = await LogseqCore.callAsync(LogseqRPCRequest(
             method: "dispatch", params: LogseqRPCParams(
                 action: "widgetSnapshot", payload: forceRandomReload ? #"{"resampleRandomBlocks":true}"# : nil
             )
         ))
-        guard UIApplication.shared.isProtectedDataAvailable else {
-            if !backgroundOnly {
-                scheduleRefresh(forceRandomReload: forceRandomReload)
-            }
-            return
-        }
+        guard UIApplication.shared.isProtectedDataAvailable else { return false }
         do {
             guard let envelope = try JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any],
                   envelope["ok"] as? Bool == true,
-                  let content = envelope["result"] as? [String: Any] else { return }
+                  let content = envelope["result"] as? [String: Any] else { return true }
             let data = try JSONSerialization.data(withJSONObject: content, options: .sortedKeys)
             let previousData = try? Data(contentsOf: file)
             if data != previousData {
@@ -103,11 +111,10 @@ import WidgetKit
             }
         } catch let error as CocoaError
             where error.code == .fileWriteNoPermission && !UIApplication.shared.isProtectedDataAvailable {
-            if !backgroundOnly {
-                scheduleRefresh(forceRandomReload: forceRandomReload)
-            }
+            return false
         } catch {
             logger.error("Could not publish widget content: \(error)")
         }
+        return true
     }
 }

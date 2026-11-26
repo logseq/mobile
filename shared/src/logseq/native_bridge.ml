@@ -44,8 +44,7 @@ let show_journal_tasks () =
 let show_notifications () =
   Option.exists (fun app ->
     let current = App.model app in
-    (current.Model.destination = Model.NotificationsDestination && View_base.node_navigation_inactive_ current)
-    || current.pending_push_route <> None) !current_app
+    current.Model.destination = Model.NotificationsDestination && View_base.node_navigation_inactive_ current) !current_app
 
 let effect_deadlines = Hashtbl.create 8
 

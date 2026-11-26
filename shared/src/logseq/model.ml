@@ -3398,6 +3398,7 @@ let rec update (current : logseq_model) action =
         sidebar_open = sidebar_after_navigation current;
         graph_menu_open = false;
         tasks_selection_mode = false;
+        pending_push_route = None;
         destination;
       }
     in

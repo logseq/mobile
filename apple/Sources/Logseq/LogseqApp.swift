@@ -393,6 +393,9 @@ public struct LogseqRootView : View {
             platformCommandHandler: platformCommandRouter
         )
         self.lgRuntime = lgRuntime
+        lgRuntime.didSaveOutlinerEditing = { [weak self] in
+            self?.widgetContent.requestBackgroundRefresh()
+        }
         responseRelay.apply = { [weak lgRuntime] response in
             do {
                 try lgRuntime?.applyCoreResponse(response)
@@ -1031,8 +1034,10 @@ public struct LogseqRootView : View {
 
     public func runExclusiveBackgroundSync() async -> Bool {
         await syncCoordinator.runBackground { [self] in
-            let synced = await syncFromStoredConnection()
+            await waitForLocalLaunchLoad()
             await widgetContent.refreshInBackground()
+            let synced = await syncFromStoredConnection()
+            if synced { await widgetContent.refreshInBackground() }
             return synced
         }
     }

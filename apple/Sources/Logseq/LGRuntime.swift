@@ -72,6 +72,7 @@ public final class LGRuntime {
     public let renderer: LGRenderer
     public private(set) var lastError: String?
     public private(set) var isStarted = false
+    var didSaveOutlinerEditing: (() -> Void)?
 
     @ObservationIgnored
     private let native: any LGNativeCalling
@@ -551,6 +552,9 @@ public final class LGRuntime {
             if resolution.succeeded && (effect.kind == "send-asset" || effect.kind == "send-capture" || effect.kind == "send-task" || effect.kind == "send-tagged") {
                 // A send may finish while backgrounded; do not restore already submitted drafts.
                 _ = await enqueueNative(.hostUpdate("save-ui-session", "null")).value
+            }
+            if resolution.succeeded && effect.kind == "save-outliner-editing" {
+                didSaveOutlinerEditing?()
             }
             lastError = resolution.succeeded ? nil : resolution.message
         }

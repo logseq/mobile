@@ -10,6 +10,7 @@ final class EditorModel: ObservableObject {
     @Published var selectionRevision = 0
     var returns = 0
     var submittedTitles: [String] = []
+    var backspaceSources: [String] = []
     var pendingCarets: [Int]?
     func moveCaret(_ caret: Int) {
         if pendingCarets != nil {
@@ -24,6 +25,13 @@ final class EditorModel: ObservableObject {
         self.title = String((title as NSString).substring(from: caret))
         self.caret = 0
         blockID = "new-\(returns)"
+        selectionRevision += 1
+    }
+    func backspace(_ title: String, _ selectionLength: Int) {
+        backspaceSources.append(blockID)
+        blockID = "merged-\(backspaceSources.count)"
+        self.title = title
+        self.caret = 0
         selectionRevision += 1
     }
 }
@@ -44,7 +52,7 @@ private struct EditorHost: View {
                     selectionRevision: model.selectionRevision,
                     onTextChange: { model.title = $0; model.caret = $1 },
                     onReturn: model.enter,
-                    onBackspace: { _, _ in },
+                    onBackspace: model.backspace,
                     onCaretChange: model.moveCaret)
             }
             Spacer()
@@ -131,6 +139,29 @@ struct ReturnHandoffCheck {
         let submitted = Array(model.submittedTitles.dropFirst(beforeBurst))
         if submitted != ["First", "Second", "", "", "", "", "", ""] || !model.title.isEmpty {
             print("FAIL: a burst of eight Return presses must split each acknowledged block in order; titles=\(submitted)")
+            failures += 1
+        }
+        model.title = "Alpha"; model.blockID = "split-merge"; model.caret = 0
+        model.selectionRevision += 1
+        await settle()
+        let beforeMerge = model.returns
+        type("\n", in: editor())
+        type("\n", in: editor())
+        type("", in: editor())
+        for _ in 0..<20 where model.backspaceSources.isEmpty { await settle() }
+        if model.returns != beforeMerge + 2 || model.backspaceSources != ["new-\(beforeMerge + 2)"] {
+            print("FAIL: both Returns must precede Backspace on the new block; sources=\(model.backspaceSources)")
+            failures += 1
+        }
+        model.title = ""; model.blockID = "typed-backspace"; model.caret = 0
+        model.selectionRevision += 1
+        await settle()
+        type("\n", in: editor())
+        type("x😀", in: editor())
+        type("", in: editor())
+        await settle()
+        if model.title != "x" || model.backspaceSources.count != 1 {
+            print("FAIL: buffered Backspace must delete one character after buffered typing")
             failures += 1
         }
         for code in [true, false] {

@@ -49,6 +49,8 @@ internal class LogseqRuntime(
     private val scope = CoroutineScope(parentScope.coroutineContext + runtimeJob)
     private var ownsCore = false
     private var widgetRefreshJob: Job? = null
+    private var activityStopped = false
+    private var widgetRefreshPending = false
     private var clipboardImageJob: Job? = null
 
     val platformServices = AndroidPlatformServices(activity)
@@ -466,13 +468,24 @@ internal class LogseqRuntime(
     }
 
     fun onActivityStarted() {
+        activityStopped = false
         widgetRefreshJob?.cancel()
     }
 
     fun onActivityStopped() {
-        if (!ownsCore || widgetRefreshJob?.isActive == true) return
+        activityStopped = true
+        scheduleStoppedWidgetRefresh()
+    }
+
+    private fun scheduleStoppedWidgetRefresh() {
+        if (!activityStopped || !ownsCore) return
+        widgetRefreshPending = true
+        if (widgetRefreshJob?.isActive == true) return
         widgetRefreshJob = scope.launch {
-            AndroidWidgetContent.refresh(activity.applicationContext, bridge::callCore)
+            while (activityStopped && widgetRefreshPending) {
+                widgetRefreshPending = false
+                AndroidWidgetContent.refresh(activity.applicationContext, bridge::callCore)
+            }
         }
     }
 
@@ -706,6 +719,7 @@ internal class LogseqRuntime(
         }
         val resolution = executor.execute(effect)
         if (resolution is NativeEffectResolution.CoreResponse) trackSyncState(resolution.response)
+        if (effect.kind == "save-outliner-editing" && resolution.succeeded) scheduleStoppedWidgetRefresh()
         if (deletingOpenGraph) {
             if (resolution.succeeded) {
                 platformEffects.persistSelectedGraphId("")

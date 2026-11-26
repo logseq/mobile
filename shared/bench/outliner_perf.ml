@@ -32,7 +32,7 @@ let benchmark db iterations =
   ) Workload.scenarios;
   let rtc name run =
     let samples = List.init iterations (fun _ ->
-      Workload.with_session ~show_journal_tasks:(fun () -> false) db (fun session ->
+      Workload.with_session ~show_journal_tasks:(fun () -> false) ~show_notifications:(fun () -> false) db (fun session ->
         Workload.editing session;
         run session)) in
     print_samples name samples in
@@ -50,7 +50,7 @@ let benchmark db iterations =
 
 let check_notification_demand db =
   let visible = ref false in
-  Workload.with_session ~show_notifications:(fun () -> !visible) db (fun session ->
+  Workload.with_session ~show_journal_tasks:(fun () -> false) ~show_notifications:(fun () -> !visible) db (fun session ->
     let inbox response =
       match Workload.member "collaboration" (Workload.result response) with
       | `Assoc _ as data -> Workload.member "inbox" data
@@ -61,9 +61,19 @@ let check_notification_demand db =
     let transport = Workload.connected session in
     let changed = transport ["type", `String "frame";
       "body", `String {|{"type":"changed","t":43}|}] in
-    assert (Workload.member "isPendingSyncPatch" (Workload.result changed) = `Bool true);
-    assert (String.length changed < 2_048);
-    assert (inbox changed = `Null);
+    let compact max_size response =
+      assert (Workload.member "isPendingSyncPatch" (Workload.result response) = `Bool true);
+      assert (String.length response < max_size);
+      assert (inbox response = `Null) in
+    compact 2_048 changed;
+    Workload.editing session;
+    ignore (Workload.result (Workload.enter session));
+    let submission, completion = Workload.confirm_pending session transport in
+    compact 8_192 submission;
+    assert (Workload.member "appliedServerT" (Workload.result completion) = `Int 43);
+    let cancelled = transport ["type", `String "cancelled"] |> Workload.result in
+    assert (Workload.member "syncConnected" cancelled = `Bool false);
+    compact 2_048 (transport ["type", `String "cancelled"]);
     visible := true;
     assert (inbox (Workload.dispatch session "clearSelectedPage" "") = `List []);
     visible := false;
