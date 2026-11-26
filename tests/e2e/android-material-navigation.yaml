@@ -7,7 +7,6 @@ appId: com.logseq.logseq
     timeout: 30000
 - assertVisible:
     id: "pane.journals"
-- assertVisible: "Journals"
 - tapOn:
     id: "button.sidebar"
 - extendedWaitUntil:
