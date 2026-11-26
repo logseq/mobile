@@ -52,10 +52,14 @@ appId: com.logseq.logseq
 - assertVisible: "简体中文"
 - tapOn:
     id: "button.settings.language.system"
-- assertVisible:
-    id: "switch.settings.spell-check"
-- assertVisible:
-    id: "switch.settings.auto-correction"
+- scrollUntilVisible:
+    element:
+      id: "switch.settings.spell-check"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      id: "switch.settings.auto-correction"
+    direction: DOWN
 - scrollUntilVisible:
     element:
       id: "label.settings.sync-server"
