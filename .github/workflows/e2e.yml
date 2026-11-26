@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       ios_module:
-        description: "iOS e2e module (scripts/test-ios-e2e-suite.sh --list)"
+        description: "iOS module: smoke (offline), live-smoke, or a module from scripts/test-ios-e2e-suite.sh --list"
         required: false
         default: "smoke"
       android_module:
@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IOS_MODULE: ${{ inputs.ios_module || (github.event_name == 'schedule' && 'all' || 'smoke') }}
+  IOS_MODULE: ${{ (inputs.ios_module == 'live-smoke' && 'smoke' || inputs.ios_module) || (github.event_name == 'schedule' && 'all' || 'smoke') }}
   ANDROID_MODULE: ${{ inputs.android_module || (github.event_name == 'schedule' && 'all' || 'smoke') }}
 
 jobs:
@@ -40,6 +40,134 @@ jobs:
 
   ios-e2e:
     name: iOS e2e
+    if: github.event_name != 'schedule' && (inputs.ios_module == '' || inputs.ios_module == 'smoke')
+    needs: duniverse
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      LOGSEQ_OPAM_SWITCH: ${{ github.workspace }}
+      LOGSEQ_IOS_RUNTIME_CHECK_BUILD: "1"
+      LOGSEQ_IOS_ENABLE_TESTING: "1"
+      LOGSEQ_RUNTIME_CHECK_TIMEOUT: "120"
+      DUNE_CACHE: enabled
+      DUNE_CACHE_STORAGE_MODE: copy
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      GIT_CONFIG_COUNT: 1
+      GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
+      GIT_CONFIG_VALUE_0: ssh://git@github.com/
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select --switch /Applications/Xcode_26.3.app
+
+      - name: Restore OCaml tools
+        id: ios-ocaml-tools
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.opam
+            _opam
+          key: ocaml-tools-v1-${{ runner.os }}-${{ runner.arch }}-macos-15-${{ hashFiles('.github/actions/ocaml-tools/action.yml') }}
+
+      - name: Install the opam release binary
+        if: steps.ios-ocaml-tools.outputs.cache-hit == 'true'
+        run: |
+          bin="$RUNNER_TEMP/ios-e2e-bin"
+          mkdir -p "$bin"
+          curl -fsSL --retry 2 --max-time 25 --retry-max-time 50 \
+            https://github.com/ocaml/opam/releases/download/2.6.0/opam-2.6.0-arm64-macos \
+            -o "$bin/opam"
+          echo "b57ed6cc082e560063989a285c59786b7c670087da2d317a87e4ba4c7973e71f  $bin/opam" | shasum -a 256 -c
+          chmod +x "$bin/opam"
+          echo "$bin" >> "$GITHUB_PATH"
+
+      - uses: ./.github/actions/ocaml-tools
+        if: steps.ios-ocaml-tools.outputs.cache-hit != 'true'
+        with:
+          image: macos-15
+
+      - uses: ./.github/actions/ocaml-vendor
+
+      - name: Restore the iOS OCaml toolchain
+        id: ios-toolchain
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            _build/apple-toolchains/ios/host-5.5.0
+            _build/apple-toolchains/ios/arm64-apple-ios17.0-simulator-5.5.0
+            _build/apple-toolchains/ios/libffi-arm64-apple-ios17.0-simulator
+          key: apple-toolchain-${{ runner.os }}-xcode26.3-ios-simulator-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
+
+      - name: Select build cache week
+        id: cache-week
+        run: date -u '+value=%G-W%V' >> "$GITHUB_OUTPUT"
+
+      - name: Restore iOS Simulator Dune outputs
+        id: ios-dune
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/dune
+          key: ios-smoke-dune-v1-${{ runner.arch }}-xcode26.3-${{ steps.cache-week.outputs.value }}
+          restore-keys: |
+            ios-smoke-dune-v1-${{ runner.arch }}-xcode26.3-
+            ios-simulator-dune-v2-${{ runner.arch }}-xcode26.3-
+
+      - name: Cache Swift package downloads
+        uses: actions/cache@v4
+        with:
+          path: apple/.build/repositories
+          key: ios-simulator-swift-downloads-v2-${{ runner.arch }}-xcode26.3-${{ hashFiles('apple/Package.resolved') }}
+
+      - name: Build iOS simulator smoke test
+        run: opam exec -- ./scripts/build-mobile-ios-simulator.sh
+
+      - name: Save iOS OCaml toolchain
+        # Keep a completed toolchain even if a later compilation failed.
+        if: >-
+          !cancelled() && steps.ios-toolchain.outputs.cache-primary-key != '' &&
+          steps.ios-toolchain.outputs.cache-hit != 'true' &&
+          hashFiles('_build/apple-toolchains/ios/host-5.5.0/.logseq-toolchain-complete') != '' &&
+          hashFiles('_build/apple-toolchains/ios/arm64-apple-ios17.0-simulator-5.5.0/.logseq-toolchain-complete') != '' &&
+          hashFiles('_build/apple-toolchains/ios/libffi-arm64-apple-ios17.0-simulator/.libffi-*-complete') != '' &&
+          hashFiles('_build/apple-toolchains/ios/libffi-arm64-apple-ios17.0-simulator/lib/libffi.a') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            _build/apple-toolchains/ios/host-5.5.0
+            _build/apple-toolchains/ios/arm64-apple-ios17.0-simulator-5.5.0
+            _build/apple-toolchains/ios/libffi-arm64-apple-ios17.0-simulator
+          key: ${{ steps.ios-toolchain.outputs.cache-primary-key }}
+
+      - name: Bound the iOS Simulator Dune cache
+        if: github.ref == 'refs/heads/main' && steps.ios-dune.outputs.cache-hit != 'true'
+        run: opam exec -- dune cache trim --size=512MiB
+
+      - name: Select an iOS simulator
+        run: |
+          runtime_id=$(xcrun simctl list -j runtimes | python3 -c 'import json,sys; rs=[r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable") and ".iOS-" in r["identifier"]]; print(max(rs, key=lambda r: tuple(map(int, r["version"].split("."))))["identifier"])')
+          udid=$(xcrun simctl list -j devices | python3 -c 'import json,sys; devices=json.load(sys.stdin)["devices"].get(sys.argv[1], []); print(next((d["udid"] for d in devices if d.get("isAvailable") and d["name"] == "iPhone 16"), ""))' "$runtime_id")
+          if [[ -z $udid ]]; then
+            udid=$(xcrun simctl create "CI iPhone" com.apple.CoreSimulator.SimDeviceType.iPhone-16 "$runtime_id")
+          fi
+          echo "LOGSEQ_IOS_SIMULATOR=$udid" >> "$GITHUB_ENV"
+
+      - name: Run iOS simulator smoke test
+        env:
+          LOGSEQ_RUNTIME_CHECK_BOOT_SIMULATOR: "1"
+          LOGSEQ_RUNTIME_CHECK_KEEP_INSTALLED: "1"
+        run: python3 apple/Tests/UI/run-simulator-runtime-check.py apple/Tests/UI/offline-smoke.swift OfflineSmokeCheck
+
+      - name: Save iOS Simulator Dune outputs
+        if: github.ref == 'refs/heads/main' && steps.ios-dune.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/dune
+          key: ${{ steps.ios-dune.outputs.cache-primary-key }}
+
+  ios-live-e2e:
+    name: iOS live e2e
+    if: github.event_name == 'schedule' || (inputs.ios_module != '' && inputs.ios_module != 'smoke')
     needs: duniverse
     runs-on: macos-15
     timeout-minutes: 90

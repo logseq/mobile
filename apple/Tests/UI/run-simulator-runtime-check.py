@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = Path(__file__).resolve().parents[3]
 CONFIGURATION = os.environ.get("LOGSEQ_IOS_CONFIGURATION", "debug")
@@ -34,11 +35,34 @@ def terminate_app(simulator, bundle):
         pass
 
 
+def launch_with_result_file(simulator, bundle, environment, timeout):
+    container = Path(run(["xcrun", "simctl", "get_app_container", simulator, bundle, "data"],
+                         capture_output=True, text=True, timeout=30).stdout.strip())
+    result_file = container / "Library/Caches/runtime-check-result.txt"
+    result_file.unlink(missing_ok=True)
+    run(["xcrun", "simctl", "launch", "--terminate-running-process", simulator, bundle],
+        env=environment, timeout=60)
+    deadline = time.monotonic() + timeout
+    result = ""
+    while time.monotonic() < deadline:
+        result = result_file.read_text() if result_file.is_file() else ""
+        if result == "RUNTIME_CHECK_COMPLETE":
+            print(result, flush=True)
+            return
+        if result.startswith("RUNTIME_CHECK_FAILED"):
+            raise SystemExit(result)
+        time.sleep(0.2)
+    raise SystemExit(f"Simulator runtime check did not finish within {timeout} seconds "
+                     f"(last status: {result or 'app produced no status'})")
+
+
 def main():
     print(f"RUNTIME_CHECK_CONFIGURATION={CONFIGURATION}", flush=True)
     entry, check_type = sys.argv[1:3]
     interactive = check_type == "--interactive"
     benchmark = check_type in ("--benchmark", "--interactive")
+    boot_simulator = os.environ.get("LOGSEQ_RUNTIME_CHECK_BOOT_SIMULATOR") == "1"
+    use_result_file = boot_simulator and not benchmark
     fixture = Path(sys.argv[3]).resolve() if benchmark else None
     bundle = "com.logseq.logseq.PageBenchmark" if benchmark else BUNDLE
     lock_path = ROOT / "_build/ios-core/.build-lock"
@@ -46,30 +70,40 @@ def main():
         fcntl.flock(build_lock, fcntl.LOCK_SH)
         directory = Path(temporary)
         source = directory / "check.swift"
+        result_report = """
+        try? FileManager.default.createDirectory(at: URL.cachesDirectory, withIntermediateDirectories: true)
+        try? message.write(to: URL.cachesDirectory.appendingPathComponent("runtime-check-result.txt"),
+                           atomically: true, encoding: .utf8)""" if use_result_file else ""
         source.write_text(Path(entry).read_text() if benchmark else Path(entry).read_text().replace("@main", "", 1) + f"""
 import SwiftUI
 @main struct RuntimeCheckApplication: App {{
     var body: some Scene {{
         WindowGroup {{
             Text("Runtime check").task {{
+                report("RUNTIME_CHECK_RUNNING")
                 do {{
                     try await {check_type}.main()
-                    print("RUNTIME_CHECK_COMPLETE")
+                    report("RUNTIME_CHECK_COMPLETE")
                     exit(0)
                 }} catch {{
-                    print("RUNTIME_CHECK_FAILED: \\(error)")
+                    report("RUNTIME_CHECK_FAILED: \\(error)")
                     exit(1)
                 }}
             }}
         }}
     }}
+
+    private func report(_ message: String) {{{result_report}
+        print(message)
+    }}
 }}
 """)
         app = directory / "RuntimeCheck.app"
         app.mkdir()
-        fixture_json = Path(entry).with_suffix(".json")
-        if fixture_json.exists():
-            shutil.copy2(fixture_json, app / fixture_json.name)
+        for suffix in (".json", ".sql"):
+            fixture_file = Path(entry).with_suffix(suffix)
+            if fixture_file.is_file():
+                shutil.copy2(fixture_file, app / fixture_file.name)
         objects = [line for line in (BUILD / "LogseqShell.product/Objects.LinkFileList").read_text().splitlines()
                    if "/LogseqShell.build/" not in line]
         testing = os.environ.get("LOGSEQ_SWIFT_UI_TEST_SUITE") == "1"
@@ -111,6 +145,7 @@ import SwiftUI
             sentry_args = [item for index, value in enumerate(arguments[:-1]) if value == "-Xcc"
                            for item in (value, arguments[index + 1])]
             sentry_args.append("-lc++")
+        print("Linking the simulator runtime check", flush=True)
         run(["xcrun", "--sdk", "iphonesimulator", "swiftc", *optimization, "-parse-as-library", "-DLOGSEQ_LINKED_CORE",
              "-target", "arm64-apple-ios17.0-simulator", "-I", str(BUILD / "Modules"),
              "-I", str(BUILD / "LogseqCoreABI.build"),
@@ -124,7 +159,11 @@ import SwiftUI
              "-Xlinker", str(entitlements), "-o", str(app / "RuntimeCheck")])
         privacy = {key: value for key, value in plistlib.loads((ROOT / "apple/App/Info.plist").read_bytes()).items()
                    if key.endswith("UsageDescription")}
-        orientations = plistlib.loads((ROOT / "apple/.build/Logseq.app/Info.plist").read_bytes()).get(
+        source_app = ROOT / "apple/.build/Logseq.app"
+        info = source_app / "Info.plist"
+        if not info.is_file():
+            info = ROOT / "apple/App/Info.plist"
+        orientations = plistlib.loads(info.read_bytes()).get(
             "UISupportedInterfaceOrientations", ["UIInterfaceOrientationPortrait"])
         (app / "Info.plist").write_bytes(plistlib.dumps({
             **privacy,
@@ -145,14 +184,21 @@ import SwiftUI
                          "CFBundleShortVersionString": "1.0", "CFBundleVersion": "1"})
             info_path.write_bytes(plistlib.dumps(info))
             run(["codesign", "--force", "--sign", "-", str(widget)])
-        for resource in (ROOT / "apple/.build/Logseq.app").glob("*.bundle"):
+        resource_dir = BUILD if os.environ.get("LOGSEQ_IOS_RUNTIME_CHECK_BUILD") == "1" else source_app
+        for resource in resource_dir.glob("*.bundle"):
             shutil.copytree(resource, app / resource.name)
-        assets = ROOT / "apple/.build/Logseq.app/Assets.car"
+        assets = resource_dir / "Assets.car"
         if assets.exists():
             shutil.copy2(assets, app / assets.name)
         fcntl.flock(build_lock, fcntl.LOCK_UN)
         run(["codesign", "--force", "--sign", "-", str(app)])
-        terminate_app(SIMULATOR, bundle)
+        if boot_simulator:
+            # Simulator startup can contend with the Swift compiler on CI.
+            print("Waiting for the simulator to boot", flush=True)
+            run(["xcrun", "simctl", "bootstatus", SIMULATOR, "-b"])
+        else:
+            terminate_app(SIMULATOR, bundle)
+        print("Installing the simulator runtime check", flush=True)
         run(["xcrun", "simctl", "install", SIMULATOR, str(app)])
         launch_environment = os.environ.copy()
         if benchmark:
@@ -170,13 +216,23 @@ import SwiftUI
             run(["xcrun", "simctl", "launch", SIMULATOR, bundle], env=launch_environment)
             print(f"INTERACTIVE_CHECK_READY bundle={bundle}", flush=True)
             return
+        timeout = 180 if testing else (90 if benchmark else int(os.environ.get("LOGSEQ_RUNTIME_CHECK_TIMEOUT", "30")))
         try:
-            output = subprocess.run(["xcrun", "simctl", "launch", "--console",
-                                     SIMULATOR, bundle], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                    timeout=180 if testing else (90 if benchmark else int(os.environ.get("LOGSEQ_RUNTIME_CHECK_TIMEOUT", "30"))), env=launch_environment)
-            print(output.stdout)
+            print("Launching the simulator runtime check", flush=True)
+            if use_result_file:
+                # The app owns the result, even if the simulator's console disconnects.
+                launch_with_result_file(SIMULATOR, bundle, launch_environment, timeout)
+                return
+            output = subprocess.run(["xcrun", "simctl", "launch", "--console", "--terminate-running-process", SIMULATOR, bundle],
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                    timeout=timeout, env=launch_environment)
+            print(output.stdout, flush=True)
             if "RUNTIME_CHECK_COMPLETE" not in output.stdout:
                 raise SystemExit("Simulator runtime check did not complete")
+        except subprocess.TimeoutExpired as error:
+            if error.stdout:
+                print(error.stdout.decode(errors="replace"), flush=True)
+            raise SystemExit(f"Simulator runtime check did not exit within {timeout} seconds") from None
         finally:
             terminate_app(SIMULATOR, bundle)
             artifacts = os.environ.get("LOGSEQ_RUNTIME_CHECK_ARTIFACTS")

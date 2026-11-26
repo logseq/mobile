@@ -4,8 +4,12 @@ module Ds = Datascript
 let page_uuid = "6954ee2a-506b-4dd9-bd6d-0dc24db9c055"
 
 let () =
-  if Array.length Sys.argv <> 3 then
-    failwith "usage: page_fixture <new-directory> <block-count>";
+  let journal =
+    match Array.to_list Sys.argv with
+    | [ _; _; _ ] -> false
+    | [ _; _; _; "--smoke-journal" ] -> true
+    | _ -> failwith "usage: page_fixture <new-directory> <block-count> [--smoke-journal]"
+  in
   let root = Sys.argv.(1) in
   let count = int_of_string Sys.argv.(2) in
   if count < 1 || Sys.file_exists root then failwith "Expected a new directory and positive count";
@@ -29,19 +33,27 @@ let () =
   ] in
   let conn = Ds.conn_from_db (Ds.empty_db ~schema ()) in
   let add id attribute value = Ds.Add (Ds.Entity_id id, attribute, value) in
-  ignore (Ds.transact_conn conn [
-    add 200 "block/uuid" (Ds.Uuid page_uuid);
+  let uuid, journal_day =
+    if journal then Journal.page_uuid 20010101, [add 200 "block/journal-day" (Ds.Int64 20010101L)]
+    else page_uuid, []
+  in
+  ignore (Ds.transact_conn conn (journal_day @ [
+    add 200 "block/uuid" (Ds.Uuid uuid);
     add 200 "block/name" (Ds.String "logseq public roadmap");
     add 200 "block/title" (Ds.String "Logseq public roadmap");
     add 200 "block/updated-at" (Ds.Int64 1L);
-  ]);
+  ]));
+  let orders =
+    if journal then Fractional_order.n_between None None count |> Result.get_ok |> Array.of_list
+    else Array.init count (Printf.sprintf "b%06d")
+  in
   let transactions = List.init count (fun index ->
     let id = 1000 + index in
     let parent = if index mod 4 = 0 then 200 else id - 1 in
     [ add id "block/uuid" (Ds.Uuid (Printf.sprintf "e2e30000-0000-4000-9000-%012d" id));
       add id "block/title" (Ds.String (Printf.sprintf "Long page block %05d with nested children and text for scrolling" index));
       add id "block/page" (Ds.Ref 200); add id "block/parent" (Ds.Ref parent);
-      add id "block/order" (Ds.String (Printf.sprintf "b%06d" index)) ])
+      add id "block/order" (Ds.String orders.(index)) ])
     |> List.fold_left (fun result operations -> List.rev_append operations result) [] |> List.rev in
   ignore (Ds.transact_conn conn transactions);
   ignore (Ds.store ~storage:(Graph_store.storage path) (Ds.conn_db conn));
