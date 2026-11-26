@@ -80,12 +80,20 @@ import LogseqModel
             await runtime.drainEffectsForTesting()
             try await press("button.send")
             if let error = runtime.lastError { throw failure("Capture failed: \(error)") }
-            _ = try await waitFor("submitted capture in the core snapshot") {
+            _ = try await waitFor("submitted capture \(title)") {
                 try await currentSnapshot().outlinerRows.first { $0.block.title == title }
             }
+            _ = try await waitFor("cleared composer draft") { () -> Bool? in
+                guard let send = node("button.send"), backend.model(id: send)?.isEnabled == false,
+                      let input = focusedInput(in: window), !input.hasText else { return nil }
+                return true
+            }
         }
+        // Mirror the native dismissal surface, which resigns UIKit focus first.
+        window.endEditing(true)
         try backend.performExtensionEvent(node: navigation, name: "dismiss-composer", values: [:])
         await runtime.drainEffectsForTesting()
+        _ = try await waitFor("collapsed composer") { node("button.composer.expand") }
         print("PASS: two native composer submissions appear in the journal")
 
         let before = try await currentSnapshot()
@@ -106,14 +114,28 @@ import LogseqModel
                   view.accessibilityIdentifier == "field.outliner.block.\(firstCapture.uuid)" else { return nil }
             return view
         }
-        for _ in 0..<3 {
-            guard editor.delegate?.textView?(editor, shouldChangeTextIn: editor.selectedRange, replacementText: "\n") == false else {
-                throw failure("The outliner inserted a newline instead of creating a block")
-            }
+        guard editor.delegate?.textView?(editor, shouldChangeTextIn: editor.selectedRange, replacementText: "\n") == false else {
+            throw failure("The outliner inserted a newline instead of creating a block")
         }
-        let edited = try await waitFor("three new journal blocks") {
+        var edited = try await waitFor("first new journal block") {
             let current = try await currentSnapshot()
-            return current.outlinerRows.count == before.outlinerRows.count + 3 ? current : nil
+            return current.outlinerRows.count == before.outlinerRows.count + 1 ? current : nil
+        }
+        for count in 2...3 {
+            let block = try require(edited.outlinerState.editing?.uuid, "Return did not move editing to the new block")
+            let nextEditor = try await waitFor("new outliner editor") { () -> Int? in
+                guard let id = extensionNode("outliner-editor"),
+                      case let .string(uuid) = backend.extensionModel(id: id)?.property("block-id"),
+                      uuid == block else { return nil }
+                return id
+            }
+            try backend.performExtensionEvent(node: nextEditor, name: "return", values: [
+                "title": .string(""), "caret-utf16-offset": .int(0),
+            ])
+            edited = try await waitFor("journal block \(count)") {
+                let current = try await currentSnapshot()
+                return current.outlinerRows.count == before.outlinerRows.count + count ? current : nil
+            }
         }
         let journalRows = edited.outlinerRows.filter { $0.block.pageId == firstCapture.pageId }
         let titles = journalRows.map(\.block.title)
@@ -121,9 +143,9 @@ import LogseqModel
               Array(titles.dropFirst(captureIndex + 1).prefix(3)) == ["", "", ""] else {
             throw failure("Consecutive Return presses must preserve the original title and insert three blank blocks")
         }
-        print("PASS: three consecutive native Return presses preserve existing text")
+        print("PASS: consecutive Return presses preserve existing text")
 
-        let editingNode = try await waitFor("editor after rapid Return presses") { extensionNode("outliner-editor") }
+        let editingNode = try await waitFor("editor after three Return presses") { extensionNode("outliner-editor") }
         try backend.performExtensionEvent(node: editingNode, name: "ime-dismissed", values: [:])
         await runtime.drainEffectsForTesting()
         try await press("button.search")
@@ -148,7 +170,8 @@ import LogseqModel
         guard captures.allSatisfy({ title in persisted.filter { $0.title == title }.count == 1 }),
               persisted.map(\.uuid) == journalRows.map(\.block.uuid),
               persisted.map(\.title) == titles else {
-            throw failure("Reopening the graph changed the saved block IDs, order, or titles")
+            let allRows = reopened.outlinerRows.map { "\($0.block.pageId):\($0.block.title)" }
+            throw failure("Saved rows changed on reopen: expected \(firstCapture.pageId):\(titles), found \(allRows)")
         }
         print("PASS: saved captures and blank blocks survive a graph reopen")
     }
