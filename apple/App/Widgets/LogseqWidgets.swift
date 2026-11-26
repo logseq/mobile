@@ -48,7 +48,9 @@ private struct JournalTimelineProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (JournalEntry) -> Void) {
-        completion(context.isPreview ? placeholder(in: context) : entry(for: .now))
+        let now = Date.now
+        completion(context.isPreview ? placeholder(in: context) :
+            (try? entry(for: now)) ?? JournalEntry(date: now, title: nil))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<JournalEntry>) -> Void) {
@@ -59,11 +61,17 @@ private struct JournalTimelineProvider: TimelineProvider {
             value: 1,
             to: calendar.startOfDay(for: now)
         ) ?? now.addingTimeInterval(3600)
-        completion(Timeline(entries: [entry(for: now)], policy: .after(nextDay)))
+        do {
+            completion(Timeline(entries: [try entry(for: now)], policy: .after(nextDay)))
+        } catch {
+            let retry = (error as? CocoaError)?.code == .fileReadNoPermission
+                ? min(nextDay, now.addingTimeInterval(15 * 60)) : nextDay
+            completion(Timeline(entries: [JournalEntry(date: now, title: nil)], policy: .after(retry)))
+        }
     }
 
-    private func entry(for date: Date) -> JournalEntry {
-        let patterns = GraphWidgetContent.read().journalTitlePatterns ?? []
+    private func entry(for date: Date) throws -> JournalEntry {
+        let patterns = try GraphWidgetContent.load().journalTitlePatterns ?? []
         let calendar = Calendar(identifier: .gregorian)
         let index = patterns.count == 1 ? 0 : calendar.component(.day, from: date) - 1
         guard patterns.indices.contains(index) else { return JournalEntry(date: date, title: nil) }
@@ -242,11 +250,15 @@ private struct GraphWidgetContent: Decodable {
     static var empty: Self { Self(graphId: nil, tasks: [], randomBlocks: []) }
 
     static func read() -> Self {
+        (try? load()) ?? .empty
+    }
+
+    static func load() throws -> Self {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.com.logseq.logseq"
-        ), let data = try? Data(contentsOf: container.appendingPathComponent("widget-content.json")),
-           let content = try? JSONDecoder().decode(Self.self, from: data) else { return .empty }
-        return content
+        ) else { return .empty }
+        let data = try Data(contentsOf: container.appendingPathComponent("widget-content.json"))
+        return try JSONDecoder().decode(Self.self, from: data)
     }
 }
 

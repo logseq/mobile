@@ -302,6 +302,27 @@ class AndroidRichContentTest {
         }
     }
 
+    @Test fun imageBlockExposesItsMenuAsAnAccessibilityAction() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val file = File.createTempFile("image-menu", ".png", context.cacheDir)
+        try {
+            val bitmap = Bitmap.createBitmap(32, 18, Bitmap.Config.ARGB_8888)
+            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+            var previewed = false
+            render("[]", rowActions = JSONObject().put("labels", JSONObject().put("More actions", "Image actions")),
+                imagePath = file.path, onOpenImage = { _, _ -> previewed = true })
+            ui.waitUntil(5_000) { ui.onAllNodesWithTag("asset.preview.image").fetchSemanticsNodes().isNotEmpty() }
+            val image = ui.onNodeWithTag("asset.preview.image").assertIsDisplayed()
+            assertEquals("Image actions", image.fetchSemanticsNode().config[SemanticsActions.OnLongClick].label)
+            image.performSemanticsAction(SemanticsActions.OnLongClick) { assertTrue(it()) }
+            ui.onNodeWithTag("outliner.block.menu").assertIsDisplayed()
+            ui.runOnIdle { assertTrue(!previewed) }
+        } finally {
+            file.delete()
+        }
+    }
+
     @Test fun imageCopyWritesAReadableImageClip() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val file = File.createTempFile("copied-image", ".png", context.cacheDir)
@@ -388,6 +409,25 @@ class AndroidRichContentTest {
         ui.onNodeWithText("[[Destination]]").performTouchInput { click(link.center) }
         ui.runOnIdle {
             assertEquals(listOf("open-node" to "page-target"),
+                events.filterIsInstance<LuiEvent.Extension>().map { it.name to it.values["uuid"] })
+        }
+    }
+
+    @Test fun aMountedLinkOnlyBlockTapsToUnselectAfterASwipe() {
+        val backend = render("""[{"type":"nodeReference","uuid":"page-target","title":"Destination"}]""",
+            rowActions = JSONObject(), swipable = true)
+        ui.onNodeWithTag("outliner-block-content-rich-block").assertIsDisplayed()
+            .performTouchInput { swipeLeft() }
+        ui.runOnIdle {
+            assertEquals(listOf("toggle-selection"), events.filterIsInstance<LuiEvent.Extension>().map { it.name })
+            events.clear()
+            val actions = JSONObject().put("selectionMode", true).put("selectionMember", true)
+            val update = JSONObject().put("generation", 2).put("ops", JSONArray().put(property("row-actions", actions.toString())))
+            assertTrue(backend.lastError, backend.applyJson(update.toString()))
+        }
+        ui.onNodeWithText("[[Destination]]").performTouchInput { click() }
+        ui.runOnIdle {
+            assertEquals(listOf("toggle-selection" to "rich-block"),
                 events.filterIsInstance<LuiEvent.Extension>().map { it.name to it.values["uuid"] })
         }
     }

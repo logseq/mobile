@@ -19,7 +19,18 @@ import WidgetKit
         resumePendingRefresh()
     }
 
-    func resumePendingRefresh() {
+    func protectedDataDidBecomeAvailable() {
+        // WidgetKit may have built a fallback timeline while the snapshot was protected.
+        reloadJournalTimelines()
+        resumePendingRefresh()
+    }
+
+    private func reloadJournalTimelines() {
+        WidgetCenter.shared.reloadTimelines(ofKind: "TodayJournalWidget")
+        WidgetCenter.shared.reloadTimelines(ofKind: "CaptureWidget")
+    }
+
+    private func resumePendingRefresh() {
         guard needsRefresh, refreshTask == nil, UIApplication.shared.isProtectedDataAvailable else { return }
         refreshTask = Task {
             while needsRefresh && UIApplication.shared.isProtectedDataAvailable {
@@ -69,8 +80,7 @@ import WidgetKit
                 || previous?["graphId"] as? String != content["graphId"] as? String
                 || previous?["graphLocked"] as? Bool != content["graphLocked"] as? Bool
             if previous?["journalTitlePatterns"] as? [String] != content["journalTitlePatterns"] as? [String] {
-                WidgetCenter.shared.reloadTimelines(ofKind: "TodayJournalWidget")
-                WidgetCenter.shared.reloadTimelines(ofKind: "CaptureWidget")
+                reloadJournalTimelines()
             }
             let tasksChanged = previous?["tasks"] as? [NSDictionary] != content["tasks"] as? [NSDictionary]
             let hadRandomBlocks = (previous?["randomBlocks"] as? [NSDictionary])?.isEmpty == false

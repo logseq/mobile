@@ -96,6 +96,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -175,6 +176,13 @@ private fun decodeSampledFile(path: String): android.graphics.Bitmap? {
 
 private data class OutlinerDragOrigin(val uuid: String, val x: Float)
 
+private data class OutlinerGesturePolicy(
+    val takesTap: Boolean,
+    val tapEvent: String,
+    val allowsDrag: Boolean,
+    val hasMenu: Boolean,
+)
+
 @Suppress("DEPRECATION") // The gesture overload lets a hold release to the menu or move to lift the block.
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -197,13 +205,19 @@ internal fun OutlinerBlockContent(
     val interaction = context.string("interaction")
     val readOnly = interaction != null
     val allowDrag = !readOnly && actions?.optBoolean("allowsDrag", true) != false
-    val takesTap = !isAsset && (!linkOnly || selectionMode)
     val preview = interaction == "preview"
     val currentContext by rememberUpdatedState(context)
     val haptics by rememberUpdatedState(LocalHapticFeedback.current)
     var menuOpen by remember(uuid) { mutableStateOf(false) }
-    val pressBlock: () -> Unit = { currentContext.emit(if (selectionMode) "toggle-selection" else "edit", "uuid" to uuid) }
-    val currentPressBlock by rememberUpdatedState(pressBlock)
+    val tapEvent = if (selectionMode) "toggle-selection" else "edit"
+    val pressBlock: () -> Unit = { currentContext.emit(tapEvent, "uuid" to uuid) }
+    val gesturePolicy by rememberUpdatedState(OutlinerGesturePolicy(
+        takesTap = !isAsset && (!linkOnly || selectionMode),
+        tapEvent = tapEvent,
+        allowsDrag = allowDrag,
+        hasMenu = actions != null,
+    ))
+    fun openBlockMenu() { menuOpen = true }
     var rowHeightPx by remember { mutableIntStateOf(0) }
     var rowPosition by remember { mutableStateOf(Offset.Zero) }
     val density = LocalDensity.current.density
@@ -276,34 +290,39 @@ internal fun OutlinerBlockContent(
             .then(if (readOnly || (linkOnly && !selectionMode && actions == null)) Modifier else
                 Modifier.dragAndDropSource(block = {
                     awaitEachGesture {
-                        val pass = if (takesTap) PointerEventPass.Main else PointerEventPass.Initial
-                        val down = awaitFirstDown(requireUnconsumed = takesTap, pass = pass)
-                        val origin = OutlinerDragOrigin(uuid, rowPosition.x + down.position.x)
-                        if (takesTap) down.consume()
+                        val initialDown = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        val policy = gesturePolicy
+                        val pass = if (policy.takesTap) PointerEventPass.Main else PointerEventPass.Initial
+                        if (policy.takesTap) {
+                            val down = awaitPointerEvent(PointerEventPass.Main).changes
+                                .firstOrNull { it.id == initialDown.id && !it.isConsumed } ?: return@awaitEachGesture
+                            down.consume()
+                        }
+                        val origin = OutlinerDragOrigin(uuid, rowPosition.x + initialDown.position.x)
                         val finished = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
                             val up = waitForUpOrCancellation(pass)
-                            if (up != null && takesTap) {
+                            if (up != null && policy.takesTap) {
                                 up.consume()
-                                currentPressBlock()
+                                currentContext.emit(policy.tapEvent, "uuid" to uuid)
                             }
                             true
                         }
                         if (finished == true) return@awaitEachGesture
 
                         // A hold confirms immediately. Movement lifts the block, while releasing opens its menu.
-                        if (actions == null) currentContext.emit("drag-start", "uuid" to uuid)
+                        if (!policy.hasMenu) currentContext.emit("drag-start", "uuid" to uuid)
                         else haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
-                            val pointer = event.changes.singleOrNull { it.id == down.id } ?: break
-                            if (event.changes.any { it.id != down.id && it.pressed } || pointer.isConsumed) break
+                            val pointer = event.changes.singleOrNull { it.id == initialDown.id } ?: break
+                            if (event.changes.any { it.id != initialDown.id && it.pressed } || pointer.isConsumed) break
                             pointer.consume()
                             if (!pointer.pressed) {
-                                if (actions != null) menuOpen = true
+                                if (policy.hasMenu) openBlockMenu()
                                 break
                             }
-                            if (allowDrag && (pointer.position - down.position).getDistance() >= viewConfiguration.touchSlop) {
-                                if (actions != null) currentContext.emit("drag-start", "uuid" to uuid)
+                            if (policy.allowsDrag && (pointer.position - initialDown.position).getDistance() >= viewConfiguration.touchSlop) {
+                                if (policy.hasMenu) currentContext.emit("drag-start", "uuid" to uuid)
                                 startTransfer(DragAndDropTransferData(ClipData.newPlainText("Logseq block", uuid), localState = origin))
                                 break
                             }
@@ -330,6 +349,8 @@ internal fun OutlinerBlockContent(
                     onPreview = if (preview) null else if (selectionMode) ({ _ -> pressBlock() }) else onOpenImage?.let { open ->
                         { path -> open(uuid, path) }
                     },
+                    onBlockMenu = if (readOnly || actions == null) null else ::openBlockMenu,
+                    blockMenuLabel = actions?.optJSONObject("labels")?.optString("More actions", "More actions") ?: "More actions",
                 )
             } else {
                 CompositionLocalProvider(
@@ -1057,10 +1078,11 @@ private fun ProjectedAsset(
     uuid: String, title: String, assetType: String, localPath: String,
     loadImage: (suspend (String, String) -> String)?, onPreview: ((String) -> Unit)?,
     preview: Boolean,
+    onBlockMenu: (() -> Unit)?, blockMenuLabel: String,
 ) {
     when {
         isImageAsset(assetType, localPath) ->
-            GraphImagePreview(uuid, title, assetType, localPath, loadImage, onPreview)
+            GraphImagePreview(uuid, title, assetType, localPath, loadImage, onPreview, onBlockMenu, blockMenuLabel)
         preview -> AssetFallback(title)
         assetType.lowercase() in listOf("pdf", "application/pdf") || localPath.endsWith(".pdf", ignoreCase = true) ->
             PdfAssetButton(uuid, title, assetType, localPath, loadImage)
@@ -1247,6 +1269,8 @@ internal fun GraphImagePreview(
     uuid: String, title: String, assetType: String, localPath: String,
     loadImage: (suspend (String, String) -> String)?,
     onPreview: ((String) -> Unit)?,
+    onBlockMenu: (() -> Unit)? = null,
+    blockMenuLabel: String = "More actions",
 ) {
     var retry by remember(uuid, localPath) { mutableIntStateOf(0) }
     var loadedPath by remember(uuid, localPath) { mutableStateOf("") }
@@ -1276,6 +1300,9 @@ internal fun GraphImagePreview(
         Image(bitmap = image, contentDescription = title,
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
                 .then(if (onPreview != null) Modifier.clickable { onPreview(loadedPath) } else Modifier)
+                .then(if (onBlockMenu != null) Modifier.semantics {
+                    onLongClick(label = blockMenuLabel) { onBlockMenu(); true }
+                } else Modifier)
                 .testTag("asset.preview.image"), contentScale = ContentScale.FillWidth)
     } else if (failed) {
         Row(verticalAlignment = Alignment.CenterVertically) {

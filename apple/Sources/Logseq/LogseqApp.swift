@@ -915,7 +915,7 @@ public struct LogseqRootView : View {
     }
 
     public func resumePendingWidgetRefresh() {
-        widgetContent.resumePendingRefresh()
+        widgetContent.protectedDataDidBecomeAvailable()
     }
 
     private func drainSharedCapturesIfReady() {
