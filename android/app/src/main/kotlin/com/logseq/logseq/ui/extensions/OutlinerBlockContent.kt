@@ -905,6 +905,7 @@ private fun MarkupRichNode(
     onTapFallback: () -> Unit,
     youtubeStarts: MutableMap<String, Int>,
 ) {
+    Box(modifier = Modifier.testTag("block.rich." + node.optString("type"))) {
     when (node.optString("type")) {
         "table" -> MarkupTable(node, completedDecoration, onOpenNode, onTapFallback, youtubeStarts)
         "quote" -> {
@@ -965,6 +966,7 @@ private fun MarkupRichNode(
         }
         "cloze" -> AndroidCloze(node.optString("text"))
         else -> Text(node.optString("text"), style = outlinerBodyStyle)
+    }
     }
 }
 
