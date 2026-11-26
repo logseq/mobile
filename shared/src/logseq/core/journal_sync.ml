@@ -9,6 +9,7 @@ type applied =
   { operation_ids : string list
   ; changed_uuids : string list
   ; changed_attributes : string list
+  ; changed_eids : int list
   }
 
 let non_negative name fields =
@@ -125,31 +126,28 @@ let encode encrypt tx =
   with error -> Error (Printexc.to_string error)
 
 let changes operation_ids before after datoms =
-  let seen = Hashtbl.create 16 in
+  let entities = Hashtbl.create 16 in
   let attributes = Hashtbl.create 16 in
-  List.iter
-    (fun (d : Ds.datom) ->
-      Hashtbl.replace attributes d.a ();
-      List.iter
-        (fun db ->
-          match Ds.entity db (Ds.Entity_id d.e) with
-          | Some e ->
-            (match Ds.Entity.entity_attr_raw e "block/uuid" with
-             | Some (Ds.One_value (Ds.Uuid uuid)) -> Hashtbl.replace seen uuid ()
-             | _ -> ())
-          | None -> ())
-        [ before; after ])
-    datoms;
+  List.iter (fun (d : Ds.datom) ->
+    Hashtbl.replace attributes d.a ();
+    Hashtbl.replace entities d.e ()) datoms;
+  let changed_eids = Hashtbl.fold (fun eid () ids -> eid :: ids) entities [] in
+  let seen = Hashtbl.create 16 in
+  List.iter (fun eid ->
+    List.iter (fun db ->
+      Option.iter (fun uuid -> Hashtbl.replace seen uuid ()) (Graph_read.uuid_for_eid db eid))
+      [before; after]) changed_eids;
   { operation_ids
   ; changed_uuids = Hashtbl.fold (fun uuid () acc -> uuid :: acc) seen []
   ; changed_attributes = Hashtbl.fold (fun attr () acc -> attr :: acc) attributes []
+  ; changed_eids
   }
 
 let apply decrypt conn local_t journal =
   try
     let ( let* ) = Result.bind in
     if journal.t <= local_t then
-      Ok { operation_ids = []; changed_uuids = []; changed_attributes = [] }
+      Ok { operation_ids = []; changed_uuids = []; changed_attributes = []; changed_eids = [] }
     else if Option.fold ~none:false ~some:(fun before -> local_t < before) journal.t_before then
       Error "journal prefix is missing; pull before applying ACK"
     else

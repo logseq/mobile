@@ -36,6 +36,11 @@ let app () =
   | Some value -> value
   | None -> invalid_arg "Logseq native runtime is not started"
 
+let show_journal_tasks () =
+  Option.exists (fun app ->
+    let current = App.model app in
+    View_base.tasks_destination_ current && View_base.node_navigation_inactive_ current) !current_app
+
 let effect_deadlines = Hashtbl.create 8
 
 let debounced_query = function

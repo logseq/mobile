@@ -5,6 +5,8 @@ val host_kind : int -> Lui_protocol.host_kind
 val app :
   unit -> (Model.logseq_model, Model.logseq_action) Lui_app.reducer_app
 
+val show_journal_tasks : unit -> bool
+
 val flush_event : Lui_protocol.event -> string
 
 val flush_action : Model.logseq_action -> string

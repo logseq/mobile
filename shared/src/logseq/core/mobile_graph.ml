@@ -176,9 +176,9 @@ let journal_page_uuid (host : mobile_graph) day =
   | Some opened -> Runtime.journal_page_uuid opened.read_runtime day
   | None -> None
 
-let stage (host : mobile_graph) operation =
+let stage ?journal_tasks (host : mobile_graph) operation =
   match !(host.current) with
-  | Some opened -> Runtime.stage opened.read_runtime operation
+  | Some opened -> Runtime.stage ?journal_tasks opened.read_runtime operation
   | None -> Error "graph runtime is not open"
 
 let prepare_sync (host : mobile_graph) operation =
@@ -323,7 +323,7 @@ let import_snapshot (host : mobile_graph) body =
       request.checkpoint_path request.e2ee
   with error -> Error (Printexc.to_string error)
 
-let apply_sync_event (host : mobile_graph) body =
+let apply_sync_event ?journal_tasks (host : mobile_graph) body =
   let ( let* ) = Result.bind in
   let* journal = Journal_sync.decode body in
   match !(host.current) with
@@ -340,7 +340,8 @@ let apply_sync_event (host : mobile_graph) body =
       let* () = Checkpoint.save_checkpoint_atomic opened.checkpoint_path
           (Checkpoint.create opened.graph_id opened.state.schema_version journal.t) in
       opened.state.applied_server_t := journal.t;
-      Runtime.rebase ~changed_attributes:applied.changed_attributes
+      let agenda_update = Option.map (fun cache -> cache, applied) journal_tasks in
+      Runtime.rebase ?agenda_update ~changed_attributes:applied.changed_attributes
         opened.read_runtime journal.t applied.operation_ids applied.changed_uuids;
       Ok ()
 
