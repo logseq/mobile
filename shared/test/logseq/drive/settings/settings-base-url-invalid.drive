@@ -6,6 +6,7 @@ press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
 press kind:menu-item&text:"Settings"
 wait prop:accessibility-identifier=sheet.settings
+press prop:accessibility-identifier=link.settings.sync-server
 type prop:accessibility-identifier=field.base-url "not-a-url"
 press prop:accessibility-identifier=button.connection.apply
 expect prop:accessibility-identifier=sheet.settings

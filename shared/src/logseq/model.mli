@@ -114,6 +114,17 @@ type settings_community_link =
   ; url : string
   }
 
+type settings_section =
+  | SettingsHome
+  | SettingsAccount
+  | SettingsGeneral
+  | SettingsEditor
+  | SettingsNotifications
+  | SettingsSyncServer
+  | SettingsAdvanced
+  | SettingsAbout
+  | SettingsCommunity
+
 type runtime_log_record =
   { id : string
   ; level : string
@@ -465,6 +476,7 @@ type logseq_model =
   ; pending_sign_out : bool
   ; connection_menu_open : bool
   ; settings_open : bool
+  ; settings_section : settings_section
   ; settings_tabs_open : bool
   ; runtime_log_open : bool
   ; appearance : string
@@ -715,6 +727,7 @@ type logseq_action =
   | SetOutlinerTaskPriority of string * string
   | OpenJournalCalendar
   | OpenSettings
+  | OpenSettingsSection of settings_section
   | ResumeSettings
   | DismissSettings
   | OpenSettingsTabs

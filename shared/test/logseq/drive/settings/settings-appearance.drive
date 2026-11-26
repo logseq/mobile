@@ -8,6 +8,7 @@ press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
 press kind:menu-item&text:"Settings"
 wait prop:accessibility-identifier=sheet.settings
+press prop:accessibility-identifier=link.settings.general
 expect prop:accessibility-identifier=picker.settings.appearance
 change prop:accessibility-identifier=picker.settings.appearance.option.dark
 expect-prop prop:accessibility-identifier=picker.settings.appearance.option.dark checked true
