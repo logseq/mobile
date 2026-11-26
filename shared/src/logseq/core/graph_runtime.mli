@@ -92,7 +92,6 @@ val transport_state : Pending_ops.pending_state -> bool
 val prepare_sync_batch :
   graph_runtime -> Pending_ops.pending_operation list -> (string * string, string) result list
 val stage :
-  ?journal_tasks:Journal_task_dates.cache ->
   graph_runtime -> Pending_ops.pending_operation -> (unit, string) result
 val queued_operation :
   graph_runtime -> string -> Pending_ops.pending_intent -> Pending_ops.pending_operation

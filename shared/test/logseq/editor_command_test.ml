@@ -1734,8 +1734,8 @@ let recurring_tasks_advance_when_completed () = R.with_runtime (fun session runt
   let request = `Assoc ["action", `String "saveTaskDates"; "targets", targets;
     "changes", `Assoc []; "repeat", `String "week"] in
   ignore (result (Rpc_test.dispatch_json session "nodeProperty" (J.to_string request)));
-  let response = event session "setTaskStatus"
-    ["uuid", `String Q.alpha; "statusIdent", `String "logseq.property/status.done"] in
+  ignore (event session "setTaskStatus"
+    ["uuid", `String Q.alpha; "statusIdent", `String "logseq.property/status.done"]);
   check_eq (value runtime Q.alpha Journal_task_dates.scheduled)
     (Some (Ds.Int64 (Date.plus Weeks 1 scheduled)));
   check_eq (value runtime Q.alpha Journal_task_dates.deadline)
@@ -1745,7 +1745,7 @@ let recurring_tasks_advance_when_completed () = R.with_runtime (fun session runt
   check_eq (Task_recurrence.recurrence_json db eid |> member "unit") (`String "week");
   check_eq (Option.bind (Graph_read.status_for_eid Result.ok db eid) (fun value -> value.Cache_model.ident))
     (Some "logseq.property/status.todo");
-  let upcoming = items "upcoming" (member "journalTasks" response) in
+  let upcoming = items "upcoming" (member "journalTasks" (snapshot session)) in
   check (List.exists (fun row -> member "uuid" row = `String Q.alpha) upcoming))
 
 let recurring_task_modes_keep_calendar_cadence () =
@@ -1862,7 +1862,7 @@ let starting_old_task_makes_it_recent () = R.with_runtime (fun session runtime c
   check (not (List.mem (`String Q.alpha) (today (snapshot session))));
   let started = event session "setTaskStatus" ["uuid", `String Q.alpha;
     "statusIdent", `String "logseq.property/status.doing"] in
-  check ~msg:"the optimistic agenda includes the task immediately" (List.mem (`String Q.alpha) (today started));
+  check_eq ~msg:"edit responses no longer carry the agenda" (member "journalTasks" started) `Null;
   let operations = Graph_runtime.pending_operations runtime in
   (match operations with
    | [{Pending_ops.intent = Pending_ops.Set_properties {updated_at = Some time; _} as intent; _}] ->

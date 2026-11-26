@@ -25,7 +25,7 @@ let discard_value result =
   | Ok _ -> Ok ()
   | Error message -> Error message
 
-let host_options ?journal_tasks (database : Database.mobile_database) ring catalog =
+let host_options (database : Database.mobile_database) ring catalog =
   let graph = database.graph in
   {
     Rpc.default_options with
@@ -103,7 +103,7 @@ let host_options ?journal_tasks (database : Database.mobile_database) ring catal
     has_older_journals =
       Some (fun () -> Graph.has_older_journals graph);
     stage_operation =
-      Some (fun operation -> Graph.stage ?journal_tasks graph operation);
+      Some (fun operation -> Graph.stage graph operation);
     prepare_operation =
       Some (fun operation -> Graph.prepare_sync graph operation);
     prepare_operations = Some (Graph.prepare_sync_batch graph);
@@ -145,7 +145,7 @@ let host_options ?journal_tasks (database : Database.mobile_database) ring catal
 
 let create_rpc_session database ring catalog =
   let journal_tasks = Journal_task_dates.create_cache () in
-  Rpc.create_session ~journal_tasks (host_options ~journal_tasks database ring catalog)
+  Rpc.create_session ~journal_tasks (host_options database ring catalog)
 
 let create crypto_call =
   let ring = Platform.create_keyring crypto_call Http.send in

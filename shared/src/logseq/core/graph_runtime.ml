@@ -600,7 +600,7 @@ let refresh_split_page_cache runtime before intent =
       | _ -> ()) page
   | _ -> ()
 
-let stage ?journal_tasks runtime (operation : Ops.pending_operation) =
+let stage runtime (operation : Ops.pending_operation) =
   let existing = Ops.list runtime.path in
   let previous = List.find_opt
       (fun (op : Ops.pending_operation) -> op.operation_id = operation.operation_id) existing in
@@ -679,10 +679,7 @@ let stage ?journal_tasks runtime (operation : Ops.pending_operation) =
          runtime.state :=
            { !(runtime.state) with snapshot =
                { s.snapshot with Projection.db = projected;
-                 statuses = if local_only then s.snapshot.statuses else s.snapshot.statuses @ [ operation.operation_id, Ops.Applied ] } };
-         Option.iter (fun cache ->
-           Journal_task_dates.preserve_for_local_edit cache ~before ~after:projected report.tx_data)
-           journal_tasks);
+                 statuses = if local_only then s.snapshot.statuses else s.snapshot.statuses @ [ operation.operation_id, Ops.Applied ] } });
       (match normalized.intent with
        | Ops.Save_title _ ->
          let attributes = List.fold_left (fun attributes -> function

@@ -197,7 +197,6 @@ val snapshot :
   Cache_model.block list ->
   string
 val outliner_patch_result :
-  ?refresh_agenda:bool ->
   Session_types.session ->
   Outliner_state.outliner_context ->
   Cache_model.block list ->
@@ -205,13 +204,11 @@ val outliner_patch_result :
   Yojson.Basic.t list ->
   string
 val outliner_patch :
-  ?refresh_agenda:bool ->
   Session_types.session ->
   Outliner_state.outliner_context ->
   string list ->
   string
 val structural_outliner_patch :
-  ?refresh_agenda:bool ->
   bool ->
   Session_types.session ->
   Outliner_state.outliner_context ->

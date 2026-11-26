@@ -88,8 +88,7 @@ let with_session db f =
     (fun () ->
       Graph_sqlite.prepare_staging path;
       let runtime = Runtime.create_base path 42 (Ds.conn_from_db db) Runtime.default_options in
-      let journal_tasks = Journal_task_dates.create_cache () in
-      let session = Session.create_session ~journal_tasks {Session.default_options with
+      let session = Session.create_session {Session.default_options with
         outliner_projection_limit = Some 32;
         load_graph_catalog = Some (fun () -> Some {|{"graphs":[{"graph-id":"outliner-perf","graph-name":"Outliner benchmark","graph-e2ee?":false,"graph-ready-for-use?":true}]}|});
         sync_cursor = Some (fun () -> Some 42);
@@ -100,7 +99,7 @@ let with_session db f =
         graph_tag_pages = Some (fun () -> Some (Runtime.tag_pages runtime));
         graph_node_destination = Some (Runtime.node_destination runtime);
         empty_journals = Some (fun () -> Runtime.empty_journals runtime);
-        stage_operation = Some (Runtime.stage ~journal_tasks runtime);
+        stage_operation = Some (Runtime.stage runtime);
         pending_operations = Some (fun () -> Runtime.pending_operations runtime);
         prepare_operation = Some (Runtime.prepare_sync runtime)
       } in
