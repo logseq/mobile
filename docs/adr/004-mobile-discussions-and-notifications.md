@@ -83,19 +83,36 @@ can read and update the same discussions, including in encrypted graphs.
 - Keep notification rows and overflow actions consistent with the rest of the app. Android Back
   returns from an opened discussion to the inbox.
 
-## Staging configuration
+## Push configuration
 
-The iOS app reads the APNs environment from its provisioning profile. To show sender avatars,
-use a host profile with the Communication Notifications capability and provision the
-`com.logseq.logseq.DiscussionNotificationService` extension. Device builds can locate the development
-extension profile automatically or use `LOGSEQ_IOS_NOTIFICATION_PROFILE`. The Android build
-reads the Firebase app configuration from `LOGSEQ_ANDROID_FIREBASE_APP_ID`,
-`LOGSEQ_ANDROID_FIREBASE_API_KEY`, `LOGSEQ_ANDROID_FIREBASE_SENDER_ID`, and
-`LOGSEQ_ANDROID_FIREBASE_PROJECT_ID`. Enable worker delivery after applying the D1 migration
-and configuring provider credentials. [Sync service change](https://github.com/logseq/logseq/pull/14103)
+Local iOS device builds read the APNs environment from the selected provisioning profile. To show
+sender avatars, use a host profile with Communication Notifications and provision the
+`com.logseq.logseq.DiscussionNotificationService` extension. The device build can locate the
+development extension profile automatically or use `LOGSEQ_IOS_NOTIFICATION_PROFILE`.
+
+App Store and TestFlight builds use production APNs. The signing repository needs an App Store
+profile for `com.logseq.logseq` with production APNs and Communication Notifications, and a
+separate App Store profile for the notification service extension. Release CI checks the signed
+archive and exported IPA.
+
+Android release CI reads `LOGSEQ_ANDROID_FIREBASE_APP_ID`, `LOGSEQ_ANDROID_FIREBASE_API_KEY`,
+`LOGSEQ_ANDROID_FIREBASE_SENDER_ID`, and `LOGSEQ_ANDROID_FIREBASE_PROJECT_ID` from repository
+Actions variables. Use the Android app configuration for the production Firebase project and the
+`com.logseq.logseq` package. Local builds accept the same names as environment variables.
+
+Before enabling push on `logseq-sync-prod`, apply D1 migrations 0008–0010 and deploy the
+discussion push Worker. Configure the Worker secrets `APNS_KEY_ID`, `APNS_TEAM_ID`,
+`APNS_PRIVATE_KEY`, and `APNS_TOPIC` for production APNs with topic `com.logseq.logseq`.
+Configure `FCM_PROJECT_ID`, `FCM_CLIENT_EMAIL`, and `FCM_PRIVATE_KEY` for the Firebase project used by
+Android release CI. Then set `DISCUSSION_PUSH_ENABLED=true` on the production Worker.
+[Sync service change](https://github.com/logseq/logseq/pull/14103)
 
 ## Verification
 
 Exercise desktop-shaped fixtures, first and concurrent replies, an actor toggling only their own
 reaction, graph switching and offline replay, and unread changes across relaunch. Record each
 platform's thread, reaction picker, and notification navigation for the UI pull request.
+
+On signed builds using the production sync endpoint, opt in on each platform and trigger a
+comment and reaction from a second account in a test graph. Verify notification delivery,
+navigation to the discussion, and the per-device preferences.

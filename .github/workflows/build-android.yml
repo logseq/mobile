@@ -191,11 +191,18 @@ jobs:
           if [[ -z "$SENTRY_AUTH_TOKEN" ]]; then
             echo "::warning::SENTRY_AUTH_TOKEN is missing. Android debug symbols will stay in the local build."
           fi
+          if [[ -z "$LOGSEQ_ANDROID_FIREBASE_APP_ID$LOGSEQ_ANDROID_FIREBASE_API_KEY$LOGSEQ_ANDROID_FIREBASE_SENDER_ID$LOGSEQ_ANDROID_FIREBASE_PROJECT_ID" ]]; then
+            echo "::warning::Firebase app configuration is missing. Android system notifications will be unavailable."
+          fi
           ./gradlew :app:testReleaseUnitTest :app:compileReleaseAndroidTestKotlin \
             :app:assembleRelease :app:bundleRelease -PlogseqTestBuildType=release
         working-directory: android
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          LOGSEQ_ANDROID_FIREBASE_APP_ID: ${{ vars.LOGSEQ_ANDROID_FIREBASE_APP_ID }}
+          LOGSEQ_ANDROID_FIREBASE_API_KEY: ${{ vars.LOGSEQ_ANDROID_FIREBASE_API_KEY }}
+          LOGSEQ_ANDROID_FIREBASE_SENDER_ID: ${{ vars.LOGSEQ_ANDROID_FIREBASE_SENDER_ID }}
+          LOGSEQ_ANDROID_FIREBASE_PROJECT_ID: ${{ vars.LOGSEQ_ANDROID_FIREBASE_PROJECT_ID }}
 
       - name: Save Android OCaml toolchain
         if: always() && steps.android-toolchain.outputs.cache-hit != 'true'

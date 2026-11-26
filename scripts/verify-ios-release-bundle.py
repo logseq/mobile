@@ -109,6 +109,13 @@ def verify_app(app, args):
             profile = plistlib.loads(subprocess.check_output(["security", "cms", "-D", "-i", str(profile_path)], stderr=subprocess.PIPE))
             require(TEAM in profile.get("TeamIdentifier", []), f"Wrong provisioning team: {bundle.name}")
             require(profile["Entitlements"]["application-identifier"].endswith("." + identifier), f"Wrong provisioning App ID: {bundle.name}")
+            if bundle == app:
+                require(profile["Entitlements"].get("aps-environment") == "production",
+                        "App Store provisioning profile must grant production APNs")
+                require(entitlements.get("aps-environment") == "production",
+                        "App Store app must be signed with production APNs")
+                require(info.get("LogseqAPNsEnvironment") == "production",
+                        "App Store app must register tokens for production APNs")
             require(not profile.get("ProvisionedDevices") and not profile.get("ProvisionsAllDevices"), f"Not an App Store profile: {bundle.name}")
             expires = profile["ExpirationDate"].replace(tzinfo=datetime.timezone.utc)
             require(expires > datetime.datetime.now(datetime.timezone.utc), f"Expired provisioning profile: {bundle.name}")

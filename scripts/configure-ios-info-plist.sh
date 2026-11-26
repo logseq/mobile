@@ -40,6 +40,8 @@ set_string "CFBundleShortVersionString" "$app_version"
 # Give each local install a build identity instead of reporting every build as 1.
 set_string "CFBundleVersion" "${LOGSEQ_IOS_BUILD_NUMBER:-$(date +%s)}"
 set_string "LogseqRevision" "$build_revision"
+# Device assembly fills this from the profile after the common metadata is set.
+reset_key "LogseqAPNsEnvironment"
 set_bool "ITSAppUsesNonExemptEncryption" "false"
 set_bool "LSRequiresIPhoneOS" "true"
 set_string "MinimumOSVersion" "$deployment_target"

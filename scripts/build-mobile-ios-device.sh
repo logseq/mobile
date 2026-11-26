@@ -298,8 +298,10 @@ fi
 # that lacks the capability continue to support the in-app inbox.
 apns_environment=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' "$profile_plist" 2>/dev/null || true)
 if [[ $apns_environment == development || $apns_environment == production ]]; then
-  /usr/libexec/PlistBuddy -c "Add :aps-environment string $apns_environment" "$entitlements"
+  /usr/libexec/PlistBuddy -c "Set :aps-environment $apns_environment" "$entitlements"
   /usr/libexec/PlistBuddy -c "Add :LogseqAPNsEnvironment string $apns_environment" "$app_dir/Info.plist"
+else
+  /usr/libexec/PlistBuddy -c 'Delete :aps-environment' "$entitlements"
 fi
 codesign "${codesign_keychain_args[@]}" --force --sign "$signing_identity" --timestamp=none \
   --entitlements "$entitlements" "$app_dir"
