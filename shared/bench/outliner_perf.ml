@@ -73,7 +73,12 @@ let check db =
     ignore (Workload.result (Workload.open_today session));
     Workload.tap session 2;
     let response, (_, enter_allocated, _) = measure (fun () -> Workload.enter session) in
-    ignore (Workload.result response);
+    let result = Workload.result response in
+    (* Guard against a no-op returnPressed: without an active edit the keystroke
+       inserts nothing and the budget would pass without encoding any patch. *)
+    let editing = Workload.member "editing" (Workload.member "outlinerState" result) in
+    assert (Workload.member "uuid" editing <> `Null);
+    assert (Workload.member "uuid" editing <> `String (Workload.block 2));
     if enter_allocated >= 2_000_000. then
       failwith (Printf.sprintf "Enter allocated %.0f bytes" enter_allocated);
     Printf.printf "Enter allocation %.0f bytes is within budget\n%!" enter_allocated)
