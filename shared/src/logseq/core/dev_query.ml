@@ -2259,10 +2259,7 @@ let wrapped_by_quotes s =
   let n = String.length s in
   n >= 2 && s.[0] = '"' && s.[n - 1] = '"'
 
-(* Step 1: #"\"(?:\\.|[^\"\\])*\"|\[\[(.*?)\]\]" — walk s; keep
-   double-quoted spans verbatim (with escapes); rewrite each [[inner]]
-   to a quoted "[[" inner-with-placeholder "]]". *)
-let quote_page_refs (s : string) : string =
+let rewrite_unquoted_page_refs replace (s : string) : string =
   let n = String.length s in
   let b = Buffer.create (n + 16) in
   let rec loop i =
@@ -2298,12 +2295,9 @@ let quote_page_refs (s : string) : string =
         match find (i + 2) with
         | Some j ->
             let inner = String.sub s (i + 2) (j - i - 2) in
-            let inner' =
-              String.concat tag_placeholder (String.split_on_char '#' inner)
-            in
-            Buffer.add_string b "\"[[";
-            Buffer.add_string b inner';
-            Buffer.add_string b "]]\"";
+            (match replace inner with
+             | Some text -> Buffer.add_string b text
+             | None -> Buffer.add_substring b s i (j + 2 - i));
             loop (j + 2)
         | None ->
             Buffer.add_char b s.[i];
@@ -2315,6 +2309,11 @@ let quote_page_refs (s : string) : string =
   in
   loop 0;
   Buffer.contents b
+
+let quote_page_refs =
+  rewrite_unquoted_page_refs (fun inner ->
+    let inner = String.concat tag_placeholder (String.split_on_char '#' inner) in
+    Some ("\"[[" ^ inner ^ "]]\""))
 
 (* Step 2: #"\(between ([^\)]+)\)" — keywordize offset args. *)
 let between_rewrite (s : string) : string =

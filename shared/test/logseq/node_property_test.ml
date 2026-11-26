@@ -1122,6 +1122,19 @@ let existing_query_definition_preserves_string_literals () =
       (Graph_read.value db definition "block/title") (Some (Ds.String source));
     check_eq (Graph_read.unique_named_uuid false db "Query literal only") None)
 
+let simple_query_keeps_page_reference_after_rename () =
+  R.with_runtime (fun session runtime _ ->
+    let expected = Pending_ops.semantic_value_json (Pending_ops.Ref_uuid Q.definition) in
+    ignore (save_query_source session Q.owner "#Project" expected "(or [[Project]] [[Missing Query Page]])");
+    let query () = member "query" (Q.dispatch session "queryBlock" Q.owner) in
+    let before = Q.row_ids (query ()) in
+    check ~msg:"The query finds blocks referencing the original page" (List.mem Q.alpha before);
+    check_eq (Graph_read.unique_named_uuid false (Graph_runtime.db runtime) "Missing Query Page") None;
+    let rename = member "rename" (member "nodeProperties" (result (read session Q.project))) in
+    ignore (result (edit session Q.project rename "Renamed project" []));
+    check_eq ~msg:"The same query results survive renaming the referenced page"
+      (Q.row_ids (query ())) before)
+
 let cases = [
   case "a newly tagged Query block can save and run its own definition" newly_tagged_query_can_be_defined;
   case "deleting a zoomed journal block preserves its journal and siblings" zoomed_journal_delete_effect_preserves_the_journal;
@@ -1155,4 +1168,5 @@ let cases = [
   case "page descriptions are editable public properties" builtin_description_is_editable;
   case "creating a query preserves tag-shaped source" query_definition_creation_preserves_tag_shaped_text;
   case "editing a query preserves string literals" existing_query_definition_preserves_string_literals;
+  case "simple Query page references survive a rename" simple_query_keeps_page_reference_after_rename;
 ]

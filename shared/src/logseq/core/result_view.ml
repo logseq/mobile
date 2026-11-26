@@ -653,7 +653,7 @@ let query_definition_json db owner =
 let save_query_definition db ~now ~fresh_uuid input =
   let owner = required "blockUuid" input in
   let title = match member "value" input with
-    | `String title -> title | _ -> invalid_arg "Enter a query definition" in
+    | `String title -> Query_block.canonical_source db title | _ -> invalid_arg "Enter a query definition" in
   match query_definition db owner with
   | None -> invalid_arg "This query definition is read-only"
   | Some (value, definition) ->
