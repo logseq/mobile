@@ -90,6 +90,9 @@ def verify_app(app, args):
         require(bundle_info.get("CFBundleVersion") == build, f"Build number mismatch: {bundle.name}")
         require(bundle_info.get("CFBundleSupportedPlatforms") == ["iPhoneOS"], f"Not an iOS device bundle: {bundle.name}")
         if extension_point:
+            display_name = bundle_info.get("CFBundleDisplayName")
+            require(isinstance(display_name, str) and display_name.strip(),
+                    f"Missing or invalid CFBundleDisplayName: {bundle.name}")
             require(bundle_info.get("NSExtension", {}).get("NSExtensionPointIdentifier") == extension_point,
                     f"Wrong extension point: {bundle.name}")
         binary = bundle / bundle_info["CFBundleExecutable"]
