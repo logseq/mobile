@@ -71,21 +71,22 @@ def main():
         directory = Path(temporary)
         source = directory / "check.swift"
         result_report = """
-                    try? FileManager.default.createDirectory(at: URL.cachesDirectory, withIntermediateDirectories: true)
-                    try? message.write(to: URL.cachesDirectory.appendingPathComponent("runtime-check-result.txt"),
-                                       atomically: true, encoding: .utf8)""" if use_result_file else ""
+        try? FileManager.default.createDirectory(at: URL.cachesDirectory, withIntermediateDirectories: true)
+        try? message.write(to: URL.cachesDirectory.appendingPathComponent("runtime-check-result.txt"),
+                           atomically: true, encoding: .utf8)""" if use_result_file else ""
         source.write_text(Path(entry).read_text() if benchmark else Path(entry).read_text().replace("@main", "", 1) + f"""
 import SwiftUI
 @main struct RuntimeCheckApplication: App {{
     var body: some Scene {{
         WindowGroup {{
             Text("Runtime check").task {{
+                report("RUNTIME_CHECK_RUNNING")
                 do {{
                     try await {check_type}.main()
-                    print("RUNTIME_CHECK_COMPLETE")
+                    report("RUNTIME_CHECK_COMPLETE")
                     exit(0)
                 }} catch {{
-                    print("RUNTIME_CHECK_FAILED: \\(error)")
+                    report("RUNTIME_CHECK_FAILED: \\(error)")
                     exit(1)
                 }}
             }}
