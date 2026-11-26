@@ -13,9 +13,9 @@ appId: com.logseq.logseq
     visible:
       id: "flashcard.question"
     timeout: 10000
-- assertNotVisible:
+- assertVisible:
     id: "button.composer.expand"
-- assertNotVisible:
+- assertVisible:
     id: "button.search"
 - assertVisible: 'The capital of France is \[…\]'
 - tapOn:
