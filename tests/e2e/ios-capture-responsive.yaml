@@ -19,14 +19,13 @@ appId: com.logseq.logseq
     id: "button.sidebar"
 - tapOn:
     id: "button.sidebar.settings"
-- scrollUntilVisible:
-    element:
-      id: "field.base-url"
-    direction: DOWN
-    centerElement: true
+- tapOn:
+    id: "link.settings.sync-server"
 - assertVisible: "Sync server"
 - assertVisible:
     id: "field.base-url"
+- tapOn:
+    id: "button.connection.cancel"
 - tapOn:
     id: "button.connection.cancel"
 - tapOn:
