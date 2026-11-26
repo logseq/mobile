@@ -898,7 +898,7 @@ let refresh_retained_search session =
   if current.search_result_pages <> [] && not (String_kit.is_blank current.search_query) then (
     let target_count = max search_result_page_size current.search_result_count in
     let rec refresh pages offset =
-      let limit = min search_result_page_size (target_count - offset) in
+      let limit = min Search_index.max_page_size (target_count - offset) in
       let found, has_more = search_page session ?journal_day:current.search_journal_day
         ~offset ~limit current.search_query in
       let count = offset + List.length found in
