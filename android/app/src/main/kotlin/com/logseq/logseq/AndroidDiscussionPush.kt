@@ -15,7 +15,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -36,6 +36,11 @@ internal data class DiscussionPushPreferences(val enabled: Boolean, val comments
     }
 }
 
+internal const val DISCUSSION_PUSH_UNAVAILABLE = "System notifications are unavailable"
+
+internal class DiscussionPushException(val userMessage: String, cause: Throwable? = null) :
+    Exception(userMessage, cause)
+
 internal class AndroidDiscussionPush(private val context: Context) {
     private val storage = context.getSharedPreferences("logseq.discussionPush", Context.MODE_PRIVATE)
     private val registration = Mutex()
@@ -50,23 +55,30 @@ internal class AndroidDiscussionPush(private val context: Context) {
 
     suspend fun setPreferences(value: DiscussionPushPreferences, baseUrl: String, sessionToken: String?) = registration.withLock {
         if (value.enabled) {
-            check(FirebaseApp.getApps(context).isNotEmpty() && sessionToken != null) { "System notifications are unavailable" }
+            if (FirebaseApp.getApps(context).isEmpty()) {
+                throw DiscussionPushException("This build does not support system notifications")
+            }
+            if (sessionToken.isNullOrBlank()) {
+                throw DiscussionPushException("Sign in to manage system notifications")
+            }
             createChannel()
             val activity = context as? MainActivity
             if (!preferences.enabled && Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
                     context, Manifest.permission.POST_NOTIFICATIONS,
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
-                check(activity?.requestDiscussionNotificationPermission() == true) {
-                    "Allow notifications in system settings"
+                if (activity?.requestDiscussionNotificationPermission() != true) {
+                    throw DiscussionPushException("Allow notifications in system settings")
                 }
             }
-            check(NotificationManagerCompat.from(context).areNotificationsEnabled()) {
-                "Allow notifications in system settings"
+            if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+                throw DiscussionPushException("Allow notifications in system settings")
             }
             sendRegistration(registrationToken(), value, baseUrl, sessionToken)
         } else if (preferences.enabled) {
-            check(sessionToken != null) { "System notifications are unavailable" }
+            if (sessionToken.isNullOrBlank()) {
+                throw DiscussionPushException("Sign in to manage system notifications")
+            }
             sendRegistration(null, value, baseUrl, sessionToken)
         }
         save(value)
@@ -101,14 +113,14 @@ internal class AndroidDiscussionPush(private val context: Context) {
         ))
     }
 
-    private suspend fun registrationToken(): String = withTimeout(12_000) {
+    private suspend fun registrationToken(): String = withTimeoutOrNull(12_000) {
         suspendCancellableCoroutine { continuation ->
             FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
                 if (task.isSuccessful) continuation.resume(task.result)
-                else continuation.resumeWithException(IllegalStateException("System notifications are unavailable", task.exception))
+                else continuation.resumeWithException(DiscussionPushException(DISCUSSION_PUSH_UNAVAILABLE, task.exception))
             }
         }
-    }
+    } ?: throw DiscussionPushException(DISCUSSION_PUSH_UNAVAILABLE)
 
     private suspend fun sendRegistration(
         deviceToken: String?, value: DiscussionPushPreferences, baseUrl: String, sessionToken: String,
@@ -126,8 +138,12 @@ internal class AndroidDiscussionPush(private val context: Context) {
             .build()
         withContext(Dispatchers.IO) {
             http.newCall(request).execute().use { response ->
-                check(response.code != 404) { "This sync server does not support system notifications" }
-                check(response.code == 204) { "System notifications are unavailable" }
+                when (response.code) {
+                    204 -> Unit
+                    401 -> throw DiscussionPushException("Sign in to manage system notifications")
+                    404 -> throw DiscussionPushException("This sync server does not support system notifications")
+                    else -> throw DiscussionPushException(DISCUSSION_PUSH_UNAVAILABLE)
+                }
             }
         }
     }

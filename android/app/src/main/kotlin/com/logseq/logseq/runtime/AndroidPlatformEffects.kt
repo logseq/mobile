@@ -5,12 +5,15 @@ import com.logseq.logseq.CognitoAuthProvider
 import com.logseq.logseq.CognitoSessionUnavailableException
 import com.logseq.logseq.DEFAULT_BASE_URL
 import com.logseq.logseq.DEFAULT_DARK_THEME
+import com.logseq.logseq.DISCUSSION_PUSH_UNAVAILABLE
+import com.logseq.logseq.DiscussionPushException
 import com.logseq.logseq.DiscussionPushPreferences
 import com.logseq.logseq.E2EE_AUTHENTICATION_FAILURE
 import com.logseq.logseq.NETWORK_UNAVAILABLE
 import com.logseq.logseq.normalizedDarkTheme
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 
 // Kotlin port of the former android_platform_effects.dart. The previous
 // version reached these through MethodChannels; here the Kotlin platform
@@ -251,9 +254,13 @@ internal class AndroidPlatformEffects(
             "sign-in" -> {
                 NativeEffectResolution.Discard(message = authentication.signIn(effect.text))
             }
-            "push-preference" -> {
+            "push-preference" -> try {
                 setDiscussionPush(DiscussionPushPreferences.decode(effect.text))
                 NativeEffectResolution.Discard()
+            } catch (error: DiscussionPushException) {
+                NativeEffectResolution.Discard(succeeded = false, message = error.userMessage)
+            } catch (_: IOException) {
+                NativeEffectResolution.Discard(succeeded = false, message = DISCUSSION_PUSH_UNAVAILABLE)
             }
             "persist-ui-session" -> {
                 persistUISession(effect.text)
