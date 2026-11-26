@@ -1,6 +1,7 @@
 module Ds = Datascript
 module Read = Graph_read
 module Json = Yojson.Basic
+module Uuids = Set.Make (String)
 
 let scheduled = Task_recurrence.scheduled
 let deadline = Task_recurrence.deadline
@@ -54,7 +55,7 @@ let date = Task_recurrence.date
 let status_attr = "logseq.property/status"
 let doing_ident = "logseq.property/status.doing"
 
-let rows ?actor db today lookahead =
+let rows ?actor ?on_comment_reference ?(includes = fun _ -> true) db today lookahead =
   let offset_day days =
     Option.value ~default:today (Dev_query.Date_time_util.journal_day_plus today days) in
   let first_today = offset_day (1 - week_days) in
@@ -72,7 +73,7 @@ let rows ?actor db today lookahead =
     | None -> activity "block/created-at" in
   let seen = Hashtbl.create 32 in
   let pages = Hashtbl.create 16 in
-  let decorate = Node_presentation.decorate ?actor db in
+  let decorate = Node_presentation.decorate ?actor ?on_comment_reference db in
   let default_status_eid = Read.default_task_status_eid db in
   let default_status = Option.bind default_status_eid (Read.choice_metadata identity db) in
   let page_details page =
@@ -124,7 +125,7 @@ let rows ?actor db today lookahead =
         | [] -> path in
     collect [] [] eid in
   let candidates = Seq.filter_map (fun eid ->
-    if Hashtbl.mem seen eid then None else (
+    if not (includes eid) || Hashtbl.mem seen eid then None else (
       Hashtbl.add seen eid ();
       let scheduled_at = date db eid scheduled in
       let deadline_at = date db eid deadline in
@@ -172,6 +173,7 @@ type cached_projection = {
   actor : string option;
   db : Ds.db Weak.t;
   result : Json.t;
+  comment_references : Uuids.t;
 }
 
 type cache = (string * cached_projection) list ref
@@ -181,7 +183,9 @@ let remove_cached_graph cache graph = cache := List.remove_assoc graph !cache
 let clear_cache cache = cache := []
 
 let project ?read_rows ?actor cache ~graph ~now ~force db =
-  let read_rows = Option.value ~default:(rows ?actor) read_rows in
+  let comment_references = ref Uuids.empty in
+  let on_comment_reference uuid = comment_references := Uuids.add uuid !comment_references in
+  let read_rows = Option.value ~default:(fun db day days -> rows ?actor ~on_comment_reference db day days) read_rows in
   let day = Cache_model.journal_day_for_ms now in
   let timezone = Int64.to_string (Dev_query.Date_time_util.journal_day_to_local_ms day) in
   let previous = match List.assoc_opt graph !cache with
@@ -210,7 +214,78 @@ let project ?read_rows ?actor cache ~graph ~now ~force db =
           "today", prior "today"; "upcoming", prior "upcoming"] in
     let source = Weak.create 1 in
     Weak.set source 0 (Some db);
-    remember {day; timezone; actor; db = source; result}
+    remember {day; timezone; actor; db = source; result; comment_references = !comment_references}
+
+let refreshable_attr = function
+  | "block/title" | "block/updated-at" | "block/tx-id"
+  | "logseq.property/status" | "logseq.property/priority"
+  | "logseq.property/scheduled" | "logseq.property/deadline" -> true
+  | _ -> false
+
+let refresh_blocks cache ~before ~after eids =
+  let has_incoming db attr eid =
+    not (Seq.is_empty (Datascript_value.datoms_by_ref db Ds.Aevt attr eid)) in
+  let rec outside_embeds db seen eid =
+    if List.mem eid seen || has_incoming db "block/link" eid then false
+    else List.for_all (outside_embeds db (eid :: seen)) (Read.ref_eids db eid "block/parent") in
+  let independent db eid =
+    Read.ref_eids db eid "block/page" <> []
+    && List.for_all (fun attr -> Read.value db eid attr = None)
+      ["block/name"; "db/ident"; "block/closed-value-property"; "logseq.property/created-from-property"]
+    && not (Read.is_comments_area db eid || Read.is_comment db eid)
+    && List.for_all (fun attr -> not (has_incoming db attr eid))
+      ["block/refs"; "block/tags"; "logseq.property/asset"; "logseq.property/status";
+       "logseq.property/priority"; "logseq.property/order-list-type"]
+    && outside_embeds db [] eid in
+  let refresh cached =
+    match Weak.get cached.db 0, cached.result with
+    | Some db, `Assoc fields when db == before && member "success" cached.result = `Bool true ->
+      if not (List.for_all (fun eid ->
+        match Read.uuid_for_eid before eid, Read.uuid_for_eid after eid with
+        | Some left, Some right ->
+          left = right && independent before eid && independent after eid
+          && (not (Uuids.mem right cached.comment_references)
+              || Read.value before eid "block/title" = Read.value after eid "block/title")
+        | _ -> false) eids) then cached
+      else
+        (* These edits can only affect their own rendered rows. Re-evaluate
+           the task membership and keep the other rows from the last agenda. *)
+        (* Keep dependencies from untouched rows. Removed rows can leave
+           conservative entries until the next full projection. *)
+        let comment_references = ref cached.comment_references in
+        let on_comment_reference uuid = comment_references := Uuids.add uuid !comment_references in
+        let result = if eids = [] then cached.result else
+          let disabled, days = configuration after in
+          let changed = Hashtbl.create (List.length eids) in
+          let uuids = Hashtbl.create (List.length eids) in
+          List.iter (fun eid ->
+            Hashtbl.replace changed eid ();
+            Option.iter (fun uuid -> Hashtbl.replace uuids (`String uuid) ()) (Read.uuid_for_eid after eid)) eids;
+          let today, upcoming = rows ?actor:cached.actor ~on_comment_reference ~includes:(Hashtbl.mem changed)
+            after cached.day (if disabled then None else Some days) in
+          let uuid row = task_field "uuid" row in
+          let compare_rows left right = compare (uuid left) (uuid right) in
+          let replace old updated = match old, updated with
+            | `List old, `List updated ->
+              let old = List.filter (fun row -> not (Hashtbl.mem uuids (uuid row))) old in
+              `List (List.merge compare_rows old updated)
+            | _ -> updated in
+          `Assoc (List.map (function
+            | "today", old -> "today", replace old today
+            | "upcoming", old -> "upcoming", replace old upcoming
+            | field -> field) fields) in
+        let source = Weak.create 1 in
+        Weak.set source 0 (Some after);
+        {cached with db = source; result; comment_references = !comment_references}
+    | _ -> cached in
+  (* An unreadable row can be handled by the normal full query and its
+     retained-result fallback. The edit is already staged. *)
+  (try cache := List.map (fun (graph, cached) -> graph, refresh cached) !cache with _ -> ())
+
+let refresh_local_edit cache ~before ~after changes =
+  if List.for_all (fun (datom : Ds.datom) -> refreshable_attr datom.a) changes then
+    let eids = List.map (fun (datom : Ds.datom) -> datom.e) changes |> List.sort_uniq Int.compare in
+    refresh_blocks cache ~before ~after eids
 
 let targets db uuids =
   List.map (function

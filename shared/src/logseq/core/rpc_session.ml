@@ -115,6 +115,9 @@ let collaboration_identity session =
     Option.map (fun (actor : Created_by.identity) -> config.Api.graph_id, actor.uuid)
       (Created_by.of_token config.Api.token))
 
+let tasks_visible session =
+  Option.exists (fun show -> show ()) (host session).Types.show_journal_tasks
+
 let journal_tasks_json ?(force = false) session =
   match (state session).config with
   | Some {graph_id; _} when graph_id <> "" ->
@@ -608,7 +611,9 @@ let snapshot_with_agenda ?(graph_snapshot_recovery = false) ?(include_agenda = t
          ; ( "hasPendingSemanticOperations"
            , `Bool (has_pending_operations session) )
          ; ("emptyJournals", empty_journals_json session)
-         ; ("journalTasks", (if include_agenda then journal_tasks_json session else `Null))
+         ; ("journalTasks", (if include_agenda &&
+              Option.fold ~none:true ~some:(fun show -> show ()) h.Types.show_journal_tasks
+            then journal_tasks_json session else `Null))
          ; ( "hasOlderJournals"
            , `Bool
                (match h.Types.has_older_journals with
@@ -626,7 +631,7 @@ let snapshot_with_agenda ?(graph_snapshot_recovery = false) ?(include_agenda = t
 let snapshot ?graph_snapshot_recovery session context_blocks blocks =
   snapshot_with_agenda ?graph_snapshot_recovery session context_blocks blocks
 
-let outliner_patch_result session context blocks deleted splices =
+let outliner_patch_result ?(include_agenda = false) session context blocks deleted splices =
   let s = state session in
   let blocks =
     if blocks = [] && splices = [] then blocks
@@ -652,11 +657,12 @@ let outliner_patch_result session context blocks deleted splices =
   match Json.from_string encoded with
   | `Assoc fields -> (match List.assoc_opt "result" fields with
       | Some (`Assoc result) ->
-        success session (`Assoc (("emptyJournals", empty_journals_json session) :: result))
+        let agenda = if include_agenda then ["journalTasks", journal_tasks_json session] else [] in
+        success session (`Assoc (("emptyJournals", empty_journals_json session) :: agenda @ result))
       | Some result -> success session result | None -> encoded)
   | _ -> encoded
 
-let outliner_patch session context changed_ids =
+let outliner_patch ?include_agenda session context changed_ids =
   let changed =
     match changed_ids with
     | [] -> []
@@ -664,15 +670,15 @@ let outliner_patch session context changed_ids =
         (fun block -> List.mem block.Model.uuid changed_ids)
         context.Outliner.blocks
   in
-  outliner_patch_result session context changed [] []
+  outliner_patch_result ?include_agenda session context changed [] []
 
-let structural_outliner_patch anchored session before_context before_state
+let structural_outliner_patch ?include_agenda anchored session before_context before_state
     after_context =
   let blocks, deleted, splices =
     Rpc.structural_outliner_delta anchored before_context before_state
       after_context (state session).outliner_state
   in
-  outliner_patch_result session after_context blocks deleted splices
+  outliner_patch_result ?include_agenda session after_context blocks deleted splices
 
 let visible_snapshot ~graph_snapshot_recovery ?(include_agenda = true) session =
   let s = state session in
@@ -1036,20 +1042,27 @@ let dispatch_outliner_event session payload =
             | Some (uuid, collapsed), _ -> So.set_reference_collapsed session uuid collapsed
             | None, Outliner.Toggle_collapsed _ -> So.persist_collapsed_nodes session
             | _ -> ());
+           let tasks_visible = tasks_visible session in
+           let include_agenda = tasks_visible && operations <> [] in
            let editor_snapshot () =
-             visible_snapshot ~graph_snapshot_recovery:false ~include_agenda:false session in
-           if reference_toggle <> None || external_results || (state session).node_routes <> [] then
+             visible_snapshot ~graph_snapshot_recovery:false ~include_agenda session in
+           if reference_toggle <> None || (state session).node_routes <> [] then
              editor_snapshot ()
            else
              (match if template_copies <> [] then So.Structural_diff
                     else event_patch_plan ?db:context.Outliner.db message operations with
+              | So.Patch_blocks _ when external_results && tasks_visible ->
+                (* Tasks renders its own rows from the agenda. The editor state
+                   can travel on its own while a draft is being composed. *)
+                outliner_patch ~include_agenda session projected []
+              | _ when external_results -> editor_snapshot ()
               | So.Patch_blocks changed ->
-                outliner_patch session projected changed
+                outliner_patch ~include_agenda session projected changed
               | So.Structural_diff ->
                 if aggregate <> None && not page_scoped then
                   editor_snapshot ()
                 else
-                  structural_outliner_patch page_scoped session context
+                  structural_outliner_patch ~include_agenda page_scoped session context
                     previous projected))
     end
 

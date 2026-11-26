@@ -138,7 +138,24 @@ let inbox ?(since = 0) ?(preview = fun _ -> `Null) db ~actor =
   match entity db actor with
   | None -> []
   | Some actor ->
-    let authored = referring db creator actor |> List.filter (live db) in
+    (* Most authored blocks have no discussion events. Find potential
+       recipients from collaboration datoms before doing per-block work. *)
+    let candidates = Hashtbl.create 32 in
+    let add eid = Hashtbl.replace candidates eid () in
+    Option.iter (fun tag ->
+      List.iter (fun thread ->
+        if live db thread then begin
+          List.iter add (targets db thread);
+          List.iter add (comments db thread)
+        end) (referring db "block/tags" tag))
+      (Ds.entid db "db/ident" (Ds.Keyword thread_class));
+    Seq.iter (fun (datom : Ds.datom) ->
+      Option.iter add (Datascript_value.ref_eid db reaction_target datom.v))
+      (Ds.Db.datoms db Ds.Aevt ~a:reaction_target ());
+    let authored = Datascript_value.datoms_by_ref db Ds.Aevt creator actor
+      |> Seq.filter_map (fun (datom : Ds.datom) ->
+        if Hashtbl.mem candidates datom.e && live db datom.e then Some datom.e else None)
+      |> List.of_seq in
     let subscriptions = Hashtbl.create 32 in
     let subscribe thread target joined =
       match Hashtbl.find_opt subscriptions thread with

@@ -297,7 +297,7 @@ let preserve_journal_selection runtime before operations changed_attributes chan
     end
   | _ -> ()
 
-let rebase ?changed_attributes runtime server_t operation_ids changed_uuids =
+let rebase ?agenda_update ?changed_attributes runtime server_t operation_ids changed_uuids =
   let started = Unix.gettimeofday () in
   let before = db runtime in
   let authoritative = Ds.conn_db runtime.conn in
@@ -339,6 +339,28 @@ let rebase ?changed_attributes runtime server_t operation_ids changed_uuids =
         };
     };
   trace_stage "LOGSEQ_REBASE_METRIC" started "projected";
+  (match agenda_update with
+   | Some (cache, (applied : Journal_sync.applied)) when operations = []
+       && List.for_all Journal_task_dates.refreshable_attr applied.changed_attributes ->
+     (* With the pending queue settled, only the incoming journal and the
+        confirmed writes can differ from the previous visible graph. *)
+     let confirmed_target (op : Ops.pending_operation) =
+       let allowed = Journal_task_dates.refreshable_attr in
+       match op.intent with
+       | Ops.Save_title title when not (String_kit.is_blank title.expected_title) -> Some title.uuid
+       | Ops.Set_property change when allowed change.attr -> Some change.uuid
+       | Ops.Set_properties value when List.for_all (fun (change : Ops.property_change) -> allowed change.attr) value.changes ->
+         Some value.uuid
+       | _ -> None in
+     let after = db runtime in
+     let targets = List.filter_map confirmed_target pending in
+     if List.length targets = List.length pending then begin
+       let confirmed = List.filter_map (fun uuid -> Ds.entid before "block/uuid" (Ds.Uuid uuid)) targets in
+       if List.length confirmed = List.length targets then
+         Journal_task_dates.refresh_blocks cache ~before ~after
+           (List.sort_uniq Int.compare (applied.changed_eids @ confirmed))
+     end
+   | _ -> ());
   preserve_journal_selection runtime before pending changed_attributes changed_uuids;
   refresh_search_after_rebase runtime before operations changed_uuids;
   trace_stage "LOGSEQ_REBASE_METRIC" started "complete"
@@ -600,7 +622,7 @@ let refresh_split_page_cache runtime before intent =
       | _ -> ()) page
   | _ -> ()
 
-let stage runtime (operation : Ops.pending_operation) =
+let stage ?journal_tasks runtime (operation : Ops.pending_operation) =
   let existing = Ops.list runtime.path in
   let previous = List.find_opt
       (fun (op : Ops.pending_operation) -> op.operation_id = operation.operation_id) existing in
@@ -679,7 +701,10 @@ let stage runtime (operation : Ops.pending_operation) =
          runtime.state :=
            { !(runtime.state) with snapshot =
                { s.snapshot with Projection.db = projected;
-                 statuses = if local_only then s.snapshot.statuses else s.snapshot.statuses @ [ operation.operation_id, Ops.Applied ] } });
+                 statuses = if local_only then s.snapshot.statuses else s.snapshot.statuses @ [ operation.operation_id, Ops.Applied ] } };
+         if projected == report.db_after then
+           Option.iter (fun cache ->
+             Journal_task_dates.refresh_local_edit cache ~before ~after:projected report.tx_data) journal_tasks);
       (match normalized.intent with
        | Ops.Save_title _ ->
          let attributes = List.fold_left (fun attributes -> function

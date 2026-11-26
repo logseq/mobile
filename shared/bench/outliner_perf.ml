@@ -11,20 +11,105 @@ let measure f =
 
 let median values = List.nth (List.sort compare values) (List.length values / 2)
 
+let print_samples name samples =
+  let ms = median (List.map (fun (x, _, _) -> x) samples) in
+  let allocated = median (List.map (fun (_, x, _) -> x) samples) in
+  let size = median (List.map (fun (_, _, x) -> x) samples) in
+  Printf.printf "%-20s %12.3f %14.0f %14d
+%!" name ms allocated size
+
 let benchmark db iterations =
   Printf.printf "%-20s %12s %14s %14s\n" "Operation" "Median ms" "Allocated B" "Response B";
   List.iter (fun (name, setup, run) ->
     let samples = List.init (iterations + 1) (fun _ ->
-      Workload.with_session db (fun session ->
+      Workload.with_session ~show_journal_tasks:(fun () -> String.ends_with ~suffix:"external_task" name)
+        db (fun session ->
         setup session;
         let response, sample = measure (fun () -> run session) in
         ignore (Workload.result response);
         sample)) |> List.tl in
-    let ms = median (List.map (fun (x, _, _) -> x) samples) in
-    let allocated = median (List.map (fun (_, x, _) -> x) samples) in
-    let size = median (List.map (fun (_, _, x) -> x) samples) in
-    Printf.printf "%-20s %12.3f %14.0f %14d\n%!" name ms allocated size
-  ) Workload.scenarios
+    print_samples name samples
+  ) Workload.scenarios;
+  let rtc name run =
+    let samples = List.init iterations (fun _ ->
+      Workload.with_session ~show_journal_tasks:(fun () -> false) db (fun session ->
+        Workload.editing session;
+        run session)) in
+    print_samples name samples in
+  rtc "rtc_during_edit" (fun session ->
+    let receive = Workload.receive_journal session in
+    let response, sample = measure receive in
+    assert (Workload.member "appliedServerT" (Workload.result response) = `Int 43);
+    sample);
+  rtc "enter_with_rtc_x8" (fun session ->
+    let transport = Workload.connected session in
+    let started = Unix.gettimeofday () and before = Gc.allocated_bytes () in
+    let responses = Workload.repeat_enter session transport 8 in
+    ((Unix.gettimeofday () -. started) *. 1000., Gc.allocated_bytes () -. before,
+      List.fold_left (fun size response -> size + String.length response) 0 responses))
+
+let check_rtc_and_tasks db =
+  let rtc_during_edit visit_tasks =
+    let visible = ref visit_tasks in
+    Workload.with_session ~show_journal_tasks:(fun () -> !visible) db (fun session ->
+      if visit_tasks then begin
+        let agenda response = Workload.member "journalTasks" (Workload.result response) in
+        assert (Json.Util.to_list (Workload.member "today" (agenda (Workload.open_journal session))) <> []);
+        visible := false
+      end;
+      Workload.editing session;
+      let receive = Workload.receive_journal session in
+      let response, (_, allocated, size) = measure receive in
+      let result = Workload.result response in
+      assert (Workload.member "appliedServerT" result = `Int 43);
+      assert (Workload.member "journalTasks" result = `Null);
+      if allocated >= 24_000_000. || size >= 100_000 then
+        failwith (Printf.sprintf "RTC update during editing allocated %.0f bytes and returned %d bytes" allocated size);
+      allocated) in
+  let cold = rtc_during_edit false in
+  let after_tasks = rtc_during_edit true in
+  if after_tasks > cold +. 64_000. then
+    failwith (Printf.sprintf "RTC update after leaving Tasks allocated %.0f extra bytes" (after_tasks -. cold));
+  Workload.with_session ~show_journal_tasks:(fun () -> false) db (fun session ->
+    let transport = Workload.connected session in
+    Workload.editing session;
+    Workload.repeat_enter session transport 8 |> List.iter (fun response ->
+      assert (Workload.member "journalTasks" (Workload.result response) = `Null);
+      assert (String.length response < 100_000)));
+  let visible = ref false in
+  Workload.with_session ~show_journal_tasks:(fun () -> !visible) db (fun session ->
+    let agenda response = Workload.member "journalTasks" (Workload.result response) in
+    assert (agenda (Workload.open_journal session) = `Null);
+    visible := true;
+    let initial = agenda (Workload.dispatch session "clearSelectedPage" "") in
+    let task section agenda = Json.Util.to_list (Workload.member section agenda)
+      |> List.find_opt (fun row -> Workload.member "uuid" row = `String Workload.external_task) in
+    assert (Option.is_some (task "today" initial));
+    Workload.edit_external_task session;
+    let response, (_, allocated, size) = measure (fun () -> Workload.type_external_task session) in
+    assert (Workload.member "isOutlinerPatch" (Workload.result response) = `Bool true);
+    assert (agenda response = `Null && size < 8_192 && allocated < 2_000_000.);
+    let transport = Workload.connected session in
+    let changed run =
+      let response, (_, allocated, _) = measure run in
+      if allocated >= 35_000_000. then failwith
+        (Printf.sprintf "Task edit allocated %.0f bytes" allocated);
+      let updated = agenda response in
+      let _, ack = Workload.confirm_pending session transport in
+      assert (agenda ack = updated);
+      let refreshed = agenda (Workload.dispatch session "nodeProperty" (Json.to_string
+        (`Assoc ["action", `String "refreshJournalTasks"; "day", Workload.member "day" updated]))) in
+      assert (refreshed = updated);
+      updated in
+    let saved = changed (fun () -> Workload.save session) in
+    let block section updated = Workload.member "block" (Option.get (task section updated)) in
+    assert (Workload.member "title" (block "today" saved) = `String "Updated task");
+    let status = changed (fun () -> Workload.external_task_status session) in
+    assert (Workload.member "ident" (Workload.member "status" (block "today" status))
+      = `String "logseq.property/status.doing");
+    let date = changed (fun () -> Workload.external_task_date session) in
+    assert (task "today" date = None && Option.is_some (task "upcoming" date)));
+  print_endline "RTC edits, repeated Enter with confirmations, and Tasks edits are within budget"
 
 let check db =
   Workload.with_session db (fun session ->
@@ -99,6 +184,6 @@ let check db =
 let () =
   let db = Workload.fixture () in
   match Array.to_list Sys.argv with
-  | [_] -> check db
+  | [_] -> check db; check_rtc_and_tasks db
   | [_; "--bench"; count] when int_of_string count > 0 -> benchmark db (int_of_string count)
   | _ -> failwith "usage: outliner_perf [--bench ITERATIONS]"

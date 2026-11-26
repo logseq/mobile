@@ -6,6 +6,7 @@ type applied =
   { operation_ids : string list
   ; changed_uuids : string list
   ; changed_attributes : string list
+  ; changed_eids : int list
   }
 val decode : string -> (journal, string) result
 val extend_report : Datascript.tx_report -> Datascript.tx_op list -> Datascript.tx_report

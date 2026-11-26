@@ -11,10 +11,12 @@ val graph_catalog_address : string
 val snapshot_request : string
 val discard_value : ('a, string) result -> (unit, string) result
 val host_options :
+  ?journal_tasks:Journal_task_dates.cache ->
+  ?show_journal_tasks:(unit -> bool) ->
   Mobile_database.mobile_database ->
   E2ee_keyring.e2ee_keyring ->
   Sqlite.session option ->
   Session_types.host_options
-val create : (string -> string) -> mobile_session
+val create : ?show_journal_tasks:(unit -> bool) -> (string -> string) -> mobile_session
 val call : mobile_session -> string -> string
-val start : (string -> string) -> mobile_session
+val start : ?show_journal_tasks:(unit -> bool) -> (string -> string) -> mobile_session

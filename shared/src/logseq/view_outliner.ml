@@ -2092,7 +2092,19 @@ let tasks_menu ~android model_source send =
 let tasks_screen context model_source send : t = custom @@ fun mount_context parent ->
   let own signal = Signal.own_signal mount_context.ui_scope signal in
   let tab = own (Signal.map (fun (current : Model.logseq_model) -> current.tasks_view.tab) model_source) in
-  let entries = own (Signal.map View_rows.tasks_view_rows model_source) in
+  let entry_inputs_equal (left : Model.logseq_model) (right : Model.logseq_model) =
+    left.journal_tasks = right.journal_tasks
+    && left.tasks_view = right.tasks_view
+    && left.journal_title_format = right.journal_title_format
+    && left.language = right.language
+    && left.system_language = right.system_language
+    && left.selected_graph_id = right.selected_graph_id
+    && Model.journal_tasks_collapsed left = Model.journal_tasks_collapsed right
+    && left.outliner_edit_scope = right.outliner_edit_scope
+    && Option.map (fun (edit : Model.outliner_editing) -> edit.editing_uuid) left.outliner_editing =
+       Option.map (fun (edit : Model.outliner_editing) -> edit.editing_uuid) right.outliner_editing in
+  let entry_inputs = own (Signal.cutoff entry_inputs_equal model_source) in
+  let entries = own (Signal.map View_rows.tasks_view_rows entry_inputs) in
   let empty = own (Signal.map ((=) []) entries) in
   let tab_button id name image value =
     let label = View_base.tr (Signal.sample model_source) name in
