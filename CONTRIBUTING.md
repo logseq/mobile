@@ -38,11 +38,17 @@ grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq.opam | sort -u |
     if [ -d "$checkout/.git" ]; then
       current=$(git -C "$checkout" rev-parse --verify --quiet HEAD 2>/dev/null || true)
       case "$revision" in
-        *[!0-9a-fA-F]* ) current= ;;
+        *[!0-9a-fA-F]* )
+          if [ -n "$current" ]; then
+            continue
+          fi
+          ;;
+        * )
+          if [ "$current" = "$revision" ]; then
+            continue
+          fi
+          ;;
       esac
-      if [ -n "$current" ] && [ "$current" = "$revision" ]; then
-        continue
-      fi
     fi
     git init --quiet "$checkout" &&
       git -C "$checkout" fetch --quiet --depth=1 "https://github.com/$repository" "$revision" &&
