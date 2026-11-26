@@ -61,9 +61,7 @@ import WidgetKit
         resumePendingRefresh()
     }
 
-    func refreshInBackground() async {
-        guard !Task.isCancelled else { return }
-        requestBackgroundRefresh()
+    func waitForPendingRefresh() async {
         await refreshTask?.value
     }
 

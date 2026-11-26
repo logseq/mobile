@@ -1035,9 +1035,14 @@ public struct LogseqRootView : View {
     public func runExclusiveBackgroundSync() async -> Bool {
         await syncCoordinator.runBackground { [self] in
             await waitForLocalLaunchLoad()
-            await widgetContent.refreshInBackground()
+            let graph = store.snapshot.selectedGraphId
+            let cursor = store.snapshot.appliedServerT
+            widgetContent.requestBackgroundRefresh()
             let synced = await syncFromStoredConnection()
-            if synced { await widgetContent.refreshInBackground() }
+            if graph != store.snapshot.selectedGraphId || cursor != store.snapshot.appliedServerT {
+                widgetContent.requestBackgroundRefresh()
+            }
+            await widgetContent.waitForPendingRefresh()
             return synced
         }
     }

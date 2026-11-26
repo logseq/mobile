@@ -398,7 +398,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         var isAwaitingBlockHandoff = false
         var handoffSelectionRevision: Int?
         var pendingHandoffTyping = ""
-        enum HandoffKey: Equatable { case split, backspace }
+        enum HandoffKey: Equatable { case returnKey, shiftReturn, backspace }
         var pendingHandoffKeys: ArraySlice<(typing: String, key: HandoffKey)> = []
         var activeBlockID: String
         var isApplyingModel = false
@@ -412,6 +412,12 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             selectionRevision = parent.selectionRevision
         }
 
+        private func insertsLineBreak(shifted: Bool) -> Bool {
+            let policy = parent.inputPolicy
+            let multiline = NativeEditorInputPolicy.allowsLineBreak(policy)
+            return shifted ? !(multiline && NativeEditorInputPolicy.usesCodePresentation(policy)) : multiline
+        }
+
         func applyHandoff(to textView: UITextView, text: String, caret: Int?, replayPendingInput: Bool) {
             var edit = InlineEditorHandoffMerge.merged(
                 modelText: text, desiredCaretUTF16Offset: caret, bufferedTyping: ""
@@ -423,19 +429,32 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                         modelText: edit.text, desiredCaretUTF16Offset: edit.caretUTF16Offset,
                         bufferedTyping: input.typing
                     )
-                    if input.key == .split || edit.caretUTF16Offset == 0 {
-                        nextKey = input.key
-                        break
+                    switch input.key {
+                    case .returnKey, .shiftReturn:
+                        if insertsLineBreak(shifted: input.key == .shiftReturn) {
+                            edit = InlineEditorHandoffMerge.merged(
+                                modelText: edit.text, desiredCaretUTF16Offset: edit.caretUTF16Offset,
+                                bufferedTyping: "\n"
+                            )
+                        } else {
+                            nextKey = input.key
+                        }
+                    case .backspace:
+                        if edit.caretUTF16Offset == 0 {
+                            nextKey = .backspace
+                        } else {
+                            let value = edit.text as NSString
+                            let range = value.rangeOfComposedCharacterSequence(at: edit.caretUTF16Offset - 1)
+                            if let deletion = NativeEditorInputPolicy.deletingEmptyPair(
+                                from: edit.text, range: range, replacementText: "", inputPolicy: parent.inputPolicy
+                            ) {
+                                edit = (deletion.text, deletion.caretUTF16Offset)
+                            } else {
+                                edit = (value.replacingCharacters(in: range, with: ""), range.location)
+                            }
+                        }
                     }
-                    let value = edit.text as NSString
-                    let range = value.rangeOfComposedCharacterSequence(at: edit.caretUTF16Offset - 1)
-                    if let deletion = NativeEditorInputPolicy.deletingEmptyPair(
-                        from: edit.text, range: range, replacementText: "", inputPolicy: parent.inputPolicy
-                    ) {
-                        edit = (deletion.text, deletion.caretUTF16Offset)
-                    } else {
-                        edit = (value.replacingCharacters(in: range, with: ""), range.location)
-                    }
+                    if nextKey != nil { break }
                 }
                 if nextKey == nil {
                     edit = InlineEditorHandoffMerge.merged(
@@ -478,7 +497,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                     return
                 }
                 switch key {
-                case .split: self.parent.onReturn(title, caret)
+                case .returnKey, .shiftReturn: self.parent.onReturn(title, caret)
                 case .backspace: self.parent.onBackspace(title, 0)
                 }
             }
@@ -563,25 +582,20 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             replacementText replacement: String
         ) -> Bool {
             let isShiftReturn = (textView as? FocusRetainingTextView)?.isInsertingLineBreak == true
-            let isInlineLineBreak = isShiftReturn && !(NativeEditorInputPolicy.usesCodePresentation(parent.inputPolicy)
-                && NativeEditorInputPolicy.allowsLineBreak(parent.inputPolicy))
             let isPasting = (textView as? FocusRetainingTextView)?.isPasting == true
-            let insertsLineBreak = isInlineLineBreak || (!isShiftReturn && replacement == "\n"
-                && NativeEditorInputPolicy.allowsLineBreak(parent.inputPolicy))
             if isAwaitingBlockHandoff {
-                // Replay keys against the caret the core acknowledges. UIKit
-                // still reports ranges for the previous block while we wait.
-                if insertsLineBreak || isPasting {
-                    pendingHandoffTyping += replacement
-                } else if replacement == "\n" || replacement.isEmpty {
-                    pendingHandoffKeys.append((pendingHandoffTyping, replacement.isEmpty ? .backspace : .split))
+                // Classify Return and Backspace against the editor that
+                // receives focus, including its input policy and caret.
+                if !isPasting && (replacement == "\n" || replacement.isEmpty) {
+                    let key: HandoffKey = replacement.isEmpty ? .backspace : (isShiftReturn ? .shiftReturn : .returnKey)
+                    pendingHandoffKeys.append((pendingHandoffTyping, key))
                     pendingHandoffTyping = ""
                 } else {
                     pendingHandoffTyping += replacement
                 }
                 return false
             }
-            if insertsLineBreak || isPasting { return true }
+            if isPasting || (replacement == "\n" && insertsLineBreak(shifted: isShiftReturn)) { return true }
             if textView.markedTextRange == nil, let deletion = NativeEditorInputPolicy.deletingEmptyPair(
                 from: textView.text ?? "",
                 range: range,

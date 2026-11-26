@@ -11,6 +11,7 @@ final class EditorModel: ObservableObject {
     var returns = 0
     var submittedTitles: [String] = []
     var backspaceSources: [String] = []
+    var policyAfterSplit: String?
     var pendingCarets: [Int]?
     func moveCaret(_ caret: Int) {
         if pendingCarets != nil {
@@ -25,6 +26,7 @@ final class EditorModel: ObservableObject {
         self.title = String((title as NSString).substring(from: caret))
         self.caret = 0
         blockID = "new-\(returns)"
+        if let policyAfterSplit { inputPolicy = policyAfterSplit }
         selectionRevision += 1
     }
     func backspace(_ title: String, _ selectionLength: Int) {
@@ -164,6 +166,20 @@ struct ReturnHandoffCheck {
             print("FAIL: buffered Backspace must delete one character after buffered typing")
             failures += 1
         }
+        model.inputPolicy = #"{"multiline":true,"code":true}"#
+        model.title = "x^2"; model.blockID = "code-to-plain"; model.caret = 3
+        model.selectionRevision += 1
+        model.policyAfterSplit = "{}"
+        await settle()
+        let beforeCodeSplit = model.returns
+        shiftEnter()
+        type("\n", in: editor())
+        for _ in 0..<20 where model.returns < beforeCodeSplit + 2 { await settle() }
+        if model.returns != beforeCodeSplit + 2 || !model.title.isEmpty {
+            print("FAIL: Return after splitting code must use the plain block's input policy")
+            failures += 1
+        }
+        model.policyAfterSplit = nil
         for code in [true, false] {
             model.inputPolicy = "{\"multiline\":\(code),\"code\":\(code)}"
             model.title = "x^2"; model.blockID = code ? "code" : "math"; model.caret = 3
