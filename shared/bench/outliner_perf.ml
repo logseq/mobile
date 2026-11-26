@@ -81,7 +81,20 @@ let check db =
     assert (Workload.member "uuid" editing <> `String (Workload.block 2));
     if enter_allocated >= 2_000_000. then
       failwith (Printf.sprintf "Enter allocated %.0f bytes" enter_allocated);
-    Printf.printf "Enter allocation %.0f bytes is within budget\n%!" enter_allocated)
+    Printf.printf "Enter allocation %.0f bytes is within budget\n%!" enter_allocated);
+  Workload.with_session db (fun session ->
+    let older_journal = Workload.uuid (Workload.journal + 1) in
+    ignore (Workload.result (Workload.dispatch session "selectPage" older_journal));
+    let target = `String (Workload.uuid (Workload.row 1 2)) in
+    ignore (Workload.result (Workload.event session "tapBlock" ["uuid", target]));
+    let response, (_, enter_allocated, _) = measure (fun () -> Workload.enter session) in
+    let result = Workload.result response in
+    let editing = Workload.member "editing" (Workload.member "outlinerState" result) in
+    assert (Workload.member "uuid" editing <> `Null);
+    assert (Workload.member "uuid" editing <> target);
+    if enter_allocated >= 2_000_000. then
+      failwith (Printf.sprintf "Cross-journal enter allocated %.0f bytes" enter_allocated);
+    Printf.printf "Cross-journal enter allocation %.0f bytes is within budget\n%!" enter_allocated)
 
 let () =
   let db = Workload.fixture () in
