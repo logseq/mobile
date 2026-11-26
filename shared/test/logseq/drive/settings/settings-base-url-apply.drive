@@ -6,6 +6,7 @@ press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
 press kind:menu-item&text:"Settings"
 wait prop:accessibility-identifier=sheet.settings
+press prop:accessibility-identifier=link.settings.sync-server
 type prop:accessibility-identifier=field.base-url "http://127.0.0.1:8787"
 press prop:accessibility-identifier=button.connection.apply
 expect-absent prop:accessibility-identifier=sheet.settings
@@ -14,4 +15,5 @@ wait prop:accessibility-identifier=screen.graphs
 press prop:accessibility-identifier=button.graphs.refresh
 press prop:accessibility-identifier=button.sidebar.settings
 wait prop:accessibility-identifier=sheet.settings
+press prop:accessibility-identifier=link.settings.sync-server
 expect-prop prop:accessibility-identifier=field.base-url text "http://127.0.0.1:8787"

@@ -6,6 +6,7 @@ press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
 press prop:accessibility-identifier=button.sidebar.settings
 wait prop:accessibility-identifier=sheet.settings
+press prop:accessibility-identifier=link.settings.about
 press prop:accessibility-identifier=button.runtime-log
 wait prop:accessibility-identifier=screen.runtime-log
 expect text:"Errors only"

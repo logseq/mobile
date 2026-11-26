@@ -160,58 +160,6 @@ let settings_dark_theme_control context model_source send =
     ~close_menu:Model.CloseSettingsDarkThemeMenu ~choose:(fun theme -> Model.ChangeDarkTheme theme)
     context model_source send
 
-let settings_community_link_row (context : Lui_ui.ui_context) model_source
-    link_source send : t =
-  let link = Signal.sample link_source in
-  if Lui_ui.host context = KotlinHost then
-    column ~gap:12
-      [
-        list_item
-          ~text_signal:
-            (Signal.map2 View_base.settings_community_link_title
-               model_source link_source)
-          ~icon:(`app "open-external") ~padding:0
-          ~accessibility_identifier:
-            (View_base.settings_community_link_identifier link)
-          ~on_press:(fun _ ->
-            ignore
-              (send
-                 (Model.OpenExternalURL
-                    (Signal.sample link_source
-                       : Model.settings_community_link).url)))
-          [];
-        if_
-          ~test:
-            (Signal.map2
-               View_base.settings_community_link_needs_separator_
-               model_source link_source)
-          (separator []);
-      ]
-  else
-    column ~gap:12
-      [
-        list_item
-          ~text_signal:
-            (Signal.map2 View_base.settings_community_link_title
-               model_source link_source)
-          ~padding:0
-          ~accessibility_identifier:
-            (View_base.settings_community_link_identifier link)
-          ~on_press:(fun _ ->
-            ignore
-              (send
-                 (Model.OpenExternalURL
-                    (Signal.sample link_source
-                       : Model.settings_community_link).url)))
-          [];
-        if_
-          ~test:
-            (Signal.map2
-               View_base.settings_community_link_needs_separator_
-               model_source link_source)
-          (separator []);
-      ]
-
 let runtime_log_row record_source : t =
   column ~gap:3
     [
@@ -300,7 +248,7 @@ let settings_tab_row (context : Lui_ui.ui_context) model_source tab title
                     ~on_press:(fun _ ->
                       ignore (send (Model.ToggleSidebarTab tab)))
                     ~text:title []));
-            spacer [];
+            spacer ~grow:1.0 [];
             if_ ~test:movement_visible_source
               (icon_button ~icon:(`app "arrow-up") ~size:`icon
                  ~disabled_signal:up_disabled_source ~variant:`ghost
@@ -541,110 +489,6 @@ let settings_toggle_spell_check send enabled =
 let settings_toggle_auto_correction send enabled =
   ignore (send (Model.ToggleAutoCorrection enabled))
 
-let settings_general_card (context : Lui_ui.ui_context) model_source send :
-    t =
-  if Lui_ui.host context = KotlinHost then
-    column ~gap:0 ~cross:`stretch
-      ~accessibility_identifier:"layout.settings.general-card"
-      [
-        settings_appearance_control context model_source send;
-        settings_dark_theme_control context model_source send;
-        settings_language_control context model_source send;
-        list_item
-          ~accessibility_identifier:"link.settings.tabs"
-          ~on_press:(press send Model.OpenSettingsTabs)
-          [
-            row ~grow:1.0 ~cross:`center ~gap:12
-              [
-                column ~grow:1.0 ~gap:2
-                  ~accessibility_identifier:"layout.settings.tabs-copy"
-                  [
-                    text ~value:(View_base.tr (Signal.sample model_source) "Tabs") [];
-                    text
-                      ~value:
-                        (reactive (Signal.map View_base.settings_tabs_summary
-                           model_source))
-                      ~style_class:"footnote"
-                      ~foreground:"muted-foreground"
-                      ~accessibility_identifier:
-                        "text.settings.tabs.selection" [];
-                  ];
-                icon ~name:(`app "chevron-right") ~width:20 ~height:20
-                  ~foreground:"muted-foreground"
-                  ~accessibility_identifier:"icon.settings.tabs" [];
-              ];
-          ];
-      ]
-  else
-    column ~gap:12 ~padding:16 ~background:"surface" ~corner_radius:14
-      ~accessibility_identifier:"layout.settings.general-card"
-      [
-        row ~cross:`center
-          [
-            text ~value:(View_base.tr (Signal.sample model_source) "Theme") [];
-            spacer [];
-            settings_appearance_control context model_source send;
-          ];
-        separator [];
-        row ~cross:`center
-          [
-            text ~value:(View_base.tr (Signal.sample model_source) "Dark theme") [];
-            spacer [];
-            settings_dark_theme_control context model_source send;
-          ];
-        separator [];
-        row ~cross:`center
-          [
-            text ~value:(View_base.tr (Signal.sample model_source) "Language") [];
-            spacer [];
-            settings_language_control context model_source send;
-          ];
-        separator [];
-        list_item ~padding:0
-          ~accessibility_identifier:"link.settings.tabs"
-          ~on_press:(press send Model.OpenSettingsTabs)
-          [
-            row ~grow:1.0 ~cross:`center
-              [
-                text ~value:(View_base.tr (Signal.sample model_source) "Tabs") [];
-                spacer [];
-                text
-                  ~value:
-                    (reactive (Signal.map View_base.settings_tabs_summary
-                       model_source))
-                  ~style_class:"single-line" ~foreground:"secondary"
-                  ~accessibility_identifier:"text.settings.tabs.selection"
-                  [];
-              ];
-          ];
-      ]
-
-let settings_editor_card model_source (context : Lui_ui.ui_context) spell_check_source
-    auto_correction_source send : t =
-  if Lui_ui.host context = KotlinHost then
-    column ~gap:0 ~cross:`stretch ~padding_horizontal:16
-      [
-        switch_ ~min_height:56 ~checked_signal:spell_check_source
-          ~accessibility_identifier:"switch.settings.spell-check"
-          ~on_toggle:(settings_toggle_spell_check send)
-          ~text:(View_base.tr (Signal.sample model_source) "Spell check") [];
-        switch_ ~min_height:56 ~checked_signal:auto_correction_source
-          ~accessibility_identifier:"switch.settings.auto-correction"
-          ~on_toggle:(settings_toggle_auto_correction send)
-          ~text:(View_base.tr (Signal.sample model_source) "Auto-correction") [];
-      ]
-  else
-    column ~gap:12 ~padding:16 ~background:"surface" ~corner_radius:14
-      [
-        toggle ~checked_signal:spell_check_source
-          ~on_toggle:(settings_toggle_spell_check send)
-          ~text:(View_base.tr (Signal.sample model_source) "Spell check") [];
-        separator [];
-        toggle ~checked_signal:auto_correction_source
-          ~on_toggle:(settings_toggle_auto_correction send)
-          ~text:(View_base.tr (Signal.sample model_source) "Auto-correction") [];
-      ]
-
 let settings_push_controls context model_source send =
   let current = Signal.sample model_source in
   let disabled_signal = Signal.map Model.saving_push_preferences model_source in
@@ -656,7 +500,7 @@ let settings_push_controls context model_source send =
     let accessibility_identifier = "switch.settings.push." ^ id in
     let text = View_base.tr current label in
     if Lui_ui.host context = KotlinHost then
-      switch_ ~min_height:56 ~checked_signal ~disabled_signal ~accessibility_identifier
+      switch_ ~min_height:56 ~padding_horizontal:16 ~checked_signal ~disabled_signal ~accessibility_identifier
         ~on_toggle ~text []
     else
       with_native_control_tint "switch" (toggle ~checked_signal ~disabled_signal ~accessibility_identifier
@@ -780,262 +624,434 @@ let sign_out_dialog model_source (context : Lui_ui.ui_context) send : t =
           ~text:(View_base.tr (Signal.sample model_source) "Sign Out") [];
       ]
 
-let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
-    send : t =
-  let card_bg = "background" in
-  column ~gap:24 ~padding_horizontal:8 ~padding_vertical:16 ~cross:`stretch
-    ~accessibility_identifier:"screen.settings"
+let settings_section_slug = function
+  | Model.SettingsHome -> "home"
+  | Model.SettingsAccount -> "account"
+  | Model.SettingsGeneral -> "general"
+  | Model.SettingsEditor -> "editor"
+  | Model.SettingsNotifications -> "notifications"
+  | Model.SettingsSyncServer -> "sync-server"
+  | Model.SettingsAdvanced -> "advanced"
+  | Model.SettingsAbout -> "about"
+  | Model.SettingsCommunity -> "community"
+
+let settings_section_title = function
+  | Model.SettingsHome -> "Settings"
+  | Model.SettingsAccount -> "Account"
+  | Model.SettingsGeneral -> "General"
+  | Model.SettingsEditor -> "Editor"
+  | Model.SettingsNotifications -> "Notifications"
+  | Model.SettingsSyncServer -> "Sync server"
+  | Model.SettingsAdvanced -> "Advanced"
+  | Model.SettingsAbout -> "About"
+  | Model.SettingsCommunity -> "Community"
+
+let settings_section_icon = function
+  | Model.SettingsAccount -> "account"
+  | Model.SettingsGeneral -> "settings"
+  | Model.SettingsEditor -> "edit"
+  | Model.SettingsNotifications -> "tab-notifications"
+  | Model.SettingsSyncServer -> "graph-remote"
+  | Model.SettingsAdvanced -> "terminal"
+  | Model.SettingsAbout -> "info"
+  | Model.SettingsCommunity -> "open-external"
+  | Model.SettingsHome -> "settings"
+
+let settings_sheet_title (current : Model.logseq_model) =
+  View_base.tr current (settings_section_title current.settings_section)
+
+let settings_can_sign_out model_source =
+  Signal.map (fun current -> not (View_base.authentication_required_ current)) model_source
+
+let settings_blank_section () : t = heading ~value:"" []
+
+let settings_category_row model_source section send : t =
+  let current = Signal.sample model_source in
+  let title = View_base.tr current (settings_section_title section) in
+  let slug = settings_section_slug section in
+  list_item ~min_height:52
+    ~accessibility_identifier:("link.settings." ^ slug)
+    ~on_press:(press send (Model.OpenSettingsSection section))
     [
-      column ~gap:8 ~cross:`stretch
+      row ~grow:1.0 ~cross:`center ~gap:12
         [
-          text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
-            ~accessibility_identifier:"label.settings.account"
-            ~value:(View_base.tr (Signal.sample model_source) "Account") [];
-          column ~padding_horizontal:16 ~background:card_bg
-            [settings_account_row model_source send];
+          icon ~name:(`app (settings_section_icon section)) ~width:20 ~height:20
+            ~foreground:"foreground"
+            ~accessibility_identifier:("icon.settings." ^ slug) [];
+          text ~value:title [];
+          spacer ~grow:1.0 [];
+          icon ~name:(`app "chevron-right") ~width:18 ~height:18
+            ~foreground:"muted-foreground" [];
         ];
-      column ~gap:8 ~cross:`stretch
-        [
-          text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
-            ~accessibility_identifier:"label.settings.general"
-            ~value:(View_base.tr (Signal.sample model_source) "General") [];
-          settings_general_card context model_source send;
-        ];
-      column ~gap:8 ~cross:`stretch
-        [
-          text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
-            ~accessibility_identifier:"label.settings.editor"
-            ~value:(View_base.tr (Signal.sample model_source) "Editor") [];
-          settings_editor_card model_source context
-            (Signal.map View_base.settings_spell_check model_source)
-            (Signal.map View_base.settings_auto_correction model_source)
-            send;
-        ];
-      column ~gap:8 ~cross:`stretch
-        [
-          text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
-            ~accessibility_identifier:"label.settings.push"
-            ~value:(View_base.tr (Signal.sample model_source) "System notifications") [];
-          column ~cross:`stretch ~padding_horizontal:16
-            (settings_push_controls context model_source send);
-        ];
-      column ~gap:8 ~cross:`stretch
-        [
-          text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
-            ~accessibility_identifier:"label.settings.sync-server"
-            ~value:(View_base.tr (Signal.sample model_source) "Sync server") [];
-          column ~gap:8 ~padding:16 ~cross:`stretch ~style_class:"form" ~background:card_bg
-            [
-              text_field
-                ~text_signal:
-                  (Signal.map View_base.settings_base_url model_source)
-                ~placeholder:(View_base.tr (Signal.sample model_source) "Server URL") ~label:(View_base.tr (Signal.sample model_source) "Server URL")
-                ~accessibility_identifier:"field.base-url"
-                ~on_input:
-                  (on_input send (fun text -> Model.ChangeBaseURL text))
-                [];
-              if_
-                ~test:
-                  (Signal.map View_base.settings_base_url_invalid_
-                     model_source)
-                (text ~foreground:"error-foreground"
-                   ~value:(View_base.tr (Signal.sample model_source) "Enter a valid HTTP or HTTPS URL.") []);
-            ];
-        ];
-      if_
-        ~test:(Signal.map View_base.selected_graph_local_ model_source)
-        (column ~gap:8 ~cross:`stretch
-           [
-             text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
-               ~accessibility_identifier:"label.settings.advanced"
-               ~value:(View_base.tr (Signal.sample model_source) "Advanced") [];
-             column ~padding:16 ~background:card_bg
-               [ settings_export_row model_source context send ];
-           ]);
-      column ~gap:8 ~cross:`stretch
-        [
-          text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
-            ~accessibility_identifier:"label.settings.about"
-            ~value:(View_base.tr (Signal.sample model_source) "About") [];
-          column ~gap:12 ~padding:16 ~background:card_bg
-            [
-              row
-                [
-                  text ~value:(View_base.tr (Signal.sample model_source) "Version") [];
-                  spacer [];
-                  text
-                    ~value:
-                      (reactive (Signal.map View_base.settings_version model_source))
-                    ~foreground:"secondary" [];
-                ];
-              row
-                [
-                  text ~value:(View_base.tr (Signal.sample model_source) "Revision") [];
-                  spacer [];
-                  text
-                    ~value:
-                      (reactive (Signal.map View_base.settings_revision model_source))
-                    ~foreground:"secondary" [];
-                ];
-              settings_runtime_log_row model_source context send;
-            ];
-        ];
-      column ~gap:8 ~cross:`stretch
-        [
-          text ~style_class:"subheadline semibold" ~padding_horizontal:16 ~foreground:"primary"
-            ~accessibility_identifier:"label.settings.community"
-            ~value:(View_base.tr (Signal.sample model_source) "Community") [];
-          column ~gap:12 ~padding:16 ~background:card_bg
-            [
-              keyed
-                ~source:
-                  (Signal.map View_base.model_community_links
-                     model_source)
-                ~key:View_base.settings_community_link_identifier
-                ~cmp:compare
-                ~mount:(fun link_source ->
-                  settings_community_link_row context model_source
-                    link_source send);
-            ];
-        ];
-      column ~padding:16 ~background:card_bg
-        [
-          list_item ~icon:(`app "open-external") ~padding:0
-            ~accessibility_identifier:"link.settings.account-deletion"
-            ~on_press:(press send (Model.OpenExternalURL "https://logseq.com/account-deletion"))
-            ~text:(View_base.tr (Signal.sample model_source) "Request account deletion") [];
-          list_item ~icon:(`app "open-external") ~padding:0
-            ~accessibility_identifier:"link.settings.privacy-policy"
-            ~on_press:(press send (Model.OpenExternalURL "https://logseq.com/privacy-policy"))
-            ~text:(View_base.tr (Signal.sample model_source) "Privacy Policy") [];
-        ];
-      if_ ~test:(Signal.map (fun current -> not (View_base.authentication_required_ current)) model_source)
-        (column ~padding_horizontal:16 ~background:card_bg [settings_sign_out_row model_source context send]);
     ]
 
-(* Native grouped-settings form: a `form`-styled content column whose
-   children are `heading` section delimiters and row nodes — the Apple
-   backend renders it as a grouped Form (white section cards, system
-   separators, Logseq accent toggles). *)
-let settings_form_screen (context : Lui_ui.ui_context) model_source send
-    : t =
-  let can_sign_out = Signal.map (fun current -> not (View_base.authentication_required_ current)) model_source in
+let settings_android_card rows : t =
+  column ~gap:0 ~cross:`stretch ~background:"card" ~corner_radius:20 rows
+
+let settings_tabs_link_row (context : Lui_ui.ui_context) model_source send : t =
+  if Lui_ui.host context = KotlinHost then
+    list_item ~min_height:56
+      ~accessibility_identifier:"link.settings.tabs"
+      ~on_press:(press send Model.OpenSettingsTabs)
+      [
+        row ~grow:1.0 ~cross:`center ~gap:12
+          [
+            column ~grow:1.0 ~gap:2
+              ~accessibility_identifier:"layout.settings.tabs-copy"
+              [
+                text ~value:(View_base.tr (Signal.sample model_source) "Tabs") [];
+                text
+                  ~value:(reactive (Signal.map View_base.settings_tabs_summary model_source))
+                  ~style_class:"footnote" ~foreground:"muted-foreground"
+                  ~accessibility_identifier:"text.settings.tabs.selection" [];
+              ];
+            icon ~name:(`app "chevron-right") ~width:20 ~height:20
+              ~foreground:"muted-foreground"
+              ~accessibility_identifier:"icon.settings.tabs" [];
+          ];
+      ]
+  else
+    list_item ~accessibility_identifier:"link.settings.tabs"
+      ~on_press:(press send Model.OpenSettingsTabs)
+      [
+        row ~grow:1.0 ~cross:`center
+          [
+            text ~value:(View_base.tr (Signal.sample model_source) "Tabs") [];
+            spacer ~grow:1.0 [];
+            text
+              ~value:(reactive (Signal.map View_base.settings_tabs_summary model_source))
+              ~style_class:"single-line" ~foreground:"secondary"
+              ~accessibility_identifier:"text.settings.tabs.selection" [];
+            icon ~name:(`app "chevron-right") ~width:16 ~height:16
+              ~foreground:"muted-foreground" [];
+          ];
+      ]
+
+let settings_home_screen (context : Lui_ui.ui_context) model_source send : t =
+  let can_sign_out = settings_can_sign_out model_source in
+  let category section = settings_category_row model_source section send in
+  let advanced_row =
+    if_
+      ~test:(Signal.map View_base.selected_graph_local_ model_source)
+      (category Model.SettingsAdvanced)
+  in
+  if Lui_ui.host context = KotlinHost then
+    column ~gap:20 ~padding_horizontal:16 ~padding_vertical:16 ~cross:`stretch
+      ~accessibility_identifier:"screen.settings"
+      [
+        settings_android_card [ category Model.SettingsAccount ];
+        settings_android_card
+          [
+            category Model.SettingsGeneral;
+            category Model.SettingsEditor;
+            category Model.SettingsNotifications;
+            category Model.SettingsSyncServer;
+            advanced_row;
+            category Model.SettingsAbout;
+            category Model.SettingsCommunity;
+          ];
+        if_ ~test:can_sign_out
+          (settings_android_card [ settings_sign_out_row model_source context send ]);
+      ]
+  else
+    column ~style_class:"form"
+      ~accessibility_identifier:"screen.settings"
+      [
+        category Model.SettingsAccount;
+        settings_blank_section ();
+        category Model.SettingsGeneral;
+        category Model.SettingsEditor;
+        category Model.SettingsNotifications;
+        category Model.SettingsSyncServer;
+        advanced_row;
+        category Model.SettingsAbout;
+        category Model.SettingsCommunity;
+        if_ ~test:can_sign_out (settings_blank_section ());
+        if_ ~test:can_sign_out (settings_sign_out_row model_source context send);
+      ]
+
+let settings_general_detail_screen (context : Lui_ui.ui_context) model_source send : t =
+  if Lui_ui.host context = KotlinHost then
+    column ~gap:16 ~padding_horizontal:16 ~padding_vertical:16 ~cross:`stretch
+      ~accessibility_identifier:"screen.settings"
+      [
+        settings_android_card
+          [
+            settings_appearance_control context model_source send;
+            settings_dark_theme_control context model_source send;
+            settings_language_control context model_source send;
+            settings_tabs_link_row context model_source send;
+          ];
+      ]
+  else
+    column ~style_class:"form"
+      ~accessibility_identifier:"screen.settings"
+      [
+        settings_appearance_control context model_source send;
+        settings_dark_theme_control context model_source send;
+        settings_language_control context model_source send;
+        settings_tabs_link_row context model_source send;
+      ]
+
+let settings_editor_detail_screen (context : Lui_ui.ui_context) model_source send : t =
+  let spell_check = Signal.map View_base.settings_spell_check model_source in
+  let auto_correction = Signal.map View_base.settings_auto_correction model_source in
+  if Lui_ui.host context = KotlinHost then
+    column ~gap:16 ~padding_horizontal:16 ~padding_vertical:16 ~cross:`stretch
+      ~accessibility_identifier:"screen.settings"
+      [
+        settings_android_card
+          [
+            switch_ ~min_height:56 ~padding_horizontal:16 ~checked_signal:spell_check
+              ~accessibility_identifier:"switch.settings.spell-check"
+              ~on_toggle:(settings_toggle_spell_check send)
+              ~text:(View_base.tr (Signal.sample model_source) "Spell check") [];
+            switch_ ~min_height:56 ~padding_horizontal:16 ~checked_signal:auto_correction
+              ~accessibility_identifier:"switch.settings.auto-correction"
+              ~on_toggle:(settings_toggle_auto_correction send)
+              ~text:(View_base.tr (Signal.sample model_source) "Auto-correction") [];
+          ];
+      ]
+  else
+    column ~style_class:"form"
+      ~accessibility_identifier:"screen.settings"
+      [
+        with_native_control_tint "switch"
+          (toggle ~checked_signal:spell_check
+             ~accessibility_identifier:"switch.settings.spell-check"
+             ~on_toggle:(settings_toggle_spell_check send)
+             ~text:(View_base.tr (Signal.sample model_source) "Spell check") []);
+        with_native_control_tint "switch"
+          (toggle ~checked_signal:auto_correction
+             ~accessibility_identifier:"switch.settings.auto-correction"
+             ~on_toggle:(settings_toggle_auto_correction send)
+             ~text:(View_base.tr (Signal.sample model_source) "Auto-correction") []);
+      ]
+
+let settings_notifications_detail_screen (context : Lui_ui.ui_context) model_source send : t =
+  let controls = settings_push_controls context model_source send in
+  if Lui_ui.host context = KotlinHost then
+    column ~gap:16 ~padding_horizontal:16 ~padding_vertical:16 ~cross:`stretch
+      ~accessibility_identifier:"screen.settings"
+      [ settings_android_card controls ]
+  else
+    column ~style_class:"form"
+      ~accessibility_identifier:"screen.settings" controls
+
+let settings_sync_detail_screen (context : Lui_ui.ui_context) model_source send : t =
+  let field =
+    text_field
+      ~text_signal:(Signal.map View_base.settings_base_url model_source)
+      ~placeholder:(View_base.tr (Signal.sample model_source) "Server URL")
+      ~label:(View_base.tr (Signal.sample model_source) "Server URL")
+      ~accessibility_identifier:"field.base-url"
+      ~on_input:(on_input send (fun text -> Model.ChangeBaseURL text))
+      []
+  in
+  let error =
+    if_
+      ~test:(Signal.map View_base.settings_base_url_invalid_ model_source)
+      (text ~foreground:"error-foreground"
+         ~value:(View_base.tr (Signal.sample model_source) "Enter a valid HTTP or HTTPS URL.") [])
+  in
+  if Lui_ui.host context = KotlinHost then
+    column ~gap:16 ~padding_horizontal:16 ~padding_vertical:16 ~cross:`stretch
+      ~accessibility_identifier:"screen.settings"
+      [ settings_android_card [ column ~gap:8 ~padding:16 ~cross:`stretch [ field; error ] ] ]
+  else
+    column ~style_class:"form"
+      ~accessibility_identifier:"screen.settings" [ field; error ]
+
+let settings_advanced_detail_screen (context : Lui_ui.ui_context) model_source send : t =
+  let rows = [ settings_export_row model_source context send ] in
+  if Lui_ui.host context = KotlinHost then
+    column ~gap:16 ~padding_horizontal:16 ~padding_vertical:16 ~cross:`stretch
+      ~accessibility_identifier:"screen.settings"
+      [ settings_android_card rows ]
+  else
+    column ~style_class:"form"
+      ~accessibility_identifier:"screen.settings" rows
+
+let settings_about_detail_screen (context : Lui_ui.ui_context) model_source send : t =
   let version_row label value_signal identifier : t =
-    row ~cross:`center ~accessibility_identifier:identifier
+    let children =
       [
         text ~value:(View_base.tr (Signal.sample model_source) label) [];
-        spacer [];
+        spacer ~grow:1.0 [];
         text ~value:(reactive value_signal) ~foreground:"secondary" [];
       ]
+    in
+    if Lui_ui.host context = KotlinHost then
+      list_item ~accessibility_identifier:identifier
+        [ row ~grow:1.0 ~cross:`center children ]
+    else
+      row ~cross:`center ~accessibility_identifier:identifier children
   in
-  column ~style_class:"form"
-    ~accessibility_identifier:"screen.settings"
-    ([
-      heading ~value:(View_base.tr (Signal.sample model_source) "Account") ~foreground:"muted-foreground"
-        ~accessibility_identifier:"label.settings.account" [];
-      settings_account_row model_source send;
-      heading ~value:(View_base.tr (Signal.sample model_source) "General") ~foreground:"muted-foreground"
-        ~accessibility_identifier:"label.settings.general" [];
-      settings_appearance_control context model_source send;
-      settings_dark_theme_control context model_source send;
-      settings_language_control context model_source send;
-      list_item ~accessibility_identifier:"link.settings.tabs"
-        ~on_press:(press send Model.OpenSettingsTabs)
-        [
-          row ~grow:1.0 ~cross:`center
-            [
-              text ~value:(View_base.tr (Signal.sample model_source) "Tabs") [];
-              spacer [];
-              text
-                ~value:
-                  (reactive (Signal.map View_base.settings_tabs_summary
-                     model_source))
-                ~style_class:"single-line" ~foreground:"secondary"
-                ~accessibility_identifier:
-                  "text.settings.tabs.selection" [];
-            ];
-        ];
-      heading ~value:(View_base.tr (Signal.sample model_source) "Editor") ~foreground:"muted-foreground"
-        ~accessibility_identifier:"label.settings.editor" [];
-      with_native_control_tint "switch" (toggle
-        ~checked_signal:
-          (Signal.map View_base.settings_spell_check model_source)
-        ~accessibility_identifier:"switch.settings.spell-check"
-        ~on_toggle:(settings_toggle_spell_check send)
-        ~text:(View_base.tr (Signal.sample model_source) "Spell check") []);
-      with_native_control_tint "switch" (toggle
-        ~checked_signal:
-          (Signal.map View_base.settings_auto_correction model_source)
-        ~accessibility_identifier:"switch.settings.auto-correction"
-        ~on_toggle:(settings_toggle_auto_correction send)
-        ~text:(View_base.tr (Signal.sample model_source) "Auto-correction") []);
-      heading ~value:(View_base.tr (Signal.sample model_source) "System notifications") ~foreground:"muted-foreground"
-        ~accessibility_identifier:"label.settings.push" [];
-    ] @ settings_push_controls context model_source send @ [
-      heading ~value:(View_base.tr (Signal.sample model_source) "Sync server") ~foreground:"muted-foreground"
-        ~accessibility_identifier:"label.settings.sync-server" [];
-      text_field
-        ~text_signal:(Signal.map View_base.settings_base_url model_source)
-        ~placeholder:(View_base.tr (Signal.sample model_source) "Server URL") ~label:(View_base.tr (Signal.sample model_source) "Server URL")
-        ~accessibility_identifier:"field.base-url"
-        ~on_input:(on_input send (fun text -> Model.ChangeBaseURL text))
-        [];
-      if_
-        ~test:
-          (Signal.map View_base.settings_base_url_invalid_ model_source)
-        (text ~foreground:"error-foreground"
-           ~value:(View_base.tr (Signal.sample model_source) "Enter a valid HTTP or HTTPS URL.") []);
-      if_
-        ~test:(Signal.map View_base.selected_graph_local_ model_source)
-        (heading ~value:(View_base.tr (Signal.sample model_source) "Advanced") ~foreground:"muted-foreground"
-           ~accessibility_identifier:"label.settings.advanced" []);
-      if_
-        ~test:(Signal.map View_base.selected_graph_local_ model_source)
-        (list_item ~padding:0
-           ~accessibility_identifier:"button.export-graph-database"
-           ~on_press:(press send Model.ExportGraphDatabase)
-           ~text:(View_base.tr (Signal.sample model_source) "Export Graph SQLite DB") []);
-      heading ~value:(View_base.tr (Signal.sample model_source) "About") ~foreground:"muted-foreground"
-        ~accessibility_identifier:"label.settings.about" [];
-      version_row "Version"
-        (Signal.map View_base.settings_version model_source)
-        "row.settings.version";
-      version_row "Revision"
-        (Signal.map View_base.settings_revision model_source)
-        "row.settings.revision";
-      list_item ~accessibility_identifier:"button.runtime-log"
-        ~on_press:(press send Model.OpenRuntimeLog)
-        ~text:(View_base.tr (Signal.sample model_source) "Check log") [];
-      heading ~value:(View_base.tr (Signal.sample model_source) "Community") ~foreground:"muted-foreground"
-        ~accessibility_identifier:"label.settings.community" [];
-      keyed
-        ~source:(Signal.map View_base.model_community_links model_source)
-        ~key:View_base.settings_community_link_identifier
-        ~cmp:compare
-        ~mount:(fun link_source ->
-          list_item
-            ~text_signal:
-              (Signal.map2 View_base.settings_community_link_title
-                 model_source link_source)
-            ~accessibility_identifier:
-              (View_base.settings_community_link_identifier
-                 (Signal.sample link_source))
-            ~on_press:(fun _ ->
-              ignore
-                (send
-                   (Model.OpenExternalURL
-                      (Signal.sample link_source
-                         : Model.settings_community_link)
-                        .url)))
-            []);
-      if_ ~test:can_sign_out (heading ~value:"" []);
-      if_ ~test:can_sign_out (settings_sign_out_row model_source context send);
-    ])
+  let rows =
+    [
+      version_row "Version" (Signal.map View_base.settings_version model_source) "row.settings.version";
+      version_row "Revision" (Signal.map View_base.settings_revision model_source) "row.settings.revision";
+      settings_runtime_log_row model_source context send;
+    ]
+  in
+  if Lui_ui.host context = KotlinHost then
+    column ~gap:16 ~padding_horizontal:16 ~padding_vertical:16 ~cross:`stretch
+      ~accessibility_identifier:"screen.settings"
+      [ settings_android_card rows ]
+  else
+    column ~style_class:"form"
+      ~accessibility_identifier:"screen.settings" rows
+
+let settings_community_detail_screen (context : Lui_ui.ui_context) model_source send : t =
+  let links =
+    keyed
+      ~source:(Signal.map View_base.model_community_links model_source)
+      ~key:View_base.settings_community_link_identifier
+      ~cmp:compare
+      ~mount:(fun link_source ->
+        list_item
+          ~text_signal:(Signal.map2 View_base.settings_community_link_title model_source link_source)
+          ~icon:(`app "open-external")
+          ~accessibility_identifier:(View_base.settings_community_link_identifier (Signal.sample link_source))
+          ~on_press:(fun _ ->
+            ignore
+              (send
+                 (Model.OpenExternalURL
+                    (Signal.sample link_source : Model.settings_community_link).url)))
+          [])
+  in
+  if Lui_ui.host context = KotlinHost then
+    column ~gap:16 ~padding_horizontal:16 ~padding_vertical:16 ~cross:`stretch
+      ~accessibility_identifier:"screen.settings"
+      [
+        settings_android_card
+          [
+            links;
+            list_item ~icon:(`app "open-external")
+              ~accessibility_identifier:"link.settings.account-deletion"
+              ~on_press:(press send (Model.OpenExternalURL "https://logseq.com/account-deletion"))
+              ~text:(View_base.tr (Signal.sample model_source) "Request account deletion") [];
+            list_item ~icon:(`app "open-external")
+              ~accessibility_identifier:"link.settings.privacy-policy"
+              ~on_press:(press send (Model.OpenExternalURL "https://logseq.com/privacy-policy"))
+              ~text:(View_base.tr (Signal.sample model_source) "Privacy Policy") [];
+          ];
+      ]
+  else
+    column ~style_class:"form"
+      ~accessibility_identifier:"screen.settings"
+      [
+        links;
+        list_item
+          ~accessibility_identifier:"link.settings.account-deletion"
+          ~on_press:(press send (Model.OpenExternalURL "https://logseq.com/account-deletion"))
+          ~text:(View_base.tr (Signal.sample model_source) "Request account deletion") [];
+        list_item
+          ~accessibility_identifier:"link.settings.privacy-policy"
+          ~on_press:(press send (Model.OpenExternalURL "https://logseq.com/privacy-policy"))
+          ~text:(View_base.tr (Signal.sample model_source) "Privacy Policy") [];
+      ]
+
+let settings_detail_screen (context : Lui_ui.ui_context) model_source section send : t =
+  match section with
+  | Model.SettingsAccount ->
+    if Lui_ui.host context = KotlinHost then
+      column ~gap:16 ~padding_horizontal:16 ~padding_vertical:16 ~cross:`stretch
+        ~accessibility_identifier:"screen.settings"
+        [ settings_android_card [ settings_account_row model_source send ] ]
+    else
+      column ~style_class:"form"
+        ~accessibility_identifier:"screen.settings"
+        [ settings_account_row model_source send ]
+  | Model.SettingsGeneral -> settings_general_detail_screen context model_source send
+  | Model.SettingsEditor -> settings_editor_detail_screen context model_source send
+  | Model.SettingsNotifications -> settings_notifications_detail_screen context model_source send
+  | Model.SettingsSyncServer -> settings_sync_detail_screen context model_source send
+  | Model.SettingsAdvanced -> settings_advanced_detail_screen context model_source send
+  | Model.SettingsAbout -> settings_about_detail_screen context model_source send
+  | Model.SettingsCommunity -> settings_community_detail_screen context model_source send
+  | Model.SettingsHome -> settings_home_screen context model_source send
 
 let settings_screen (context : Lui_ui.ui_context) model_source send : t =
-  if Lui_ui.host context = KotlinHost then
-    settings_kotlin_screen context model_source send
-  else settings_form_screen context model_source send
+  custom (fun context parent ->
+    let own source = Signal.own_signal context.Lui_ui.ui_scope source in
+    let section =
+      own (Signal.map (fun (current : Model.logseq_model) -> current.settings_section) model_source)
+    in
+    mount context ?parent
+      (reactive
+         (fun section ->
+           match section with
+           | Model.SettingsHome -> settings_home_screen context model_source send
+           | section -> settings_detail_screen context model_source section send)
+         section))
+
+let settings_action_bar (context : Lui_ui.ui_context) model_source send : t =
+  custom (fun context parent ->
+    let own source = Signal.own_signal context.Lui_ui.ui_scope source in
+    let section =
+      own (Signal.map (fun (current : Model.logseq_model) -> current.settings_section) model_source)
+    in
+    mount context ?parent
+      (reactive
+         (fun section ->
+           let home = section = Model.SettingsHome in
+           let back_or_cancel_action = if home then Model.DismissSettings else Model.BackSettings in
+           let back_or_cancel_text =
+             View_base.tr (Signal.sample model_source) (if home then "Cancel" else "Settings")
+           in
+           let apply =
+             View_base.tr (Signal.sample model_source) "Apply"
+           in
+           if Lui_ui.host context = KotlinHost then
+             row ~gap:12 ~main:`end_ ~padding_horizontal:24 ~padding_vertical:16
+               ~background:"surface-container-low"
+               ~accessibility_identifier:"toolbar.settings.actions"
+               (if home then
+                  [
+                    spacer ~grow:1.0 [];
+                    button ~variant:`ghost
+                      ~accessibility_identifier:"button.connection.cancel"
+                      ~on_press:(press send back_or_cancel_action)
+                      ~text:back_or_cancel_text [];
+                    button ~variant:`primary
+                      ~accessibility_identifier:"button.connection.apply"
+                      ~disabled_signal:(Signal.map View_base.settings_apply_disabled_ model_source)
+                      ~on_press:(press send Model.ApplySettings)
+                      ~text:apply [];
+                  ]
+                else
+                  [
+                    button ~variant:`ghost
+                      ~accessibility_identifier:"button.connection.cancel"
+                      ~on_press:(press send back_or_cancel_action)
+                      ~text:back_or_cancel_text [];
+                    spacer ~grow:1.0 [];
+                    button ~variant:`primary
+                      ~accessibility_identifier:"button.connection.apply"
+                      ~disabled_signal:(Signal.map View_base.settings_apply_disabled_ model_source)
+                      ~on_press:(press send Model.ApplySettings)
+                      ~text:apply [];
+                  ])
+           else
+             toolbar ~orientation:`horizontal
+               ~label:(View_base.tr (Signal.sample model_source) "Settings actions")
+               ~style_class:"navigation-actions"
+               ~accessibility_identifier:"toolbar.settings.actions"
+               [
+                 Lui_elements.toolbar_button
+                   ~style_class:(if home then "cancellation-action" else "cancellation-action navigation-back-action")
+                   ~foreground:"foreground"
+                   ~accessibility_identifier:"button.connection.cancel"
+                   ~on_press:(press send back_or_cancel_action)
+                   ~text:back_or_cancel_text [];
+                 Lui_elements.toolbar_button ~style_class:"confirmation-action" ~foreground:"foreground"
+                   ~accessibility_identifier:"button.connection.apply"
+                   ~disabled_signal:(Signal.map View_base.settings_apply_disabled_ model_source)
+                   ~on_press:(press send Model.ApplySettings)
+                   ~text:apply [];
+               ])
+         section))
 
 let settings_tabs_sheet (context : Lui_ui.ui_context) model_source send :
     t =
@@ -1131,35 +1147,23 @@ let runtime_log_sheet (context : Lui_ui.ui_context) model_source send : t =
 let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
     t =
   if Lui_ui.host context = KotlinHost then
-    View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Settings") ~height:640
+    View_base.sheet ~model_source
+      ~title:(reactive (fun (current : Model.logseq_model) -> settings_sheet_title current) model_source)
+      ~height:640
       ~accessibility_identifier:"sheet.settings"
-      ~on_dismiss:(press send Model.DismissSettings)
+      ~on_dismiss:(press send Model.BackOrDismissSettings)
       [
         column ~grow:1.0 ~gap:12
           ~accessibility_identifier:"layout.settings.sheet"
           [
             scroll ~grow:1.0 [ settings_screen context model_source send ];
-            row ~gap:12 ~main:`end_ ~padding_horizontal:24 ~padding_vertical:16
-              ~background:"surface-container-low"
-              ~accessibility_identifier:"toolbar.settings.actions"
-              [
-                spacer ~grow:1.0 [];
-                button ~variant:`ghost
-                  ~accessibility_identifier:"button.connection.cancel"
-                  ~on_press:(press send Model.DismissSettings)
-                  ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
-                button ~variant:`primary
-                  ~accessibility_identifier:"button.connection.apply"
-                  ~disabled_signal:
-                    (Signal.map View_base.settings_apply_disabled_
-                       model_source)
-                  ~on_press:(press send Model.ApplySettings)
-                  ~text:(View_base.tr (Signal.sample model_source) "Apply") [];
-              ];
+            settings_action_bar context model_source send;
           ];
       ]
   else
-    View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Settings") ~style_class:"navigation-form navigation-inline-title"
+    View_base.sheet ~model_source
+      ~title:(reactive (fun (current : Model.logseq_model) -> settings_sheet_title current) model_source)
+      ~style_class:"navigation-form navigation-inline-title"
       ~accessibility_identifier:"sheet.settings"
       ~on_dismiss:(press send Model.DismissSettings)
       [
@@ -1170,22 +1174,7 @@ let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
         if_
           ~test:(Signal.map View_base.runtime_log_visible_ model_source)
           (runtime_log_sheet context model_source send);
-        toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Settings actions")
-          ~style_class:"navigation-actions"
-          ~accessibility_identifier:"toolbar.settings.actions"
-          [
-            Lui_elements.toolbar_button ~style_class:"cancellation-action" ~foreground:"foreground"
-              ~accessibility_identifier:"button.connection.cancel"
-              ~on_press:(press send Model.DismissSettings)
-              ~text:(View_base.tr (Signal.sample model_source) "Cancel") [];
-            Lui_elements.toolbar_button ~style_class:"confirmation-action" ~foreground:"foreground"
-              ~accessibility_identifier:"button.connection.apply"
-              ~disabled_signal:
-                (Signal.map View_base.settings_apply_disabled_
-                   model_source)
-              ~on_press:(press send Model.ApplySettings)
-              ~text:(View_base.tr (Signal.sample model_source) "Apply") [];
-          ];
+        settings_action_bar context model_source send;
       ]
 
 let settings_sheet (context : Lui_ui.ui_context) model_source send : t =

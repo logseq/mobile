@@ -14,11 +14,15 @@ appId: com.logseq.logseq
       id: "screen.settings"
     timeout: 5000
 - assertVisible:
+    id: "link.settings.general"
+- assertVisible:
+    id: "link.settings.editor"
+- tapOn:
+    id: "link.settings.general"
+- assertVisible:
     id: "layout.settings.appearance-control"
 - assertVisible:
     id: "picker.settings.language"
-- assertVisible:
-    id: "label.settings.editor"
 - tapOn:
     id: "picker.settings.appearance"
 - assertVisible: "Dark"
@@ -32,6 +36,8 @@ appId: com.logseq.logseq
 - takeScreenshot: "android-settings-dark-theme"
 - tapOn:
     id: "button.sidebar.settings"
+- tapOn:
+    id: "link.settings.general"
 - tapOn:
     id: "picker.settings.appearance"
 - tapOn: "System"
@@ -48,30 +54,30 @@ appId: com.logseq.logseq
       id: "screen.settings"
     timeout: 5000
 - tapOn:
+    id: "link.settings.general"
+- tapOn:
     id: "picker.settings.language"
 - assertVisible: "简体中文"
 - tapOn:
     id: "button.settings.language.system"
-- scrollUntilVisible:
-    element:
-      id: "switch.settings.spell-check"
-    direction: DOWN
-- scrollUntilVisible:
-    element:
-      id: "switch.settings.auto-correction"
-    direction: DOWN
-- scrollUntilVisible:
-    element:
-      id: "label.settings.sync-server"
-    direction: DOWN
-    timeout: 10000
+- tapOn:
+    id: "button.connection.cancel"
+- tapOn:
+    id: "link.settings.editor"
+- assertVisible:
+    id: "switch.settings.spell-check"
+- assertVisible:
+    id: "switch.settings.auto-correction"
+- tapOn:
+    id: "button.connection.cancel"
+- tapOn:
+    id: "link.settings.sync-server"
 - assertVisible:
     id: "field.base-url"
-- scrollUntilVisible:
-    element:
-      id: "link.settings.tabs"
-    direction: UP
-    timeout: 10000
+- tapOn:
+    id: "button.connection.cancel"
+- tapOn:
+    id: "link.settings.general"
 - assertVisible:
     id: "link.settings.tabs"
 - tapOn:
@@ -98,18 +104,12 @@ appId: com.logseq.logseq
     id: "button.connection.cancel"
 - assertVisible:
     id: "screen.settings"
-- scrollUntilVisible:
-    element:
-      id: "label.settings.about"
-    direction: DOWN
-    timeout: 10000
+- tapOn:
+    id: "button.connection.cancel"
+- tapOn:
+    id: "link.settings.about"
 - assertVisible:
-    id: "label.settings.about"
-- scrollUntilVisible:
-    element:
-      id: "button.runtime-log"
-    direction: DOWN
-    timeout: 10000
+    id: "row.settings.version"
 - tapOn:
     id: "button.runtime-log"
 - extendedWaitUntil:
@@ -139,34 +139,20 @@ appId: com.logseq.logseq
 - tapOn: "Done"
 - assertVisible:
     id: "screen.settings"
-- scrollUntilVisible:
-    element:
-      id: "link.settings.community.report-bug"
-    direction: DOWN
-    timeout: 10000
+- tapOn:
+    id: "button.connection.cancel"
+- tapOn:
+    id: "link.settings.community"
 - assertVisible:
     id: "link.settings.community.report-bug"
-- scrollUntilVisible:
-    element:
-      id: "link.settings.community.discord"
-    direction: DOWN
-    timeout: 10000
 - assertVisible:
     id: "link.settings.community.discord"
-- scrollUntilVisible:
-    element:
-      id: "link.settings.community.forum"
-    direction: DOWN
-    timeout: 10000
 - assertVisible:
     id: "link.settings.community.forum"
-- scrollUntilVisible:
-    element:
-      id: "link.settings.community.github"
-    direction: DOWN
-    timeout: 10000
 - assertVisible:
     id: "link.settings.community.github"
+- tapOn:
+    id: "button.connection.cancel"
 - tapOn:
     id: "button.connection.cancel"
 - assertVisible:

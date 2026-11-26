@@ -32,9 +32,23 @@ grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq.opam | sort -u |
     repository=${pin%%#*}
     revision=${pin##*#}
     checkout="duniverse/$(basename "$repository" .git)"
-    if [ -d "$checkout" ] && { [ ! -e "$checkout/.git" ] ||
-      git -C "$checkout" rev-parse --verify --quiet HEAD >/dev/null; }; then
+    if [ -d "$checkout" ] && [ ! -e "$checkout/.git" ]; then
       continue
+    fi
+    if [ -d "$checkout/.git" ]; then
+      current=$(git -C "$checkout" rev-parse --verify --quiet HEAD 2>/dev/null || true)
+      case "$revision" in
+        *[!0-9a-fA-F]* )
+          if [ -n "$current" ]; then
+            continue
+          fi
+          ;;
+        * )
+          if [ "$current" = "$revision" ]; then
+            continue
+          fi
+          ;;
+      esac
     fi
     git init --quiet "$checkout" &&
       git -C "$checkout" fetch --quiet --depth=1 "https://github.com/$repository" "$revision" &&

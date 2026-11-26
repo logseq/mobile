@@ -8,6 +8,8 @@ appId: com.logseq.logseq
 - tapOn: "Settings"
 - assertVisible:
     id: "screen.settings"
+- tapOn:
+    id: "link.settings.about"
 - tapOn: "Check log"
 - assertVisible:
     id: "screen.runtime-log"

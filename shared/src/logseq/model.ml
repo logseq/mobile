@@ -128,6 +128,17 @@ type settings_community_link =
   ; url : string
   }
 
+type settings_section =
+  | SettingsHome
+  | SettingsAccount
+  | SettingsGeneral
+  | SettingsEditor
+  | SettingsNotifications
+  | SettingsSyncServer
+  | SettingsAdvanced
+  | SettingsAbout
+  | SettingsCommunity
+
 type runtime_log_record =
   { id : string
   ; level : string
@@ -479,6 +490,7 @@ type logseq_model =
   ; pending_sign_out : bool
   ; connection_menu_open : bool
   ; settings_open : bool
+  ; settings_section : settings_section
   ; settings_tabs_open : bool
   ; runtime_log_open : bool
   ; appearance : string
@@ -729,10 +741,12 @@ type logseq_action =
   | SetOutlinerTaskPriority of string * string
   | OpenJournalCalendar
   | OpenSettings
+  | OpenSettingsSection of settings_section
   | ResumeSettings
   | DismissSettings
   | OpenSettingsTabs
   | BackSettings
+  | BackOrDismissSettings
   | OpenSettingsAppearanceMenu
   | CloseSettingsAppearanceMenu
   | ChangeAppearance of string
@@ -916,6 +930,7 @@ let initial () =
     pending_sign_out = false;
     connection_menu_open = false;
     settings_open = false;
+    settings_section = SettingsHome;
     settings_tabs_open = false;
     runtime_log_open = false;
     appearance = "system";
@@ -3652,6 +3667,7 @@ let rec update (current : logseq_model) action =
       graph_menu_open = false;
       connection_menu_open = false;
       settings_open = true;
+      settings_section = SettingsHome;
       settings_tabs_open = false;
       settings_appearance_menu_open = false;
       settings_dark_theme_menu_open = false;
@@ -3664,6 +3680,7 @@ let rec update (current : logseq_model) action =
     {
       current with
       settings_open = false;
+      settings_section = SettingsHome;
       settings_tabs_open = false;
       settings_appearance_menu_open = false;
       settings_dark_theme_menu_open = false;
@@ -3671,9 +3688,33 @@ let rec update (current : logseq_model) action =
       runtime_log_open = false;
       base_url_draft = current.base_url;
     }
+  | OpenSettingsSection section -> { current with settings_section = section }
   | OpenSettingsTabs -> { current with settings_tabs_open = true }
   | BackSettings ->
-    { current with settings_tabs_open = false; runtime_log_open = false }
+    if current.settings_tabs_open || current.runtime_log_open then
+      { current with settings_tabs_open = false; runtime_log_open = false }
+    else if current.settings_section = SettingsSyncServer then
+      { current with settings_section = SettingsHome; base_url_draft = current.base_url }
+    else { current with settings_section = SettingsHome }
+  | BackOrDismissSettings ->
+    if current.settings_tabs_open || current.runtime_log_open then
+      { current with settings_tabs_open = false; runtime_log_open = false }
+    else if current.settings_section = SettingsSyncServer then
+      { current with settings_section = SettingsHome; base_url_draft = current.base_url }
+    else if current.settings_section <> SettingsHome then
+      { current with settings_section = SettingsHome }
+    else
+      {
+        current with
+        settings_open = false;
+        settings_section = SettingsHome;
+        settings_tabs_open = false;
+        settings_appearance_menu_open = false;
+        settings_dark_theme_menu_open = false;
+        settings_language_menu_open = false;
+        runtime_log_open = false;
+        base_url_draft = current.base_url;
+      }
   | OpenSettingsAppearanceMenu ->
     { current with settings_appearance_menu_open = true }
   | CloseSettingsAppearanceMenu ->
@@ -3751,6 +3792,7 @@ let rec update (current : logseq_model) action =
         {
           applied with
           settings_open = false;
+          settings_section = SettingsHome;
           settings_tabs_open = false;
           settings_language_menu_open = false;
           runtime_log_open = false;

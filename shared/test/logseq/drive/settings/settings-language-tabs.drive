@@ -7,6 +7,7 @@ press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
 press kind:menu-item&text:"Settings"
 wait prop:accessibility-identifier=sheet.settings
+press prop:accessibility-identifier=link.settings.general
 expect prop:accessibility-identifier=picker.settings.language
 change prop:accessibility-identifier=button.settings.language.fr
 expect-prop prop:accessibility-identifier=button.settings.language.fr checked true

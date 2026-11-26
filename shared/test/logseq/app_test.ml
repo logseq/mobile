@@ -1367,6 +1367,28 @@ let settings_render_the_main_branch_navigation_contract () =
   check_eq ~msg:"the settings content uses the native form layout"
     (property_string renderer settings_screen Lui_protocol.StyleClass)
     "form";
+  List.iter
+    (fun identifier ->
+       check ~msg:("settings expose grouped category row " ^ identifier)
+         (descendant_with_identifier renderer root identifier <> -1))
+    [
+      "link.settings.account";
+      "link.settings.general";
+      "link.settings.editor";
+      "link.settings.notifications";
+      "link.settings.sync-server";
+      "link.settings.advanced";
+      "link.settings.about";
+      "link.settings.community";
+    ];
+  let general_link =
+    descendant_with_identifier renderer root "link.settings.general"
+  in
+  dispatch application (Lui_protocol.Press general_link);
+  flush application;
+  check_eq ~msg:"the sheet title follows the selected settings category"
+    (property_string renderer settings_sheet Lui_protocol.TextValue)
+    "General";
   let tabs_link =
     descendant_with_identifier renderer root "link.settings.tabs"
   in
@@ -1387,23 +1409,8 @@ let settings_render_the_main_branch_navigation_contract () =
   check ~msg:"settings expose the native cancellation action"
     (descendant_with_identifier renderer root "button.connection.cancel"
     <> -1);
-  List.iter
-    (fun identifier ->
-       check_eq
-         ~msg:"settings group labels use main's readable secondary text color"
-         (property_string renderer
-            (descendant_with_identifier renderer root identifier)
-            Lui_protocol.ForegroundValue)
-         "muted-foreground")
-    [
-      "label.settings.account";
-      "label.settings.general";
-      "label.settings.editor";
-      "label.settings.sync-server";
-      "label.settings.advanced";
-      "label.settings.about";
-      "label.settings.community";
-    ];
+  send application (Model.OpenSettingsSection Model.SettingsAdvanced);
+  flush application;
   let export =
     descendant_with_identifier renderer root "button.export-graph-database"
   in
@@ -1508,6 +1515,7 @@ let kotlin_settings_tabs_open_through_the_rendered_press_handler () =
     (Model.ApplySettingsSnapshot
        (settings [ "journals"; "flashcards"; "graphs" ]));
   send application Model.OpenSettings;
+  send application (Model.OpenSettingsSection Model.SettingsGeneral);
   flush application;
   let renderer = Lui_app.runtime application in
   let root = main_root renderer application in
@@ -1659,6 +1667,35 @@ let kotlin_settings_use_full_width_material_controls () =
   flush application;
   let renderer = Lui_app.runtime application in
   let root = main_root renderer application in
+  let sign_out =
+    descendant_with_identifier renderer root "button.sign-out"
+  in
+  List.iter
+    (fun identifier ->
+       check ~msg:("Kotlin settings expose grouped category row " ^ identifier)
+         (descendant_with_identifier renderer root identifier <> -1))
+    [
+      "link.settings.account";
+      "link.settings.general";
+      "link.settings.editor";
+      "link.settings.notifications";
+      "link.settings.sync-server";
+      "link.settings.advanced";
+      "link.settings.about";
+      "link.settings.community";
+    ];
+  let sign_out_children = children renderer sign_out in
+  let sign_out_icon = List.find (fun id -> node renderer id = Some Lui_protocol.Icon) sign_out_children in
+  let sign_out_label = List.find (fun id -> node renderer id = Some Lui_protocol.Text) sign_out_children in
+  check_eq ~msg:"sign out uses the Android logout icon"
+    (property_string renderer sign_out_icon Lui_protocol.IconName) "app:sign-out";
+  List.iter (fun id ->
+    check_eq ~msg:"sign out icon and label use the Material error color"
+      (property_string renderer id Lui_protocol.ForegroundValue) "error-foreground")
+    [sign_out_icon; sign_out_label];
+  send application (Model.OpenSettingsSection Model.SettingsGeneral);
+  flush application;
+  let root = main_root renderer application in
   let picker =
     descendant_with_identifier renderer root "picker.settings.language"
   in
@@ -1673,17 +1710,8 @@ let kotlin_settings_use_full_width_material_controls () =
     descendant_with_identifier renderer root
       "layout.settings.language-control"
   in
-  let general_card =
-    descendant_with_identifier renderer root "layout.settings.general-card"
-  in
   let actions =
     descendant_with_identifier renderer root "toolbar.settings.actions"
-  in
-  let cancel =
-    descendant_with_identifier renderer root "button.connection.cancel"
-  in
-  let apply =
-    descendant_with_identifier renderer root "button.connection.apply"
   in
   let tabs_copy =
     descendant_with_identifier renderer root "layout.settings.tabs-copy"
@@ -1693,26 +1721,6 @@ let kotlin_settings_use_full_width_material_controls () =
   in
   let tabs_icon =
     descendant_with_identifier renderer root "icon.settings.tabs"
-  in
-  let spell_check =
-    descendant_with_identifier renderer root "switch.settings.spell-check"
-  in
-  let auto_correction =
-    descendant_with_identifier renderer root
-      "switch.settings.auto-correction"
-  in
-  let export =
-    descendant_with_identifier renderer root "button.export-graph-database"
-  in
-  let runtime_log =
-    descendant_with_identifier renderer root "button.runtime-log"
-  in
-  let report_bug =
-    descendant_with_identifier renderer root
-      "link.settings.community.report-bug"
-  in
-  let sign_out =
-    descendant_with_identifier renderer root "button.sign-out"
   in
   check_eq ~msg:"Kotlin uses one bounded Material select control"
     (node renderer picker)
@@ -1726,27 +1734,16 @@ let kotlin_settings_use_full_width_material_controls () =
   check_eq ~msg:"the Language select is not pinned to a phone-specific width"
     (property_int renderer language_control Lui_protocol.WidthValue)
     (-1);
+  let settings_screen =
+    descendant_with_identifier renderer root "screen.settings"
+  in
   check_eq ~msg:"Material settings preferences fill the available width"
-    (property_string renderer general_card Lui_protocol.CrossAlignment)
+    (property_string renderer settings_screen Lui_protocol.CrossAlignment)
     "stretch";
   check_eq
     ~msg:
-      "Material preferences use the native list surface without an Apple card"
-    (property renderer general_card Lui_protocol.BackgroundValue) None;
-  List.iter
-    (fun identifier ->
-      let heading = descendant_with_identifier renderer root identifier in
-      check_eq ~msg:(identifier ^ " keeps the Material primary ink")
-        (property_string renderer heading Lui_protocol.ForegroundValue)
-        "primary")
-    [
-      "label.settings.general";
-      "label.settings.editor";
-      "label.settings.sync-server";
-      "label.settings.advanced";
-      "label.settings.about";
-      "label.settings.community";
-    ];
+      "Material preference details use the native list surface without an Apple card"
+    (property renderer settings_screen Lui_protocol.BackgroundValue) None;
   let tabs = descendant_with_identifier renderer root "link.settings.tabs" in
   List.iter
     (fun padding ->
@@ -1775,30 +1772,59 @@ let kotlin_settings_use_full_width_material_controls () =
   check_eq ~msg:"Tabs uses a Material navigation affordance"
     (property_string renderer tabs_icon Lui_protocol.IconName)
     "app:chevron-right";
+  send application (Model.OpenSettingsSection Model.SettingsEditor);
+  flush application;
+  let root = main_root renderer application in
+  let spell_check =
+    descendant_with_identifier renderer root "switch.settings.spell-check"
+  in
+  let auto_correction =
+    descendant_with_identifier renderer root
+      "switch.settings.auto-correction"
+  in
   check_eq ~msg:"spell check uses a native Material switch row"
     (node renderer spell_check)
     (Some Lui_protocol.SwitchControl);
   check_eq ~msg:"auto-correction uses a native Material switch row"
     (node renderer auto_correction)
     (Some Lui_protocol.SwitchControl);
+  send application (Model.OpenSettingsSection Model.SettingsAdvanced);
+  flush application;
+  let root = main_root renderer application in
+  let export =
+    descendant_with_identifier renderer root "button.export-graph-database"
+  in
   check_eq ~msg:"graph export uses a recognizable Material action icon"
     (property_string renderer export Lui_protocol.InlineIconName)
     "app:download";
+  send application (Model.OpenSettingsSection Model.SettingsAbout);
+  flush application;
+  let root = main_root renderer application in
+  let runtime_log =
+    descendant_with_identifier renderer root "button.runtime-log"
+  in
   check_eq ~msg:"runtime diagnostics use a recognizable Material icon"
     (property_string renderer runtime_log Lui_protocol.InlineIconName)
     "app:terminal";
+  send application (Model.OpenSettingsSection Model.SettingsCommunity);
+  flush application;
+  let root = main_root renderer application in
+  let report_bug =
+    descendant_with_identifier renderer root
+      "link.settings.community.report-bug"
+  in
+  let actions =
+    descendant_with_identifier renderer root "toolbar.settings.actions"
+  in
+  let cancel =
+    descendant_with_identifier renderer root "button.connection.cancel"
+  in
+  let apply =
+    descendant_with_identifier renderer root "button.connection.apply"
+  in
   check_eq ~msg:"community links disclose that they leave the app"
     (property_string renderer report_bug Lui_protocol.InlineIconName)
     "app:open-external";
-  let sign_out_children = children renderer sign_out in
-  let sign_out_icon = List.find (fun id -> node renderer id = Some Lui_protocol.Icon) sign_out_children in
-  let sign_out_label = List.find (fun id -> node renderer id = Some Lui_protocol.Text) sign_out_children in
-  check_eq ~msg:"sign out uses the Android logout icon"
-    (property_string renderer sign_out_icon Lui_protocol.IconName) "app:sign-out";
-  List.iter (fun id ->
-    check_eq ~msg:"sign out icon and label use the Material error color"
-      (property_string renderer id Lui_protocol.ForegroundValue) "error-foreground")
-    [sign_out_icon; sign_out_label];
   check_eq ~msg:"settings actions use an anchored Material action row"
     (node renderer actions)
     (Some Lui_protocol.Row);
@@ -1818,6 +1844,8 @@ let kotlin_settings_use_full_width_material_controls () =
   check_eq ~msg:"Kotlin does not lay every language out in one row"
     (descendant_count_with_node_kind renderer picker Lui_protocol.RadioGroup)
     0;
+  send application (Model.OpenSettingsSection Model.SettingsGeneral);
+  flush application;
   send application Model.OpenSettingsLanguageMenu;
   flush application;
   let root = main_root renderer application in
@@ -1974,6 +2002,7 @@ let settings_language_picker_exposes_and_validates_all_main_choices () =
   let application = App.create (ios_backend ()) in
   start application;
   send application Model.OpenSettings;
+  send application (Model.OpenSettingsSection Model.SettingsGeneral);
   flush application;
   let renderer = Lui_app.runtime application in
   let root = Lui_app.root_node application in
@@ -2019,6 +2048,7 @@ let settings_community_links_use_a_typed_platform_boundary () =
   let application = App.create (ios_backend ()) in
   start application;
   send application Model.OpenSettings;
+  send application (Model.OpenSettingsSection Model.SettingsCommunity);
   flush application;
   let renderer = Lui_app.runtime application in
   let root = Lui_app.root_node application in
@@ -2154,6 +2184,7 @@ let local_graphs_remain_accessible_without_authentication () =
         (View_base.connection_control_visible_ (Lui_app.model application)))
       ["signedOut"; "signingIn"; "signedOut"];
     send application Model.OpenSettings;
+    send application (Model.OpenSettingsSection Model.SettingsAccount);
     flush application;
     let renderer = Lui_app.runtime application in
     let root = Lui_app.root_node application in

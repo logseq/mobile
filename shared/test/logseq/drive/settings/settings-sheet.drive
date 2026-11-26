@@ -1,5 +1,5 @@
-# Settings sheet exposes all sections: general, sync server, editor,
-# advanced (export/logs), account (sign out), and about.
+# Settings opens as grouped category navigation and each category exposes
+# the controls that used to live in one long sheet.
 expect prop:accessibility-identifier=button.graph-add
 press prop:accessibility-identifier=button.graph-add
 type prop:accessibility-identifier=field.graph-name "Drive Graph"
@@ -7,16 +7,36 @@ press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
 press kind:menu-item&text:"Settings"
 wait prop:accessibility-identifier=sheet.settings
-expect prop:accessibility-identifier=label.settings.general
+expect prop:accessibility-identifier=link.settings.account
+expect prop:accessibility-identifier=link.settings.general
+expect prop:accessibility-identifier=link.settings.editor
+expect prop:accessibility-identifier=link.settings.notifications
+expect prop:accessibility-identifier=link.settings.sync-server
+expect prop:accessibility-identifier=link.settings.advanced
+expect prop:accessibility-identifier=link.settings.about
+expect prop:accessibility-identifier=link.settings.community
+expect prop:accessibility-identifier=button.sign-out
+press prop:accessibility-identifier=link.settings.general
 expect prop:accessibility-identifier=picker.settings.appearance
 expect prop:accessibility-identifier=picker.settings.language
-expect prop:accessibility-identifier=label.settings.sync-server
+press prop:accessibility-identifier=button.connection.cancel
+expect prop:accessibility-identifier=link.settings.sync-server
+press prop:accessibility-identifier=link.settings.sync-server
 expect prop:accessibility-identifier=field.base-url
+press prop:accessibility-identifier=button.connection.cancel
+expect prop:accessibility-identifier=link.settings.editor
+press prop:accessibility-identifier=link.settings.editor
 expect prop:accessibility-identifier=switch.settings.spell-check
 expect prop:accessibility-identifier=switch.settings.auto-correction
-expect prop:accessibility-identifier=label.settings.advanced
+press prop:accessibility-identifier=button.connection.cancel
+expect prop:accessibility-identifier=link.settings.advanced
+press prop:accessibility-identifier=link.settings.advanced
 expect prop:accessibility-identifier=button.export-graph-database
+press prop:accessibility-identifier=button.connection.cancel
+expect prop:accessibility-identifier=link.settings.about
+press prop:accessibility-identifier=link.settings.about
 expect prop:accessibility-identifier=button.runtime-log
-expect prop:accessibility-identifier=label.settings.account
-expect prop:accessibility-identifier=button.sign-out
-expect prop:accessibility-identifier=label.settings.about
+press prop:accessibility-identifier=button.connection.cancel
+expect prop:accessibility-identifier=link.settings.account
+press prop:accessibility-identifier=link.settings.account
+expect prop:accessibility-identifier=button.settings.account-profile

@@ -6,13 +6,15 @@ press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
 press kind:menu-item&text:"Settings"
 wait prop:accessibility-identifier=sheet.settings
+press prop:accessibility-identifier=link.settings.general
 change prop:accessibility-identifier=picker.settings.dark-theme.option.solarized
 expect-prop prop:accessibility-identifier=picker.settings.dark-theme.option.solarized checked true
-press prop:accessibility-identifier=button.connection.cancel
+press prop:accessibility-identifier=button.connection.apply
 expect-absent prop:accessibility-identifier=sheet.settings
 press prop:accessibility-identifier=link.sidebar.graphs
 wait prop:accessibility-identifier=screen.graphs
 press prop:accessibility-identifier=button.graphs.refresh
 press prop:accessibility-identifier=button.sidebar.settings
 wait prop:accessibility-identifier=sheet.settings
+press prop:accessibility-identifier=link.settings.general
 expect-prop prop:accessibility-identifier=picker.settings.dark-theme.option.solarized checked true

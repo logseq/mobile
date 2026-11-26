@@ -10,6 +10,8 @@ appId: com.logseq.logseq
 - assertVisible:
     id: "screen.settings"
 - tapOn:
+    id: "link.settings.general"
+- tapOn:
     id: "link.settings.tabs"
 - assertVisible:
     id: "screen.settings.tabs"
@@ -24,6 +26,7 @@ appId: com.logseq.logseq
     id: "toggle.settings.tab.flashcards"
 - assertVisible: "Flashcards, off"
 - tapOn: "Settings"
+- tapOn: "Settings"
 - tapOn: "Cancel"
 - tapOn:
     id: "button.sidebar.dismiss"
@@ -37,10 +40,13 @@ appId: com.logseq.logseq
 - tapOn:
     id: "button.sidebar.settings"
 - tapOn:
+    id: "link.settings.general"
+- tapOn:
     id: "link.settings.tabs"
 - tapOn:
     id: "toggle.settings.tab.flashcards"
 - assertVisible: "Flashcards, on"
+- tapOn: "Settings"
 - tapOn: "Settings"
 - tapOn: "Cancel"
 - tapOn:

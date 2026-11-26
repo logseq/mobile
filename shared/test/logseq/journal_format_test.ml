@@ -174,6 +174,7 @@ let settings_hide_date_format_choices () =
   List.iter (fun backend -> R.with_runtime (fun session _ _ ->
     Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
       App_test.send app Model.OpenSettings; App_test.flush app;
+      App_test.send app (Model.OpenSettingsSection Model.SettingsEditor); App_test.flush app;
       let host = Lui_app.runtime app in
       let find id = App_test.descendant_with_identifier host (Lui_app.root_node app) id in
       check_eq ~msg:"date format is not exposed in native settings"

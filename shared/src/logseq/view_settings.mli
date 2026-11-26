@@ -14,11 +14,6 @@ val settings_appearance_control :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t
-val settings_community_link_row :
-  Lui_ui.ui_context ->
-  Model.logseq_model Signal.signal ->
-  Model.settings_community_link Signal.signal ->
-  (Model.logseq_action -> 'a) -> Lui_elements.t
 val runtime_log_row :
   Model.runtime_log_record Signal.signal -> Lui_elements.t
 val settings_tab_row :
@@ -41,13 +36,6 @@ val settings_toggle_spell_check :
   (Model.logseq_action -> 'a) -> bool -> unit
 val settings_toggle_auto_correction :
   (Model.logseq_action -> 'a) -> bool -> unit
-val settings_general_card :
-  Lui_ui.ui_context ->
-  Model.logseq_model Signal.signal ->
-  (Model.logseq_action -> bool) -> Lui_elements.t
-val settings_editor_card : Model.logseq_model Signal.signal -> Lui_ui.ui_context ->
-  bool Signal.signal ->
-  bool Signal.signal -> (Model.logseq_action -> 'a) -> Lui_elements.t
 val settings_export_row : Model.logseq_model Signal.signal -> Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
 val settings_runtime_log_row : Model.logseq_model Signal.signal -> Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
 val sign_in_label : ?centered:bool -> Model.logseq_model Signal.signal -> Lui_elements.t

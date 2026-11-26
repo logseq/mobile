@@ -11,6 +11,8 @@ appId: com.logseq.logseq
     id: "button.sidebar.settings"
 - assertVisible:
     id: "screen.settings"
+- tapOn:
+    id: "link.settings.general"
 - assertVisible: "Theme"
 - assertVisible: "Language"
 - tapOn:
@@ -29,25 +31,30 @@ appId: com.logseq.logseq
       text: "System"
     direction: UP
 - tapOn: "System"
-- assertVisible: "Editor"
-- scrollUntilVisible:
-    element:
-      id: "field.base-url"
-    direction: DOWN
-    centerElement: true
+- tapOn:
+    id: "button.connection.cancel"
+- tapOn:
+    id: "link.settings.editor"
+- assertVisible: "Spell check"
+- assertVisible: "Auto-correction"
+- tapOn:
+    id: "button.connection.cancel"
+- tapOn:
+    id: "link.settings.sync-server"
 - assertVisible: "Sync server"
-- scrollUntilVisible:
-    element:
-      text: "Check log"
-    direction: DOWN
-- assertVisible: "About"
+- assertVisible:
+    id: "field.base-url"
+- tapOn:
+    id: "button.connection.cancel"
+- tapOn:
+    id: "link.settings.about"
 - assertVisible: "Version.*"
 - assertVisible: "Revision.*"
 - assertVisible: "Check log"
-- scrollUntilVisible:
-    element:
-      text: "Community"
-    direction: DOWN
+- tapOn:
+    id: "button.connection.cancel"
+- tapOn:
+    id: "link.settings.community"
 - assertVisible: "Report bug"
 - scrollUntilVisible:
     element:
@@ -64,4 +71,7 @@ appId: com.logseq.logseq
       text: "GitHub"
     direction: DOWN
 - assertVisible: "GitHub"
-- tapOn: "Cancel"
+- tapOn:
+    id: "button.connection.cancel"
+- tapOn:
+    id: "button.connection.cancel"

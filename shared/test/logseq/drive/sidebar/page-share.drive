@@ -13,5 +13,6 @@ press prop:accessibility-identifier=tab.bottom.home
 expect-absent prop:accessibility-identifier=title.selected-page
 press prop:accessibility-identifier=button.sidebar.settings
 wait prop:accessibility-identifier=sheet.settings
+press prop:accessibility-identifier=link.settings.about
 press prop:accessibility-identifier=button.runtime-log
 wait text:"Shared Favorite Doc"
