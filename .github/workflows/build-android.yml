@@ -14,6 +14,10 @@ on:
         description: "Publish to Google Play (disable for first manual upload)"
         type: boolean
         default: true
+      allow-missing-firebase:
+        description: "Allow a test build without Firebase when upload-play is disabled"
+        type: boolean
+        default: false
       play-track:
         description: "Google Play testing track (alpha is closed testing)"
         type: choice
@@ -48,6 +52,10 @@ jobs:
     env:
       LOGSEQ_OPAM_SWITCH: ${{ github.workspace }}
       GIT_TERMINAL_PROMPT: "0"
+      LOGSEQ_ANDROID_FIREBASE_APP_ID: ${{ vars.LOGSEQ_ANDROID_FIREBASE_APP_ID }}
+      LOGSEQ_ANDROID_FIREBASE_API_KEY: ${{ vars.LOGSEQ_ANDROID_FIREBASE_API_KEY }}
+      LOGSEQ_ANDROID_FIREBASE_SENDER_ID: ${{ vars.LOGSEQ_ANDROID_FIREBASE_SENDER_ID }}
+      LOGSEQ_ANDROID_FIREBASE_PROJECT_ID: ${{ vars.LOGSEQ_ANDROID_FIREBASE_PROJECT_ID }}
       GIT_CONFIG_COUNT: 3
       GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
       GIT_CONFIG_VALUE_0: "git@github.com:"
@@ -79,6 +87,20 @@ jobs:
             echo "::error::Set GOOGLE_PLAY_SERVICE_ACCOUNT_JSON in repository Actions secrets, or disable upload-play to build the first AAB for manual upload."
             exit 1
           fi
+
+      - name: Check Firebase configuration for Google Play builds
+        if: inputs.upload-play || !inputs.allow-missing-firebase
+        run: |
+          for variable in \
+            LOGSEQ_ANDROID_FIREBASE_APP_ID \
+            LOGSEQ_ANDROID_FIREBASE_API_KEY \
+            LOGSEQ_ANDROID_FIREBASE_SENDER_ID \
+            LOGSEQ_ANDROID_FIREBASE_PROJECT_ID; do
+            if [[ ! ${!variable:-} =~ [^[:space:]] ]]; then
+              echo "::error::Set $variable in repository Actions variables before building for Google Play."
+              exit 1
+            fi
+          done
 
       - name: Set release version code
         run: |
@@ -191,18 +213,11 @@ jobs:
           if [[ -z "$SENTRY_AUTH_TOKEN" ]]; then
             echo "::warning::SENTRY_AUTH_TOKEN is missing. Android debug symbols will stay in the local build."
           fi
-          if [[ -z "$LOGSEQ_ANDROID_FIREBASE_APP_ID$LOGSEQ_ANDROID_FIREBASE_API_KEY$LOGSEQ_ANDROID_FIREBASE_SENDER_ID$LOGSEQ_ANDROID_FIREBASE_PROJECT_ID" ]]; then
-            echo "::warning::Firebase app configuration is missing. Android system notifications will be unavailable."
-          fi
           ./gradlew :app:testReleaseUnitTest :app:compileReleaseAndroidTestKotlin \
             :app:assembleRelease :app:bundleRelease -PlogseqTestBuildType=release
         working-directory: android
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          LOGSEQ_ANDROID_FIREBASE_APP_ID: ${{ vars.LOGSEQ_ANDROID_FIREBASE_APP_ID }}
-          LOGSEQ_ANDROID_FIREBASE_API_KEY: ${{ vars.LOGSEQ_ANDROID_FIREBASE_API_KEY }}
-          LOGSEQ_ANDROID_FIREBASE_SENDER_ID: ${{ vars.LOGSEQ_ANDROID_FIREBASE_SENDER_ID }}
-          LOGSEQ_ANDROID_FIREBASE_PROJECT_ID: ${{ vars.LOGSEQ_ANDROID_FIREBASE_PROJECT_ID }}
 
       - name: Save Android OCaml toolchain
         if: always() && steps.android-toolchain.outputs.cache-hit != 'true'

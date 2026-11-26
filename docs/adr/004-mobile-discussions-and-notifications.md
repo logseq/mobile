@@ -98,7 +98,9 @@ archive and exported IPA.
 Android release CI reads `LOGSEQ_ANDROID_FIREBASE_APP_ID`, `LOGSEQ_ANDROID_FIREBASE_API_KEY`,
 `LOGSEQ_ANDROID_FIREBASE_SENDER_ID`, and `LOGSEQ_ANDROID_FIREBASE_PROJECT_ID` from repository
 Actions variables. Use the Android app configuration for the production Firebase project and the
-`com.logseq.logseq` package. Local builds accept the same names as environment variables.
+`com.logseq.logseq` package. Google Play builds require all four values, including AABs built for
+manual upload. For test artifacts without Firebase, set `upload-play=false` and
+`allow-missing-firebase=true`. Local builds accept the same names as environment variables.
 
 Before enabling push on `logseq-sync-prod`, apply D1 migrations 0008–0010 and deploy the
 discussion push Worker. Configure the Worker secrets `APNS_KEY_ID`, `APNS_TEAM_ID`,
