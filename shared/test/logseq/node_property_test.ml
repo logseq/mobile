@@ -1092,6 +1092,25 @@ let cases = [
   case "Rename page uses the protected shared native editor" native_page_rename_uses_shared_editor;
   case "page rename guards match master names, built-ins and duplicate scopes" page_rename_guards_follow_master;
   case "page rename updates lookup, live search, references and sync" page_rename_updates_lookup_search_and_references;
+let save_query_source session owner source expected value =
+  result (Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
+    "action", `String "saveQueryDefinition"; "blockUuid", `String owner;
+    "source", `String source; "expected", expected; "value", `String value])))
+
+let query_definition_creation_preserves_tag_shaped_text () =
+  R.with_runtime (fun session runtime _ ->
+    let db = Graph_runtime.db runtime in
+    let tag = Option.get (Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Query")) in
+    let uuid = Option.get (Graph_read.uuid_for_eid db tag) in
+    ignore (result (Rpc_test.dispatch_json session "nodeProperty" (J.to_string (`Assoc [
+      "action", `String "setTags"; "blockUuid", `String Q.beta; "selectedValues", `List [`String uuid]]))));
+    ignore (save_query_source session Q.beta "" `Null "#Math");
+    let db = Graph_runtime.db runtime in
+    let owner = Option.get (Ds.entid db "block/uuid" (Ds.Uuid Q.beta)) in
+    let definition = List.hd (Graph_read.ref_eids db owner "logseq.property/query") in
+    check_eq (Graph_read.value db definition "block/title") (Some (Ds.String "#Math"));
+    check_eq (Graph_read.display_type_for_eid db definition) (Some "code"))
+
   case "retained search shows saved block title after Back" retained_search_shows_saved_block_title;
   case "dates and datetimes display, edit and clear without epoch labels" temporal_properties_display_and_edit;
   case "properties follow node navigation without expanding ordinary blocks" projection_and_navigation;
@@ -1104,3 +1123,4 @@ let cases = [
   case "editing one text value preserves siblings and literal commas" many_text_edits_preserve_sibling_values;
   case "page descriptions are editable public properties" builtin_description_is_editable;
 ]
+  case "creating a query preserves tag-shaped source" query_definition_creation_preserves_tag_shaped_text;

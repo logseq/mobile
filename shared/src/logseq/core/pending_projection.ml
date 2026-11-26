@@ -463,7 +463,8 @@ let resolve_page_references literal_blocks db intent =
     | Ops.Split_block value -> Ops.Split_block {value with before = title value.uuid value.before; after = title value.uuid value.after}
     | Ops.Merge_backward value -> Ops.Merge_backward {value with title = title value.uuid value.title}
     | Ops.Create_journal value -> Ops.Create_journal {value with block_title = title value.block_uuid value.block_title}
-    | Ops.Create_property_value ({content = Ops.String_value text; _} as value) ->
+    | Ops.Create_property_value ({content = Ops.String_value text; _} as value)
+      when value.property_ident <> "logseq.property/query" ->
       Ops.Create_property_value {value with content = Ops.String_value (title value.uuid text)}
     | _ -> intent in
   if !created = [] then next else Ops.Atomic (List.rev !created @ [next])
@@ -638,7 +639,10 @@ let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
     else if Ds.entid db "block/uuid" (Ds.Uuid value.owner_uuid) = None then Error "property owner no longer exists"
     else if Ds.entid db "db/ident" (Ds.Keyword value.property_ident) = None then Error "property no longer exists"
     else Ok (entity_tx (Ds.Temp_id ("pending/" ^ value.uuid)) (property_value_attrs db value)
-      :: (match value.content with Ops.String_value text -> title_tx db value.uuid text | _ -> []))
+      :: (match value.content with
+          | Ops.String_value text when value.property_ident <> "logseq.property/query" ->
+            title_tx db value.uuid text
+          | _ -> []))
   | Ops.Save_title value ->
     (match
        string_value (one_value db (lookup value.uuid) "block/title")
