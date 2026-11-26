@@ -1186,6 +1186,9 @@ private fun AndroidAudioPlaybackRow(title: String, path: String) {
                 onClickLabel = if (playing) "Pause audio" else "Play audio",
                 onClick = togglePlayback,
             )
+            .semantics {
+                contentDescription = if (playing) "Pause audio" else "Play audio"
+            }
             .testTag("player.asset.audio"),
     ) {
         Row(
