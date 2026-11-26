@@ -11,6 +11,7 @@ These rules apply to iOS and Android, including the shared OCaml core and native
 ## Keep interaction work small
 
 - Give user input priority on shared executors. Keep collection queries, index maintenance, and sync work bounded so they cannot stall a burst of input. Separate local feedback from network and background work.
+- Refresh widget projections after the app moves to the background or when the user acts in a widget. Keep widget snapshots off foreground edit and RTC response paths.
 - Compute the notifications inbox when the user opens Notifications or follows a notification. Keep it off editor, property, composer, and background RTC paths. When the visible destination needs data from a background update, use a change-aware projection and reuse valid cached data.
 - Publish control and acknowledgement state without rebuilding unrelated projections. Keep patch generation, serialization, and rendering proportional to the changed or visible rows. Preserve editor identity and avoid processing a full graph, page, or list for every keypress.
 

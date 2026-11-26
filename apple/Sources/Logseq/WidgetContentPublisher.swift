@@ -9,12 +9,10 @@ import WidgetKit
 
     private var refreshTask: Task<Void, Never>?
     private var needsRefresh = false
-    private var forceTaskReload = false
     private var forceRandomReload = false
 
-    func scheduleRefresh(forceTaskReload: Bool = false, forceRandomReload: Bool = false) {
+    private func scheduleRefresh(forceRandomReload: Bool = false) {
         needsRefresh = true
-        self.forceTaskReload = self.forceTaskReload || forceTaskReload
         self.forceRandomReload = self.forceRandomReload || forceRandomReload
         resumePendingRefresh()
     }
@@ -35,22 +33,29 @@ import WidgetKit
         refreshTask = Task {
             while needsRefresh && UIApplication.shared.isProtectedDataAvailable {
                 needsRefresh = false
-                let forceTaskReload = self.forceTaskReload
                 let forceRandomReload = self.forceRandomReload
-                self.forceTaskReload = false
                 self.forceRandomReload = false
-                await publishSnapshot(forceTaskReload: forceTaskReload, forceRandomReload: forceRandomReload)
+                await publishSnapshot(forceRandomReload: forceRandomReload)
             }
             refreshTask = nil
         }
     }
 
-    func refresh(forceTaskReload: Bool = false, forceRandomReload: Bool = false) async {
-        scheduleRefresh(forceTaskReload: forceTaskReload, forceRandomReload: forceRandomReload)
+    func refresh(forceRandomReload: Bool = false) async {
+        scheduleRefresh(forceRandomReload: forceRandomReload)
         await refreshTask?.value
     }
 
-    private func publishSnapshot(forceTaskReload: Bool, forceRandomReload: Bool) async {
+    func refreshInBackground() async {
+        guard UIApplication.shared.applicationState == .background,
+              UIApplication.shared.isProtectedDataAvailable,
+              refreshTask == nil, !Task.isCancelled else { return }
+        await publishSnapshot(forceRandomReload: false, backgroundOnly: true)
+    }
+
+    private func publishSnapshot(
+        forceRandomReload: Bool, backgroundOnly: Bool = false
+    ) async {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: SharedCaptureStorage.appGroupIdentifier
         ) else { return }
@@ -61,7 +66,9 @@ import WidgetKit
             )
         ))
         guard UIApplication.shared.isProtectedDataAvailable else {
-            scheduleRefresh(forceTaskReload: forceTaskReload, forceRandomReload: forceRandomReload)
+            if !backgroundOnly {
+                scheduleRefresh(forceRandomReload: forceRandomReload)
+            }
             return
         }
         do {
@@ -85,7 +92,7 @@ import WidgetKit
             let tasksChanged = previous?["tasks"] as? [NSDictionary] != content["tasks"] as? [NSDictionary]
             let hadRandomBlocks = (previous?["randomBlocks"] as? [NSDictionary])?.isEmpty == false
             let hasRandomBlocks = (content["randomBlocks"] as? [NSDictionary])?.isEmpty == false
-            if graphChanged || tasksChanged || forceTaskReload {
+            if graphChanged || tasksChanged {
                 WidgetCenter.shared.reloadTimelines(ofKind: "TaskListWidget")
             }
             // The random widget picks new blocks on its own timeline once data is available.
@@ -96,7 +103,9 @@ import WidgetKit
             }
         } catch let error as CocoaError
             where error.code == .fileWriteNoPermission && !UIApplication.shared.isProtectedDataAvailable {
-            scheduleRefresh(forceTaskReload: forceTaskReload, forceRandomReload: forceRandomReload)
+            if !backgroundOnly {
+                scheduleRefresh(forceRandomReload: forceRandomReload)
+            }
         } catch {
             logger.error("Could not publish widget content: \(error)")
         }

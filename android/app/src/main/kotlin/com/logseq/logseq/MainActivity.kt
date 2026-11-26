@@ -211,6 +211,16 @@ class MainActivity : ComponentActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (::runtime.isInitialized) runtime.onActivityStarted()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (::runtime.isInitialized && !isChangingConfigurations) runtime.onActivityStopped()
+    }
+
     override fun onDestroy() {
         if (::runtime.isInitialized) {
             runtime.audioRecorder.detach()

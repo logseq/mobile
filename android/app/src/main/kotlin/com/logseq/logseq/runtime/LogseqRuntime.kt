@@ -27,7 +27,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
@@ -51,7 +50,6 @@ internal class LogseqRuntime(
     private var ownsCore = false
     private var widgetRefreshJob: Job? = null
     private var clipboardImageJob: Job? = null
-    private var widgetRefreshPending = false
 
     val platformServices = AndroidPlatformServices(activity)
     val authentication = CognitoAuthProvider(activity.applicationContext)
@@ -323,7 +321,6 @@ internal class LogseqRuntime(
     }.await()
 
     fun onLifecycleResumed(resumed: Boolean) {
-        if (resumed && ownsCore) scheduleWidgetRefresh()
         appIsForeground = resumed
         updateCatalogPolling("lifecycle")
         ensureGraphEventsSync()
@@ -452,7 +449,6 @@ internal class LogseqRuntime(
     // snapshot; cache them so the WebSocket loop can pull entity changes
     // without holding client-side state of its own (iOS snapshot fields).
     private fun trackSyncState(response: String) {
-        scheduleWidgetRefresh()
         graphSyncEligibility.update(response)
         if (!graphSyncEligibility.canSync(hasAuthenticatedSession, hasOpenGraph)) {
             pendingSyncRequested = false
@@ -469,15 +465,14 @@ internal class LogseqRuntime(
         }
     }
 
-    private fun scheduleWidgetRefresh() {
-        widgetRefreshPending = true
-        if (widgetRefreshJob?.isActive == true) return
+    fun onActivityStarted() {
+        widgetRefreshJob?.cancel()
+    }
+
+    fun onActivityStopped() {
+        if (!ownsCore || widgetRefreshJob?.isActive == true) return
         widgetRefreshJob = scope.launch {
-            while (widgetRefreshPending) {
-                delay(750)
-                widgetRefreshPending = false
-                AndroidWidgetContent.refresh(activity.applicationContext, bridge::callCore)
-            }
+            AndroidWidgetContent.refresh(activity.applicationContext, bridge::callCore)
         }
     }
 
