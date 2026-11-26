@@ -217,8 +217,12 @@ let bottom_tab_row ~android ~tab_width ~action_width model_source send : t =
   let actions =
     if android then box ~background:"glass" ~border_width:1 ~border_color:"border" ~corner_radius:29 [actions]
     else View_base.with_liquid_glass "bottom-actions" actions in
+  let actions_visible =
+    Signal.map (fun current ->
+      not (android && View_base.flashcards_destination_ current)) model_source in
   row ~grow:1.0 ~gap:8 ~main:`space_between ~cross:`center
-    ~accessibility_identifier:"row.bottom.capture" [tabs; actions]
+    ~accessibility_identifier:"row.bottom.capture"
+    [tabs; if_ ~test:actions_visible actions]
 
 let capture_and_search_row (context : Lui_ui.ui_context) model_source send : t =
   let android = Lui_ui.host context = KotlinHost in
@@ -300,11 +304,7 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
              ]);
         if_
           ~test:
-            (Signal.map (fun current ->
-               View_base.bottom_chrome_capture_and_search_ ~primary_tabs current
-               && not
-                    (Lui_ui.host context = KotlinHost
-                     && View_base.flashcards_destination_ current))
+            (Signal.map (View_base.bottom_chrome_capture_and_search_ ~primary_tabs)
                model_source)
           (column ~container_relative_frame:`horizontal ~cross:`stretch ~gap:0 ~padding_horizontal:16
              [
