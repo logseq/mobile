@@ -10,6 +10,8 @@
     </dict>
     <key>LogseqRevision</key>
     <string>$(LOGSEQ_BUILD_REVISION)</string>
+    <key>LogseqAPNsEnvironment</key>
+    <string>$(LOGSEQ_APNS_ENVIRONMENT)</string>
     <key>UIApplicationShortcutItems</key>
     <array>
         <dict>

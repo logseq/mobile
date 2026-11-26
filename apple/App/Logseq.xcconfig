@@ -48,5 +48,7 @@ SWIFT_VERSION = 6
 CODE_SIGNING_REQUIRED[config=Debug] = NO
 CODE_SIGN_STYLE[config=Debug] = Automatic
 CODE_SIGN_ENTITLEMENTS = Entitlements.plist
+LOGSEQ_APNS_ENVIRONMENT = development
+LOGSEQ_APNS_ENVIRONMENT[config=Release] = production
 //CODE_SIGNING_IDENTITY = -
 //DEVELOPMENT_TEAM =
