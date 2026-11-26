@@ -901,7 +901,7 @@ let outliner_text_leading context (row : Model.outline_row) =
   else (if status then 49 else if priority then 20 else 26) + (if priority then 25 else 0) in
   leading + row.depth * 22
 
-let outliner_task_date_leading context (row : Model.outline_row) =
+let outliner_metadata_leading context (row : Model.outline_row) =
   match row.row_status with
   | None -> outliner_text_leading context row
   | Some _ ->
@@ -929,14 +929,11 @@ let outliner_task_dates context model_source row_source send =
       status.ident = Some "logseq.property/status.done"
       || status.ident = Some "logseq.property/status.canceled") row.row_status) row_source in
   View_base.with_int_prop_signal PaddingLeft
-    (Signal.map (outliner_task_date_leading context) row_source)
+    (Signal.map (outliner_metadata_leading context) row_source)
     (box ~padding_horizontal:8 [View_property.view ~compact:true ~task_completed ~render_block:(fun _ _ -> box [])
       model_source (Signal.map (fun (row : Model.outline_row) -> row.row_task_dates_json) row_source) send])
 
 let outliner_discussion context model_source row_source send =
-  let leading =
-    if Lui_ui.host context = KotlinHost then outliner_task_date_leading context
-    else outliner_text_leading context in
   let target (row : Model.outline_row) = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
   let items name row = match metadata_member name row with `List values -> values | _ -> [] in
   let state = Signal.map2 (fun (model : Model.logseq_model) row ->
@@ -946,7 +943,7 @@ let outliner_discussion context model_source row_source send =
     model_source row_source in
   if_ ~test:(Signal.map (fun (_, reactions, threads, _, _) -> reactions <> [] || threads <> []) state)
     (View_base.with_int_prop_signal PaddingLeft
-      (Signal.map leading row_source)
+      (Signal.map (outliner_metadata_leading context) row_source)
       (box [reactive (fun (target, reactions, threads, _, _) ->
         View_collaboration.inline (Signal.sample model_source) send ~target ~reactions ~threads) state]))
 
@@ -1924,7 +1921,7 @@ let journal_task_row context model_source task_source send =
         outliner_row_body ~allow_drag:false ~trailing_inset:inset context view_model retained source send_block;
         if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> not current.tasks_view.compact) model_source)
         (View_base.with_int_prop_signal PaddingLeft
-          (Signal.map (outliner_task_date_leading context) source)
+          (Signal.map (outliner_metadata_leading context) source)
           (with_ios_trailing_padding inset (box [metadata])));
         outliner_discussion context view_model source send_block;
       ])

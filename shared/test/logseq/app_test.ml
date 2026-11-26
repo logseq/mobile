@@ -8232,8 +8232,7 @@ let journal_date_headings_open_their_page_on_both_hosts () =
       (App.model application).pending_effects [Model.OpenAppNodeEffect (1, "journal-page")])
     [ios_backend (); kotlin_backend ()]
 
-let android_discussion_rows_align_with_task_dates () =
-  let application = App.create (kotlin_backend ()) in
+let discussion_rows_align_with_task_dates () =
   let status = Model.task_status "todo" "logseq.property/status.todo" "Todo" "Todo" in
   let priority = Model.task_status "high" "logseq.property/priority.high" "High" "High" in
   let task id depth = {
@@ -8245,25 +8244,31 @@ let android_discussion_rows_align_with_task_dates () =
     row_metadata_json =
       {|{"reactions":[{"id":"+1","count":1}],"commentThreads":[{"id":"thread","comments":[{"id":"comment","text":"Looks good"}]}]}|};
   } in
-  start application;
-  send application (Model.ApplyCoreSnapshot {
-    (empty_core_projection ()) with
-    selected_graph_id = Some "test-graph";
-    outliner_rows = [task "parent-task" 0; task "child-task" 1];
-  });
-  flush application;
-  let runtime = Lui_app.runtime application in
-  let padding identifier =
-    let parent = parent_with_child_identifier runtime (main_root runtime application) identifier in
-    check ~msg:identifier (parent <> -1);
-    property_int runtime parent Lui_protocol.PaddingLeft in
-  List.iter (fun id ->
-    check ~msg:"The comment toggle shares the reaction row"
-      (descendant_with_identifier runtime (main_root runtime application)
-        ("comments.toggle." ^ id) <> -1);
-    check_eq ~msg:"Reactions and comments use the same inset as task dates"
-      (padding ("discussion.inline." ^ id)) (padding ("properties." ^ id)))
-    ["parent-task"; "child-task"]
+  List.iter (fun (backend, inset) ->
+    let application = App.create (backend ()) in
+    start application;
+    send application (Model.ApplyCoreSnapshot {
+      (empty_core_projection ()) with
+      selected_graph_id = Some "test-graph";
+      outliner_rows = [task "parent-task" 0; task "child-task" 1];
+    });
+    flush application;
+    let runtime = Lui_app.runtime application in
+    let root = main_root runtime application in
+    let padding identifier =
+      let parent = parent_with_child_identifier runtime root identifier in
+      check ~msg:identifier (parent <> -1);
+      property_int runtime parent Lui_protocol.PaddingLeft in
+    List.iteri (fun depth id ->
+      let discussion = descendant_with_identifier runtime root ("discussion.inline." ^ id) in
+      check ~msg:"The comment toggle is part of the discussion row"
+        (descendant_with_identifier runtime discussion ("comments.toggle." ^ id) <> -1);
+      let date_padding = padding ("properties." ^ id) in
+      check_eq ~msg:"Task dates follow the block depth" date_padding (inset + depth * 22);
+      check_eq ~msg:"Reactions and comments use the same inset as task dates"
+        (padding ("discussion.inline." ^ id)) date_padding)
+      ["parent-task"; "child-task"])
+    [ios_backend, 24; kotlin_backend, 30]
 
 let notification_time_uses_local_date_and_time () =
   let model = { (Model.initial ()) with Model.language = "en" } in
@@ -12163,7 +12168,7 @@ let cases =
     case "journal-date-headings-open-their-page-on-both-hosts" journal_date_headings_open_their_page_on_both_hosts;
     case "calendar dates follow the app language" localized_calendar_dates;
     case "journal titles follow the graph format on both hosts" journal_titles_follow_the_graph_format;
-    case "Android discussion rows align with task dates" android_discussion_rows_align_with_task_dates;
+    case "Discussion rows align with task dates on both native hosts" discussion_rows_align_with_task_dates;
     case "notifications use local date and time with a year only when needed" notification_time_uses_local_date_and_time;
     case "notification month filter persists and keeps older read state" notifications_filter_month_and_preserve_read_history;
     case "journal-section-markers-preserve-boundaries-and-stable-pages" journal_section_markers_preserve_boundaries_and_stable_pages;
