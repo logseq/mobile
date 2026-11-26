@@ -1,6 +1,7 @@
 import Foundation
 import SentrySwift
 import SwiftUI
+internal import _SentryPrivate
 
 @main struct SentryCallbackIsolationCheck: App {
     var body: some Scene {
@@ -10,6 +11,16 @@ import SwiftUI
                 LogseqCrashReporting.start(dsn: dsn)
                 precondition(SentrySDK.internal.options.dsn == dsn)
                 print("SENTRY_CHECK_DSN=\(SentrySDK.internal.options.dsn!)")
+                #if DEBUG
+                let expectedEnvironment = "development"
+                #else
+                let expectedEnvironment = "production"
+                #endif
+                precondition(SentrySDK.isEnabled)
+                precondition(SentrySDK.internal.options.enableCrashHandler)
+                precondition(SentrySDK.internal.options.environment == expectedEnvironment)
+                precondition(SentrySDKInternal.currentHub().hasIntegration("SentryCrashIntegration"))
+                print("PASS: crash handler enabled in \(expectedEnvironment)")
                 fflush(stdout)
                 LogseqCrashReporting.uiState(screen: .page, editorActive: true)
                 for _ in 0..<30 {

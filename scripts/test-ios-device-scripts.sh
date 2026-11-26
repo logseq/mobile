@@ -15,6 +15,23 @@ python3 "$repo_root/scripts/test-ios-simulator-build-arguments.py"
 python3 "$repo_root/scripts/test-ios-native-link-manifest.py"
 python3 "$repo_root/scripts/test-ios-launch-screen.py"
 
+python3 - "$repo_root/apple" <<'PYTHON'
+import json
+import os
+import subprocess
+import sys
+
+for enabled in ("0", "1"):
+    manifest = json.loads(subprocess.check_output(
+        ["swift", "package", "--package-path", sys.argv[1], "dump-package"],
+        env=dict(os.environ, LOGSEQ_ENABLE_SENTRY=enabled),
+    ))
+    packages = {package["identity"] for dependency in manifest["dependencies"]
+                for package in dependency.get("sourceControl", [])}
+    assert ("sentry-cocoa" in packages) == (enabled == "1"), f"Unexpected Sentry dependency in mode {enabled}"
+print("ok - SwiftPM only resolves Sentry for opted-in builds")
+PYTHON
+
 if ! grep -Fq 'scripts/build-mobile-ocaml.sh' \
   "$repo_root/scripts/build-mobile-ios-device.sh"; then
   echo "not ok - device build does not delegate OCaml compilation to Dune" >&2

@@ -49,6 +49,18 @@ def read_intents(bundle, required):
     return metadata
 
 
+def verify_sentry_crash_reporting(binary):
+    # Objective-C class names survive stripping during archive and IPA export.
+    output = subprocess.check_output(
+        ["xcrun", "otool", "-arch", "arm64", "-v", "-s", "__TEXT", "__objc_classname", str(binary)],
+        text=True,
+    )
+    class_names = {line.rsplit(maxsplit=1)[-1] for line in output.splitlines() if line.strip()}
+    missing = {"SentryCrash", "SentryCrashInstallation"} - class_names
+    require(not missing, f"Missing Sentry crash reporting classes in {binary.name}: {sorted(missing)}")
+    print(f"Verified linked Sentry crash reporting in {binary.name}")
+
+
 def verify_app(app, args):
     info = read_info(app)
     version = args.version or info["CFBundleShortVersionString"]
@@ -113,6 +125,7 @@ def verify_app(app, args):
             require(TEAM in profile.get("TeamIdentifier", []), f"Wrong provisioning team: {bundle.name}")
             require(profile["Entitlements"]["application-identifier"].endswith("." + identifier), f"Wrong provisioning App ID: {bundle.name}")
             if bundle == app:
+                verify_sentry_crash_reporting(binary)
                 require(profile["Entitlements"].get("aps-environment") == "production",
                         "App Store provisioning profile must grant production APNs")
                 require(entitlements.get("aps-environment") == "production",

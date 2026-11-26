@@ -2,6 +2,16 @@
 import PackageDescription
 import Foundation
 
+let sentryEnabled = ProcessInfo.processInfo.environment["LOGSEQ_ENABLE_SENTRY"] == "1"
+let sentryPackages: [Package.Dependency] = sentryEnabled ? [
+    // Sentry Cocoa 9.27.0. Pin the release build even when the local lockfile omits Sentry.
+    .package(url: "https://github.com/getsentry/sentry-cocoa.git", revision: "aaf96c4a417d30208b3c25d90910d6156ddc973d")
+] : []
+let sentryDependencies: [Target.Dependency] = sentryEnabled ? [
+    .product(name: "SentrySPM", package: "sentry-cocoa", condition: .when(platforms: [.iOS]))
+] : []
+let sentrySwiftSettings: [SwiftSetting] = sentryEnabled ? [.define("LOGSEQ_ENABLE_SENTRY", .when(platforms: [.iOS]))] : []
+
 let logseqNativeLinkInputs = ProcessInfo.processInfo.environment["LOGSEQ_NATIVE_LINK_INPUTS"]?
     .split(separator: ":")
     .map(String.init) ?? []
@@ -54,9 +64,8 @@ let package = Package(
         .library(name: "LogseqModel", type: .dynamic, targets: ["LogseqModel"]),
     ],
     dependencies: [
-        .package(url: "ssh://git@github.com/logseq/lui.git", revision: "c44bfe549470d68c578814e603f10ca34fa7384e"),
-        .package(url: "https://github.com/getsentry/sentry-cocoa.git", exact: "9.27.0")
-    ],
+        .package(url: "ssh://git@github.com/logseq/lui.git", revision: "c44bfe549470d68c578814e603f10ca34fa7384e")
+    ] + sentryPackages,
     targets: [
         .executableTarget(
             name: "LogseqShell",
@@ -67,10 +76,10 @@ let package = Package(
         ),
         .target(name: "Logseq", dependencies: [
             "LogseqModel",
-            .product(name: "LUIAppleBackendStatic", package: "lui"),
-            .product(name: "SentrySPM", package: "sentry-cocoa", condition: .when(platforms: [.iOS]))
-        ],
+            .product(name: "LUIAppleBackendStatic", package: "lui")
+        ] + sentryDependencies,
         resources: [.process("Resources")],
+        swiftSettings: sentrySwiftSettings,
         linkerSettings: logseqLinkerSettings),
         .testTarget(
             name: "LogseqTests",

@@ -11,6 +11,7 @@ platform :ios do
   desc "Push a new beta build to TestFlight"
   lane :beta do
     UI.user_error!("SENTRY_AUTH_TOKEN is required to upload iOS release dSYMs") if ENV["SENTRY_AUTH_TOKEN"].to_s.strip.empty?
+    ENV["LOGSEQ_ENABLE_SENTRY"] = "1"
     setup_ci
 
     app_store_connect_api_key(

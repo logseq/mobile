@@ -62,6 +62,17 @@ Device builds default to Release. Use `LOGSEQ_IOS_BUILD_CONFIGURATION=debug` for
 
 The simulator and device scripts share SwiftPM dependencies in `apple/.build`, with build products in separate target directories. Both accept `LOGSEQ_IOS_SWIFT_SCRATCH_PATH` to override that location. The iOS core build retains the current native link snapshot and one previous snapshot per platform.
 
+Local iOS builds skip the Sentry SDK by default. To exercise crash reporting, build with `LOGSEQ_ENABLE_SENTRY=1`, then set `LOGSEQ_SENTRY_DEBUG=1` in the Debug app's launch environment or run `python3 scripts/test-ios-sentry-callback.py` after an opted-in Debug simulator build. SwiftPM may add a local Sentry pin to `Package.resolved` when you opt in. The tracked lockfile is for the default build. The TestFlight lane enables Sentry when it builds the release archive.
+
+To check crash reporting through the app's Release startup path, build the simulator app with `LOGSEQ_ENABLE_SENTRY=1 LOGSEQ_IOS_CONFIGURATION=release` and run:
+
+```sh
+SIMCTL_CHILD_LOGSEQ_SENTRY_STARTUP_CHECK=1 LOGSEQ_IOS_CONFIGURATION=release \
+  python3 apple/Tests/UI/run-simulator-runtime-check.py apple/Tests/UI/sentry-startup.swift SentryStartupCheck
+```
+
+The startup check uses a loopback DSN.
+
 To work on the LUI backend with a sibling checkout, use `swift package --package-path apple edit lui --path ../lui`. Restore the pinned version with `swift package --package-path apple unedit lui`.
 
 ### Android
@@ -130,7 +141,7 @@ Branch from `main` and keep the patch focused on one change. In your pull reques
 - **iOS.** Run [Build-iOS](.github/workflows/build-ios-release.yml) from `main` to sign and upload to TestFlight. It distributes to **Mobile Testers** and submits the build for Beta App Review when required. Choose `testflight-distribution=internal` to send the build only to internal groups.
 - **Android.** Run [Build-Android](.github/workflows/build-android.yml) for signed APK and AAB artifacts. The default Play track is **Closed testing (alpha)**. Choose `play-track=internal` for internal testing and `git-ref` to select the branch or tag. Start a new run to publish newer code. CI generates a version code and checks 16 KB native library alignment before upload. Local builds default to version code `1`, which you can override with `-PlogseqVersionCode=123`.
 - **Release notes.** Update [`release-notes/<version>/`](release-notes) with `ios.txt` for TestFlight's **What to Test** and `android.txt` for Google Play. Keep the Android notes within 500 characters.
-- **Crash reporting.** Release builds report to the corresponding Sentry projects. Both workflows use `SENTRY_AUTH_TOKEN` to upload symbols. To smoke-test reporting in the Sentry development environment, use `-PlogseqSentryDebug=true` on Android or launch the iOS simulator app with `SIMCTL_CHILD_LOGSEQ_SENTRY_DEBUG=1`.
+- **Crash reporting.** CI release builds report to the corresponding Sentry projects. Both workflows use `SENTRY_AUTH_TOKEN` to upload symbols. To smoke-test reporting in the Sentry development environment, use `-PlogseqSentryDebug=true` on Android. On iOS, build the Debug simulator app with `LOGSEQ_ENABLE_SENTRY=1`, then launch it with `SIMCTL_CHILD_LOGSEQ_SENTRY_DEBUG=1`.
 
 <details>
 <summary>Google Play setup for the first upload</summary>

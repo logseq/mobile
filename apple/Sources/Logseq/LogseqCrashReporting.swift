@@ -1,14 +1,32 @@
 #if os(iOS)
+#if LOGSEQ_ENABLE_SENTRY
 import Foundation
 import SentrySwift
+#endif
 
 enum LogseqCrashReporting {
+    enum RuntimeState: String {
+        case start, started, drainBegin = "drain_begin", drainEnd = "drain_end"
+    }
+
+    enum Screen: String {
+        case unknown, authentication, journals, tasks, page, search, settings, pdf, graphs, flashcards
+    }
+
+    enum PresentationSource: Hashable { case core, platform }
+
+    #if LOGSEQ_ENABLE_SENTRY
     nonisolated static func start(dsn: String = "https://97cf2c1b0b73bc127f78ad8802e6be9f@o416451.ingest.us.sentry.io/4512448516194305") {
         #if DEBUG
         guard ProcessInfo.processInfo.environment["LOGSEQ_SENTRY_DEBUG"] == "1" else { return }
         let environment = "development"
         #else
         let environment = "production"
+        #endif
+        #if targetEnvironment(simulator)
+        let dsn = ProcessInfo.processInfo.environment["LOGSEQ_SENTRY_STARTUP_CHECK"] == "1"
+            ? "https://public@127.0.0.1:9/0"
+            : dsn
         #endif
 
         SentrySDK.start { options in
@@ -79,21 +97,11 @@ enum LogseqCrashReporting {
         return result
     }
 
-    enum RuntimeState: String {
-        case start, started, drainBegin = "drain_begin", drainEnd = "drain_end"
-    }
-
     nonisolated static func runtime(_ state: RuntimeState) {
         let breadcrumb = Breadcrumb(level: .info, category: "runtime")
         breadcrumb.data = ["state": state.rawValue]
         SentrySDK.addBreadcrumb(breadcrumb)
     }
-
-    enum Screen: String {
-        case unknown, authentication, journals, tasks, page, search, settings, pdf, graphs, flashcards
-    }
-
-    enum PresentationSource: Hashable { case core, platform }
 
     private struct UIState: Equatable {
         var screen = Screen.unknown
@@ -148,5 +156,14 @@ enum LogseqCrashReporting {
         event.request = nil
         return event
     }
+    #else
+    nonisolated static func start() {}
+    nonisolated static func runtime(_ state: RuntimeState) {}
+    @MainActor static func presentation(_ source: PresentationSource, open: Bool) {}
+    @MainActor static func uiState(
+        screen: Screen? = nil, nativeSearchActive: Bool? = nil, editorActive: Bool? = nil,
+        popoverOpen: Bool? = nil, captureRailVisible: Bool? = nil
+    ) {}
+    #endif
 }
 #endif
