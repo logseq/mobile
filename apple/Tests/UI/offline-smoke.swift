@@ -17,17 +17,21 @@ import LogseqModel
         try #"["^ ","~:format-version",1,"~:graph-id","uiregression","~:schema-version","65.34","~:applied-server-t",0]"#
             .write(to: checkpoint, atomically: true, encoding: .utf8)
 
-        let catalog = LogseqStore.callForLaunch(.init(method: "open",
-            params: .init(action: nil, path: directory.appendingPathComponent("logseq.sqlite").path)))
-        _ = try snapshot(catalog)
+        let catalogPath = directory.appendingPathComponent("logseq.sqlite").path
         let config = [
             "graphId": graphID, "graphName": "iOS smoke graph", "baseUrl": "http://127.0.0.1:1",
             "token": "fixture.eyJzdWIiOiJiZWMwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMTAifQ.fixture",
         ]
-        _ = try snapshot(await dispatch("configure", config))
         let graphPaths = ["graphId": graphID, "activePath": graph.path, "checkpointPath": checkpoint.path]
-        let opened = try await dispatch("openGraph", graphPaths)
-        _ = try snapshot(opened)
+        func openGraph() async throws -> String {
+            let catalog = LogseqStore.callForLaunch(.init(method: "open", params: .init(action: nil, path: catalogPath)))
+            _ = try snapshot(catalog)
+            _ = try snapshot(await dispatch("configure", config))
+            let response = try await dispatch("openGraph", graphPaths)
+            _ = try snapshot(response)
+            return response
+        }
+        let opened = try await openGraph()
         let platform = LGPlatformEffectHandler(saveSettings: { _ in },
             runtimeLog: LogseqRuntimeLog(capacity: 20), copyText: { _ in }, signOut: {}, syncPending: {})
         let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: LGCoreEffectExecutor(
@@ -163,9 +167,9 @@ import LogseqModel
         print("PASS: opens and closes search and the sidebar")
 
         runtime.stop()
-        _ = try snapshot(await dispatch("closeGraph", ["graphId": graphID]))
-        _ = try snapshot(await dispatch("configure", config))
-        let reopened = try snapshot(await dispatch("openGraph", graphPaths))
+        window.isHidden = true
+        window.rootViewController = nil
+        let reopened = try snapshot(await openGraph())
         let persisted = reopened.outlinerRows.filter { $0.block.pageId == firstCapture.pageId }.map(\.block)
         guard captures.allSatisfy({ title in persisted.filter { $0.title == title }.count == 1 }),
               persisted.map(\.uuid) == journalRows.map(\.block.uuid),
@@ -178,7 +182,16 @@ import LogseqModel
 
     private static func seedGraph(at url: URL) throws {
         let fixture = try require(Bundle.main.url(forResource: "offline-smoke", withExtension: "sql"), "Missing smoke graph")
+        // The fixture is a confirmed journal. Use today's date in the simulator's time zone.
+        let date = DateFormatter()
+        date.locale = Locale(identifier: "en_US_POSIX")
+        date.calendar = Calendar(identifier: .gregorian)
+        date.dateFormat = "yyyyMMdd"
+        let today = date.string(from: Date())
+        let todayUUID = "00000001-\(today.prefix(4))-\(today.suffix(4))-0000-000000000000"
         let sql = try String(contentsOf: fixture, encoding: .utf8)
+            .replacingOccurrences(of: "20010101", with: today)
+            .replacingOccurrences(of: "00000001-2001-0101-0000-000000000000", with: todayUUID)
         var database: OpaquePointer?
         let result = sqlite3_open(url.path, &database)
         defer { sqlite3_close(database) }

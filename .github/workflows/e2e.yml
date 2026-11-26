@@ -58,15 +58,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode and boot the simulator
+      - name: Select Xcode
+        run: sudo xcode-select --switch /Applications/Xcode_26.3.app
+
+      - name: Restore OCaml tools
+        id: ios-ocaml-tools
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.opam
+            _opam
+          key: ocaml-tools-v1-${{ runner.os }}-${{ runner.arch }}-macos-15-${{ hashFiles('.github/actions/ocaml-tools/action.yml') }}
+
+      - name: Install the opam release binary
+        if: steps.ios-ocaml-tools.outputs.cache-hit == 'true'
         run: |
-          sudo xcode-select --switch /Applications/Xcode_26.3.app
-          runtime_id=$(xcrun simctl list -j runtimes | python3 -c 'import json,sys; rs=[r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable") and ".iOS-" in r["identifier"]]; print(max(rs, key=lambda r: tuple(map(int, r["version"].split("."))))["identifier"])')
-          udid=$(xcrun simctl create "CI iPhone" com.apple.CoreSimulator.SimDeviceType.iPhone-16 "$runtime_id")
-          xcrun simctl boot "$udid"
-          echo "LOGSEQ_IOS_SIMULATOR=$udid" >> "$GITHUB_ENV"
+          bin="$RUNNER_TEMP/ios-e2e-bin"
+          mkdir -p "$bin"
+          curl -fsSL --retry 2 --max-time 25 --retry-max-time 50 \
+            https://github.com/ocaml/opam/releases/download/2.6.0/opam-2.6.0-arm64-macos \
+            -o "$bin/opam"
+          echo "b57ed6cc082e560063989a285c59786b7c670087da2d317a87e4ba4c7973e71f  $bin/opam" | shasum -a 256 -c
+          chmod +x "$bin/opam"
+          echo "$bin" >> "$GITHUB_PATH"
 
       - uses: ./.github/actions/ocaml-tools
+        if: steps.ios-ocaml-tools.outputs.cache-hit != 'true'
         with:
           image: macos-15
 
@@ -93,6 +110,13 @@ jobs:
         with:
           path: apple/.build/repositories
           key: ios-simulator-swift-downloads-v2-${{ runner.arch }}-xcode26.3-${{ hashFiles('apple/Package.resolved') }}
+
+      - name: Boot the simulator
+        run: |
+          runtime_id=$(xcrun simctl list -j runtimes | python3 -c 'import json,sys; rs=[r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable") and ".iOS-" in r["identifier"]]; print(max(rs, key=lambda r: tuple(map(int, r["version"].split("."))))["identifier"])')
+          udid=$(xcrun simctl create "CI iPhone" com.apple.CoreSimulator.SimDeviceType.iPhone-16 "$runtime_id")
+          xcrun simctl boot "$udid"
+          echo "LOGSEQ_IOS_SIMULATOR=$udid" >> "$GITHUB_ENV"
 
       - name: Build iOS simulator smoke test
         run: opam exec -- ./scripts/build-mobile-ios-simulator.sh
