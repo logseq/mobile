@@ -33,7 +33,10 @@ val buildAndroidNativeCore = tasks.register("buildAndroidNativeCore") {
         "src/main/cpp/logseq_jni.c",
     )
     inputs.dir(File(repoRoot, "shared"))
-    inputs.files(File(repoRoot, "scripts/build-android-native.sh"))
+    inputs.files(
+        File(repoRoot, "scripts/build-android-native.sh"),
+        File(repoRoot, "scripts/build-android-sqlite.sh"),
+    )
     outputs.file(nativeLibrary)
     doLast {
         val output = providers.exec {

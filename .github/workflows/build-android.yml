@@ -185,9 +185,8 @@ jobs:
         with:
           path: |
             _build/android-toolchain
-            _build/android-dependency-sources
             _build/android-sqlite-host
-          key: android-toolchain-${{ runner.os }}-arm64-v8a-5.5.0-${{ hashFiles('scripts/bootstrap-android-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
+          key: android-toolchain-${{ runner.os }}-arm64-v8a-5.5.0-${{ hashFiles('scripts/bootstrap-android-ocaml.sh', 'scripts/build-mobile-libffi.sh', 'scripts/build-android-sqlite.sh') }}
 
       - name: Restore Android native build cache
         # CMake intermediate objects under .cxx survive source-unchanged
@@ -225,9 +224,8 @@ jobs:
         with:
           path: |
             _build/android-toolchain
-            _build/android-dependency-sources
             _build/android-sqlite-host
-          key: android-toolchain-${{ runner.os }}-arm64-v8a-5.5.0-${{ hashFiles('scripts/bootstrap-android-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
+          key: android-toolchain-${{ runner.os }}-arm64-v8a-5.5.0-${{ hashFiles('scripts/bootstrap-android-ocaml.sh', 'scripts/build-mobile-libffi.sh', 'scripts/build-android-sqlite.sh') }}
 
       - name: Save Android native build cache
         if: always()

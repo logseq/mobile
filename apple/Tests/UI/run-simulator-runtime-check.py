@@ -1,4 +1,5 @@
 """Link a Swift async check against the simulator app; never uses XCTest."""
+import fcntl
 import os
 import json
 from pathlib import Path
@@ -39,7 +40,9 @@ def main():
     benchmark = check_type in ("--benchmark", "--interactive")
     fixture = Path(sys.argv[3]).resolve() if benchmark else None
     bundle = "com.logseq.logseq.PageBenchmark" if benchmark else BUNDLE
-    with tempfile.TemporaryDirectory(prefix="logseq-runtime-check-") as temporary:
+    lock_path = ROOT / "_build/ios-core/.build-lock"
+    with tempfile.TemporaryDirectory(prefix="logseq-runtime-check-") as temporary, lock_path.open("a") as build_lock:
+        fcntl.flock(build_lock, fcntl.LOCK_SH)
         directory = Path(temporary)
         source = directory / "check.swift"
         source.write_text(Path(entry).read_text() if benchmark else Path(entry).read_text().replace("@main", "", 1) + f"""
@@ -140,6 +143,7 @@ import SwiftUI
         assets = ROOT / "apple/.build/Logseq.app/Assets.car"
         if assets.exists():
             shutil.copy2(assets, app / assets.name)
+        fcntl.flock(build_lock, fcntl.LOCK_UN)
         run(["codesign", "--force", "--sign", "-", str(app)])
         terminate_app(SIMULATOR, bundle)
         run(["xcrun", "simctl", "install", SIMULATOR, str(app)])
