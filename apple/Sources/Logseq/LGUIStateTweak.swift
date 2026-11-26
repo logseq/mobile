@@ -33,12 +33,15 @@ private struct LGUIStateContent: View {
         let screen: String = if case let .string(value) = context.property("screen") { value } else { "unknown" }
         let state = State(screen: screen, editorActive: context.property("editor-active") == .bool(true),
                           presentationOpen: context.property("presentation-open") == .bool(true))
-        content.onChange(of: state, initial: true) { _, state in
+        content
             #if os(iOS)
-            LogseqCrashReporting.uiState(screen: .init(rawValue: state.screen) ?? .unknown,
-                                        editorActive: state.editorActive)
-            LogseqCrashReporting.presentation(.core, open: state.presentationOpen)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .ignoresSafeArea(.keyboard, edges: state.presentationOpen ? .bottom : [])
+            .onChange(of: state, initial: true) { _, state in
+                LogseqCrashReporting.uiState(screen: .init(rawValue: state.screen) ?? .unknown,
+                                            editorActive: state.editorActive)
+                LogseqCrashReporting.presentation(.core, open: state.presentationOpen)
+            }
             #endif
-        }
     }
 }
