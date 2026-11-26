@@ -101,6 +101,11 @@ let filter_rows db ~instance owner definition remove_children rows =
 let source_for db definition =
   Option.value ~default:"" (Graph.string_value (Graph.value db definition "block/title"))
 
+let canonical_source db source =
+  Dev.Db_query_dsl.canonicalize_entity_refs (fun name ->
+    if Ref_text.is_uuid name then None
+    else Option.map (fun uuid -> "[[" ^ uuid ^ "]]") (Graph.unique_named_uuid false db name)) source
+
 let execute ?current_page ?(now = int_of_float (Unix.gettimeofday () *. 1000.))
     ?(remove_children_by_default = true) ~instance db owner definition source =
   let day = Cache_model.journal_day_for_ms now in

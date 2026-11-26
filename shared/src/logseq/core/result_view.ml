@@ -628,6 +628,52 @@ let begin_text_edit db ~now ~fresh_uuid input =
       Pending_ops.Set_property {uuid = owner; attr; expected = Option.map (semantic db) raw;
         value = Some (if property.many then Pending_ops.Set_value [value] else value)}])
 
+let query_attr = "logseq.property/query"
+
+let query_definition db owner =
+  match Ds.entid db "block/uuid" (Ds.Uuid owner) with
+  | Some id when Node_title.can_edit db id && G.ref_eids db id "block/link" = []
+      && Query_block.is_query db owner ->
+    let value = raw db id query_attr in
+    (match Option.bind value (ref_id db) with
+     | None when value = None -> Some (value, None)
+     | Some definition when ident db definition = "logseq.property/empty-placeholder" -> Some (value, None)
+     | Some definition when Node_title.can_edit db definition ->
+       (match G.uuid_for_eid db definition, get db definition "block/title" with
+        | Some uuid, Ds.String source -> Some (value, Some (uuid, source))
+        | _ -> None)
+     | _ -> None)
+  | _ -> None
+
+let query_definition_json db owner =
+  Option.fold ~none:`Null ~some:(fun (value, definition) ->
+    `Assoc ["expected", semantic_json db value;
+      "source", `String (Option.fold ~none:"" ~some:snd definition)]) (query_definition db owner)
+
+let save_query_definition db ~now ~fresh_uuid input =
+  let owner = required "blockUuid" input in
+  let title = match member "value" input with
+    | `String title -> Query_block.canonical_source db title | _ -> invalid_arg "Enter a query definition" in
+  match query_definition db owner with
+  | None -> invalid_arg "This query definition is read-only"
+  | Some (value, definition) ->
+    let source = Option.fold ~none:"" ~some:snd definition in
+    if member "expected" input <> semantic_json db value || member "source" input <> `String source then
+      invalid_arg "The query definition changed. Reopen it to edit the latest value";
+    (match definition with
+     | Some (uuid, expected_title) -> Ops.Save_title {uuid; expected_title; title}
+     | None ->
+       let uuid = fresh_uuid () in
+       Ops.Atomic [
+         Ops.Create_property_value {uuid; owner_uuid = owner; property_ident = query_attr;
+           content = Ops.String_value title; created_at = now};
+         Ops.Set_property {uuid; attr = "logseq.property.node/display-type"; expected = None;
+           value = Some (Ops.Keyword_value "code")};
+         Ops.Set_property {uuid; attr = "logseq.property.code/lang"; expected = None;
+           value = Some (Ops.String_value "clojure")};
+         Ops.Set_property {uuid = owner; attr = query_attr; expected = Option.map (semantic db) value;
+           value = Some (Ops.Ref_uuid uuid)}])
+
 let edit_cell db ~now ~fresh_uuid owner feature _view json =
   let target = required "blockUuid" json in
   if not (List.exists (function Query_block.Block block -> block.uuid = target | _ -> false) (scope db owner feature))

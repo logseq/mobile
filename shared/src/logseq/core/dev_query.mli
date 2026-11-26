@@ -37,6 +37,7 @@ module Edn_util : sig
   val pr_str : Datascript.value -> string
 end
 module Db_query_dsl : sig
+  val canonicalize_entity_refs : (string -> string option) -> string -> string
   type exec_opts = {
     opt_cards : bool;
     opt_block_attrs : string option;

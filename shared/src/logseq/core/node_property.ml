@@ -86,7 +86,9 @@ let mutation db ~now ~fresh_uuid input =
     let has_batch_owners = match input with
       | `Assoc fields -> List.mem_assoc "blockUuids" fields
       | _ -> false in
-    if action = `String "remove" || action = `String "removeTag" then (
+    if action = `String "saveQueryDefinition" then
+      Ok (Result_view.save_query_definition db ~now ~fresh_uuid input)
+    else if action = `String "remove" || action = `String "removeTag" then (
       let owner = required "blockUuid" input in
       let id = match Ds.entid db "block/uuid" (Ds.Uuid owner) with
         | Some id when Node_title.can_edit db id -> id | _ -> invalid_arg "This object is read-only" in

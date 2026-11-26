@@ -675,10 +675,12 @@ let journal_title_match db day =
 let journal_search_hit db day =
   Option.bind (journal_title_match db day) (fun row -> List.nth_opt (hydrate_hits db [row]) 0)
 
+let max_page_size = 100
+
 (* Place the exact journal match before the paged full-text results and omit its indexed duplicate. *)
 let search_hits_page ?journal_day ~offset ~limit index db query =
   if limit <= 0 then [], false else
-    let limit = min 100 limit in
+    let limit = min max_page_size limit in
     let results = match Option.bind journal_day (journal_title_match db) with
       | None -> full_text_rows ~prioritize_pages:true ~offset ~limit:(limit + 1) index query
       | Some journal when offset <= 0 ->

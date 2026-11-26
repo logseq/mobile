@@ -415,6 +415,10 @@ let create_attrs db uuid title created_at =
   | Some eid -> ("block/tags", Ds.Many_values [Ds.Ref eid]) :: attrs
   | None -> attrs
 
+let is_query_definition db eid =
+  not (Node_title.is_page db eid)
+  && not (Seq.is_empty (Datascript_value.datoms_by_ref db Ds.Aevt "logseq.property/query" eid))
+
 (* Resolve pasted and directly typed page refs at the transaction boundary, so
    nested clipboard operations share the same creation and deduplication rules. *)
 let resolve_page_references literal_blocks db intent =
@@ -458,12 +462,16 @@ let resolve_page_references literal_blocks db intent =
           (Ds.entid db "block/uuid" (Ds.Uuid uuid)) in
     if literal then text else Ref_text.to_ids resolve (Graph_read.unique_named_uuid true db) text in
   let next = match intent with
-    | Ops.Save_title value -> Ops.Save_title {value with title = title value.uuid value.title}
+    | Ops.Save_title value ->
+      if Option.exists (is_query_definition db) (Ds.entid db "block/uuid" (Ds.Uuid value.uuid))
+      then intent
+      else Ops.Save_title {value with title = title value.uuid value.title}
     | Ops.Insert_block value -> Ops.Insert_block {value with title = title value.uuid value.title}
     | Ops.Split_block value -> Ops.Split_block {value with before = title value.uuid value.before; after = title value.uuid value.after}
     | Ops.Merge_backward value -> Ops.Merge_backward {value with title = title value.uuid value.title}
     | Ops.Create_journal value -> Ops.Create_journal {value with block_title = title value.block_uuid value.block_title}
-    | Ops.Create_property_value ({content = Ops.String_value text; _} as value) ->
+    | Ops.Create_property_value ({content = Ops.String_value text; _} as value)
+      when value.property_ident <> "logseq.property/query" ->
       Ops.Create_property_value {value with content = Ops.String_value (title value.uuid text)}
     | _ -> intent in
   if !created = [] then next else Ops.Atomic (List.rev !created @ [next])
@@ -638,7 +646,10 @@ let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
     else if Ds.entid db "block/uuid" (Ds.Uuid value.owner_uuid) = None then Error "property owner no longer exists"
     else if Ds.entid db "db/ident" (Ds.Keyword value.property_ident) = None then Error "property no longer exists"
     else Ok (entity_tx (Ds.Temp_id ("pending/" ^ value.uuid)) (property_value_attrs db value)
-      :: (match value.content with Ops.String_value text -> title_tx db value.uuid text | _ -> []))
+      :: (match value.content with
+          | Ops.String_value text when value.property_ident <> "logseq.property/query" ->
+            title_tx db value.uuid text
+          | _ -> []))
   | Ops.Save_title value ->
     (match
        string_value (one_value db (lookup value.uuid) "block/title")
@@ -646,7 +657,9 @@ let rec compile_with_literals literal_blocks db (intent : Ops.pending_intent) =
      | Some current ->
        if current = value.expected_title then
          let id = Option.get (Ds.entid db "block/uuid" (Ds.Uuid value.uuid)) in
-         Result.map (fun () -> title_tx db value.uuid value.title) (Node_title.validate db id value.title)
+         Result.map (fun () ->
+           if is_query_definition db id then [Ds.Add (lookup value.uuid, "block/title", Ds.String value.title)]
+           else title_tx db value.uuid value.title) (Node_title.validate db id value.title)
        else Error "title changed on the server"
      | None -> Error "block no longer exists")
   | Ops.Set_property value ->
