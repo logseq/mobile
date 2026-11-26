@@ -112,6 +112,7 @@ import SwiftUI
             sentry_args = [item for index, value in enumerate(arguments[:-1]) if value == "-Xcc"
                            for item in (value, arguments[index + 1])]
             sentry_args.append("-lc++")
+        print("Linking the simulator runtime check", flush=True)
         run(["xcrun", "--sdk", "iphonesimulator", "swiftc", *optimization, "-parse-as-library", "-DLOGSEQ_LINKED_CORE",
              "-target", "arm64-apple-ios17.0-simulator", "-I", str(BUILD / "Modules"),
              "-I", str(BUILD / "LogseqCoreABI.build"),
@@ -158,7 +159,12 @@ import SwiftUI
             shutil.copy2(assets, app / assets.name)
         fcntl.flock(build_lock, fcntl.LOCK_UN)
         run(["codesign", "--force", "--sign", "-", str(app)])
+        if os.environ.get("LOGSEQ_RUNTIME_CHECK_BOOT_SIMULATOR") == "1":
+            # Simulator startup can contend with the Swift compiler on CI.
+            print("Waiting for the simulator to boot", flush=True)
+            run(["xcrun", "simctl", "bootstatus", SIMULATOR, "-b"])
         terminate_app(SIMULATOR, bundle)
+        print("Installing the simulator runtime check", flush=True)
         run(["xcrun", "simctl", "install", SIMULATOR, str(app)])
         launch_environment = os.environ.copy()
         if benchmark:
@@ -176,13 +182,19 @@ import SwiftUI
             run(["xcrun", "simctl", "launch", SIMULATOR, bundle], env=launch_environment)
             print(f"INTERACTIVE_CHECK_READY bundle={bundle}", flush=True)
             return
+        timeout = 180 if testing else (90 if benchmark else int(os.environ.get("LOGSEQ_RUNTIME_CHECK_TIMEOUT", "30")))
         try:
-            output = subprocess.run(["xcrun", "simctl", "launch", "--console",
-                                     SIMULATOR, bundle], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                    timeout=180 if testing else (90 if benchmark else int(os.environ.get("LOGSEQ_RUNTIME_CHECK_TIMEOUT", "30"))), env=launch_environment)
-            print(output.stdout)
+            print("Launching the simulator runtime check", flush=True)
+            output = subprocess.run(["xcrun", "simctl", "launch", "--console", SIMULATOR, bundle],
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                    timeout=timeout, env=launch_environment)
+            print(output.stdout, flush=True)
             if "RUNTIME_CHECK_COMPLETE" not in output.stdout:
                 raise SystemExit("Simulator runtime check did not complete")
+        except subprocess.TimeoutExpired as error:
+            if error.stdout:
+                print(error.stdout.decode(errors="replace"), flush=True)
+            raise SystemExit(f"Simulator runtime check did not exit within {timeout} seconds") from None
         finally:
             terminate_app(SIMULATOR, bundle)
             artifacts = os.environ.get("LOGSEQ_RUNTIME_CHECK_ARTIFACTS")

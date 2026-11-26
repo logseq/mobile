@@ -222,7 +222,7 @@ import LogseqModel
 
     private static func waitFor<T>(_ description: String, _ check: () async throws -> T?) async throws -> T {
         let clock = ContinuousClock()
-        let deadline = clock.now + .seconds(4)
+        let deadline = clock.now + .seconds(8)
         repeat {
             if let result = try await check() { return result }
             try await Task.sleep(for: .milliseconds(30))

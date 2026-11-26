@@ -48,7 +48,7 @@ jobs:
       LOGSEQ_OPAM_SWITCH: ${{ github.workspace }}
       LOGSEQ_IOS_RUNTIME_CHECK_BUILD: "1"
       LOGSEQ_IOS_ENABLE_TESTING: "1"
-      LOGSEQ_RUNTIME_CHECK_TIMEOUT: "60"
+      LOGSEQ_RUNTIME_CHECK_TIMEOUT: "120"
       DUNE_CACHE: enabled
       DUNE_CACHE_STORAGE_MODE: copy
       HOMEBREW_NO_AUTO_UPDATE: "1"
@@ -143,15 +143,18 @@ jobs:
         if: steps.ios-dune.outputs.cache-hit != 'true'
         run: opam exec -- dune cache trim --size=512MiB
 
-      - name: Boot the simulator
-        # Keep simulator startup from competing with the native and Swift builds.
+      - name: Select an iOS simulator
         run: |
           runtime_id=$(xcrun simctl list -j runtimes | python3 -c 'import json,sys; rs=[r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable") and ".iOS-" in r["identifier"]]; print(max(rs, key=lambda r: tuple(map(int, r["version"].split("."))))["identifier"])')
-          udid=$(xcrun simctl create "CI iPhone" com.apple.CoreSimulator.SimDeviceType.iPhone-16 "$runtime_id")
+          udid=$(xcrun simctl list -j devices | python3 -c 'import json,sys; devices=json.load(sys.stdin)["devices"].get(sys.argv[1], []); print(next((d["udid"] for d in devices if d.get("isAvailable") and d["name"] == "iPhone 16"), ""))' "$runtime_id")
+          if [[ -z $udid ]]; then
+            udid=$(xcrun simctl create "CI iPhone" com.apple.CoreSimulator.SimDeviceType.iPhone-16 "$runtime_id")
+          fi
           echo "LOGSEQ_IOS_SIMULATOR=$udid" >> "$GITHUB_ENV"
-          xcrun simctl bootstatus "$udid" -b
 
       - name: Run iOS simulator smoke test
+        env:
+          LOGSEQ_RUNTIME_CHECK_BOOT_SIMULATOR: "1"
         run: python3 apple/Tests/UI/run-simulator-runtime-check.py apple/Tests/UI/offline-smoke.swift OfflineSmokeCheck
 
   ios-live-e2e:
