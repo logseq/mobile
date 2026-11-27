@@ -757,6 +757,9 @@ private struct LGNavigationContent: View {
     @Environment(\.luiSemanticColors) private var semanticColors
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
     private var search: LGNativeSearchState? { toolbarStartIndex == nil ? nil : inheritedSearch }
     private func nativeSearchHost(_ search: LGNativeSearchState?) -> LGNativeSearchHost {
@@ -768,6 +771,13 @@ private struct LGNavigationContent: View {
     }
     private var searchVisible: Bool { search?.isVisible == true }
     private var verticalToolbar: Bool { verticalToolbarEdge != nil }
+    private var verticalTitleTopPadding: CGFloat {
+        #if os(iOS)
+        // Align the title with the unfolded split view's native sidebar control.
+        if LGSidebarOverlay.isDuo && horizontalSizeClass == .regular { return -44 }
+        #endif
+        return 0
+    }
     private var searchRoutes: [Int] {
         guard searchVisible, let search else { return [] }
         return pageRoutes(in: search.context, depth: search.depth)
@@ -1134,6 +1144,7 @@ private struct LGNavigationContent: View {
                 let hideTitle = searchVisible || pdfWorkspaceOpen
                 rootHeaderTitle
                 .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.top, verticalTitleTopPadding)
                 .opacity(hideTitle ? 0 : 1)
                 .allowsHitTesting(!hideTitle)
                 .accessibilityHidden(hideTitle)
