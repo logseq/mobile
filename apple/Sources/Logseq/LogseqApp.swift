@@ -1179,6 +1179,7 @@ struct LogseqCognitoConfiguration: Decodable {
         payload["graphId"] = target.id
         payload["catalogPath"] = catalogPath
         payload["baseUrl"] = LogseqSettingsPolicy.storedBaseURL()
+        payload["token"] = try? CognitoTokenStore().load()?.idToken
         payload["activePath"] = directory.appendingPathComponent("graph.sqlite").path
         payload["checkpointPath"] = directory.appendingPathComponent("sync.checkpoint").path
         let response = await call(action, payload)
