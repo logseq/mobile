@@ -165,8 +165,8 @@ class AndroidEnterPerformanceTest {
         fun persistedInsertCount(): Int =
             SQLiteDatabase.openDatabase(database.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
                 db.rawQuery(
-                    "SELECT COUNT(*) FROM logseq_pending_ops WHERE json_extract(intent, '$.type') = ?",
-                    arrayOf("insert-block"),
+                    "SELECT COUNT(*) FROM logseq_pending_ops WHERE json_extract(intent, '$.type') IN (?, ?)",
+                    arrayOf("insert-block", "split-block"),
                 ).use { rows ->
                     check(rows.moveToFirst())
                     rows.getInt(0)
