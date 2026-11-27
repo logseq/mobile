@@ -1597,13 +1597,18 @@ let journal_tasks_use_a_bounded_date_window () = R.with_runtime (fun _ runtime c
     deadline Q.owner 20261115;
     deadline Q.definition 20261201; doing Q.definition];
   let cache = Journal_task_dates.create_cache () in
-  let project () = Journal_task_dates.project cache ~graph:"tasks" ~now:(Int64.to_int (local 20261123))
+  let project ?lookback () = Journal_task_dates.project ?lookback cache ~graph:"tasks" ~now:(Int64.to_int (local 20261123))
     ~force:false (Graph_runtime.db runtime) in
   let uuids section response = List.map (member "uuid") (items section response) in
   let initial = project () in
   check_eq ~msg:"Today includes six prior days plus today" (uuids "today" initial) [];
   check_eq ~msg:"Upcoming includes dates beyond one week"
     (List.sort compare (uuids "upcoming" initial)) (List.sort compare [`String Q.beta; `String Q.definition]);
+  let custom = project ~lookback:(Journal_task_dates.CustomDays 8) () in
+  check_eq ~msg:"A new lookback recomputes Today even on the same graph snapshot"
+    (uuids "today" custom) [`String Q.alpha];
+  check_eq ~msg:"The Today lookback leaves Upcoming unchanged"
+    (uuids "upcoming" custom) (uuids "upcoming" initial);
   rebase runtime conn [
     put Q.alpha Journal_task_dates.scheduled (Ds.Int64 (local 20261117));
     put Q.owner Journal_task_dates.scheduled (Ds.Int64 (local 20261123));

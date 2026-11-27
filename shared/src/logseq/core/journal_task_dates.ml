@@ -12,6 +12,27 @@ let identity value = Ok value
 let week_days = 7
 let max_upcoming_days = 31
 
+type lookback = OneWeek | OneMonth | ThreeMonths | CustomDays of int
+
+let custom_days text =
+  let text = String.trim text in
+  if String.for_all (function '0' .. '9' -> true | _ -> false) text then
+    match int_of_string_opt text with
+    | Some days when days >= 1 && days <= 36_600 -> Some days
+    | _ -> None
+  else None
+
+let lookback_to_string = function
+  | OneWeek -> "week"
+  | OneMonth -> "month"
+  | ThreeMonths -> "three-months"
+  | CustomDays days -> string_of_int days
+
+let lookback_of_string = function
+  | "month" -> OneMonth
+  | "three-months" -> ThreeMonths
+  | value -> Option.fold ~none:OneWeek ~some:(fun days -> CustomDays days) (custom_days value)
+
 let task_group_key section page = "task-page:" ^ section ^ ":" ^ page
 
 let task_field key = function
@@ -55,13 +76,18 @@ let date = Task_recurrence.date
 let status_attr = "logseq.property/status"
 let doing_ident = "logseq.property/status.doing"
 
-let rows ?actor ?on_comment_reference ?(includes = fun _ -> true) db today lookahead =
+let rows ?actor ?on_comment_reference ?(includes = fun _ -> true) ?(lookback = OneWeek) db today lookahead =
   let offset_day days =
     Option.value ~default:today (Dev_query.Date_time_util.journal_day_plus today days) in
-  let first_today = offset_day (1 - week_days) in
   let first_upcoming = offset_day 1 in
   let module Date = Dev_query.Date_time_util in
   let midnight = Date.journal_day_to_local_ms today in
+  let first_today = match lookback with
+    | OneWeek -> offset_day (1 - week_days)
+    | CustomDays days -> offset_day (1 - days)
+    | OneMonth | ThreeMonths ->
+      let months = if lookback = OneMonth then 1 else 3 in
+      Cache_model.journal_day_for_ms (Int64.to_int Date.(plus Days 1 (minus Months months midnight))) in
   let last_upcoming = Cache_model.journal_day_for_ms (Int64.to_int (Date.plus Months 1 midnight)) in
   let upcoming_end = Option.map (fun days -> min last_upcoming (offset_day days)) lookahead in
   let last_activity eid =
@@ -110,10 +136,20 @@ let rows ?actor ?on_comment_reference ?(includes = fun _ -> true) db today looka
         match datom.v with
         | Ds.Int64 time | Ds.Instant time when time >= start && time <= stop -> Some datom.e
         | _ -> None) datoms) in
-  let recent_eids = Seq.init week_days (fun i -> offset_day (-i)) |> Seq.flat_map (fun day ->
-    match Option.bind (Read.journal_page_uuid db day)
-      (fun uuid -> Ds.entid db "block/uuid" (Ds.Uuid uuid)) with
-    | Some page -> eids_with_ref "block/page" page | None -> Seq.empty) in
+  let recent_eids =
+    let attr = "block/journal-day" in
+    let start = Int64.of_int first_today and stop = Int64.of_int today in
+    let datoms = if Ds.Schema.schema_attr_is_avet_accessible (Ds.schema db) attr then
+        Ds.index_range db attr ~start:(Ds.Int64 start) ~stop:(Ds.Int64 stop) ()
+      else Ds.Db.datoms db Ds.Aevt ~a:attr () in
+    let seen_days = Hashtbl.create week_days in
+    datoms |> Seq.flat_map (fun (datom : Ds.datom) ->
+      match datom.v with
+      | Ds.Int64 day when day >= start && day <= stop && not (Hashtbl.mem seen_days day)
+          && not (Read.page_is_hidden db datom.e) && Read.uuid_for_eid db datom.e <> None ->
+        Hashtbl.add seen_days day ();
+        eids_with_ref "block/page" datom.e
+      | _ -> Seq.empty) in
   let order_path eid page =
     let rec collect seen path eid =
       if eid = page || List.mem eid seen then path
@@ -171,6 +207,7 @@ type cached_projection = {
   day : int;
   timezone : string;
   actor : string option;
+  lookback : lookback;
   db : Ds.db Weak.t;
   result : Json.t;
   comment_references : Uuids.t;
@@ -182,14 +219,16 @@ let create_cache () : cache = ref []
 let remove_cached_graph cache graph = cache := List.remove_assoc graph !cache
 let clear_cache cache = cache := []
 
-let project ?read_rows ?actor cache ~graph ~now ~force db =
+let project ?read_rows ?actor ?(lookback = OneWeek) cache ~graph ~now ~force db =
   let comment_references = ref Uuids.empty in
   let on_comment_reference uuid = comment_references := Uuids.add uuid !comment_references in
-  let read_rows = Option.value ~default:(fun db day days -> rows ?actor ~on_comment_reference db day days) read_rows in
+  let read_rows = Option.value ~default:(fun db day days ->
+    rows ?actor ~on_comment_reference ~lookback db day days) read_rows in
   let day = Cache_model.journal_day_for_ms now in
   let timezone = Int64.to_string (Dev_query.Date_time_util.journal_day_to_local_ms day) in
   let previous = match List.assoc_opt graph !cache with
-    | Some value when value.day = day && value.timezone = timezone && value.actor = actor -> Some value
+    | Some value when value.day = day && value.timezone = timezone && value.actor = actor
+                   && value.lookback = lookback -> Some value
     | _ -> None in
   let remember value =
     let remaining = List.remove_assoc graph !cache in
@@ -200,21 +239,22 @@ let project ?read_rows ?actor cache ~graph ~now ~force db =
   | Some value when not force && Option.exists ((==) db) (Weak.get value.db 0) ->
     remember value
   | _ ->
+    let range = "lookback", `String (lookback_to_string lookback) in
     let result =
       try
         let disabled, days = configuration db in
         let today, upcoming = read_rows db day (if disabled then None else Some days) in
         `Assoc ["graphId", `String graph; "day", `Int day; "error", `Bool false; "success", `Bool true;
-          "retained", `Bool false; "today", today; "upcoming", upcoming]
+          "retained", `Bool false; range; "today", today; "upcoming", upcoming]
       with error ->
         prerr_endline ("journal task query: " ^ Printexc.to_string error);
         let prior name = match previous with Some value -> member name value.result | None -> `List [] in
         `Assoc ["graphId", `String graph; "day", `Int day; "error", `Bool true;
           "retained", `Bool (Option.exists (fun value -> member "success" value.result = `Bool true || member "retained" value.result = `Bool true) previous);
-          "today", prior "today"; "upcoming", prior "upcoming"] in
+          range; "today", prior "today"; "upcoming", prior "upcoming"] in
     let source = Weak.create 1 in
     Weak.set source 0 (Some db);
-    remember {day; timezone; actor; db = source; result; comment_references = !comment_references}
+    remember {day; timezone; actor; lookback; db = source; result; comment_references = !comment_references}
 
 let refreshable_attr = function
   | "block/title" | "block/updated-at" | "block/tx-id"
@@ -262,7 +302,7 @@ let refresh_blocks cache ~before ~after eids =
             Hashtbl.replace changed eid ();
             Option.iter (fun uuid -> Hashtbl.replace uuids (`String uuid) ()) (Read.uuid_for_eid after eid)) eids;
           let today, upcoming = rows ?actor:cached.actor ~on_comment_reference ~includes:(Hashtbl.mem changed)
-            after cached.day (if disabled then None else Some days) in
+            ~lookback:cached.lookback after cached.day (if disabled then None else Some days) in
           let uuid row = task_field "uuid" row in
           let compare_rows left right = compare (uuid left) (uuid right) in
           let replace old updated = match old, updated with

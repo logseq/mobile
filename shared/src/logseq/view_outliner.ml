@@ -2170,6 +2170,15 @@ let tasks_menu ~android model_source send =
         ~accessibility_identifier:("tasks.menu." ^ id)
         [dropdown_menu_view (dropdown_menu entries)]
     else dropdown_menu_submenu ~text:(tr label) ~icon ?disabled_signal entries in
+  let today = option (fun options -> options.Model.tab = Model.TasksToday) in
+  let lookback_choice (id, label, value) =
+    choice id label (fun options -> options.Model.lookback)
+      (fun options lookback -> {options with Model.lookback}) value in
+  let custom_lookback =
+    dropdown_menu_item ~text:(tr "Custom…") ~accessibility_identifier:"tasks.menu.range.custom"
+      ~selected_signal:(option (fun options ->
+        match options.Model.lookback with Journal_task_dates.CustomDays _ -> true | _ -> false))
+      ~on_press:(fun _ -> ignore (send (Model.SetTasksLookbackSheet true))) [] in
   let control = box ~width:44 ~height:44 [
     menu ~icon:(`app "more-horiz") ?style_class:(if android then None else Some "capsule")
       ?foreground:(if android then Some "foreground" else None)
@@ -2200,12 +2209,19 @@ let tasks_menu ~android model_source send =
             choice id label (fun options -> options.Model.compact)
               (fun options compact -> { options with Model.compact }) value)
             ["compact", "Compact", true; "expanded", "Expanded", false]);
-        if_dropdown_menu_item ~test:(option (fun options -> options.Model.tab = Model.TasksToday))
+        if_dropdown_menu_item ~test:today
           (dropdown_menu_separator []);
-        if_dropdown_menu_item ~test:(option (fun options -> options.Model.tab = Model.TasksToday))
+        if_dropdown_menu_item ~test:today
+          (submenu "range" "Time range" (`app "calendar")
+            (List.map lookback_choice Journal_task_dates.[
+              "range.week", "One week", OneWeek;
+              "range.month", "One month", OneMonth;
+              "range.three-months", "Three months", ThreeMonths;
+            ] @ [custom_lookback]));
+        if_dropdown_menu_item ~test:today
           (toggle "completed" "Show completed tasks" (fun options -> options.Model.show_completed)
              (fun options show_completed -> { options with Model.show_completed }));
-        if_dropdown_menu_item ~test:(option (fun options -> options.Model.tab = Model.TasksToday))
+        if_dropdown_menu_item ~test:today
           (toggle "past" "Show past-dated tasks" (fun options -> options.Model.show_past)
              (fun options show_past -> { options with Model.show_past }));
       ]
@@ -2216,6 +2232,57 @@ let tasks_menu ~android model_source send =
     ignore (mount context ~parent:node control);
     attach context parent node;
     node)
+
+let tasks_lookback_sheet model_source send =
+  if_ ~test:(reactive (fun (model : Model.logseq_model) -> model.tasks_lookback_sheet_open) model_source)
+    (custom (fun context parent ->
+      let current : Model.logseq_model = Signal.sample model_source in
+      let tr = View_base.tr current in
+      let initial = match current.tasks_view.lookback with
+        | Journal_task_dates.CustomDays days -> string_of_int days
+        | _ -> "" in
+      let input = Signal.state context.ui_scheduler initial in
+      let value = Signal.value input in
+      let invalid text = Journal_task_dates.custom_days text = None in
+      let close () = ignore (send (Model.SetTasksLookbackSheet false)) in
+      let save () =
+        Option.iter (fun days ->
+          update_tasks_view model_source send (fun options ->
+            {options with Model.lookback = Journal_task_dates.CustomDays days}))
+          (Journal_task_dates.custom_days (Signal.sample value)) in
+      let cancel_label = tr "Cancel" and save_label = tr "Done" in
+      let done_id = "button.tasks.range.done" in
+      let actions =
+        if Lui_ui.host context = KotlinHost then
+          row ~main:`space_between ~padding:12 [
+            button ~text:cancel_label ~variant:`ghost ~on_press:(fun _ -> close ()) [];
+            button ~text:save_label ~variant:`primary ~accessibility_identifier:done_id
+              ~disabled:(reactive invalid value) ~on_press:(fun _ -> save ()) [];
+          ]
+        else
+          toolbar ~label:(tr "Time range") ~style_class:"navigation-actions" [
+            Lui_elements.toolbar_button ~text:cancel_label ~variant:`ghost ~style_class:"cancel-action"
+              ~on_press:(fun _ -> close ()) [];
+            Lui_elements.toolbar_button ~text:save_label ~variant:`ghost ~style_class:"confirmation-action"
+              ~accessibility_identifier:done_id ~disabled:(reactive invalid value) ~on_press:(fun _ -> save ()) [];
+          ] in
+      mount context ?parent
+        (View_base.sheet ~model_source ~title:(tr "Custom time range") ~detents:"medium,large"
+          ~style_class:"navigation-list navigation-inline-title" ~accessibility_identifier:"sheet.tasks.range"
+          ~on_dismiss:(fun _ -> close ()) [
+          list ~grow:1.0 ~style:`inset_grouped [
+            list_section [
+              list_section_item [
+                text_field ~text:(reactive value) ~label:(tr "Number of days")
+                  ~placeholder:(tr "Number of days") ~accessibility_identifier:"field.tasks.range.days"
+                  ~on_input:(Signal.set input) ~on_submit:save [];
+              ];
+              list_section_item [text ~value:(tr "Enter 1 to 36,600 days, including today.")
+                ~foreground:"muted-foreground" []];
+            ];
+          ];
+          actions;
+        ])))
 
 let tasks_screen context model_source send : t = custom @@ fun mount_context parent ->
   let own signal = Signal.own_signal mount_context.ui_scope signal in
@@ -2249,6 +2316,7 @@ let tasks_screen context model_source send : t = custom @@ fun mount_context par
     ]) in
   mount mount_context ?parent (View_base.with_reading_insets
     (column ~grow:1.0 ~accessibility_identifier:"screen.tasks" [
+      tasks_lookback_sheet model_source send;
       keyed ~source:(own (Signal.map2 (fun tab empty -> [tab, empty]) tab empty)) ~key:Fun.id ~cmp:compare
         ~mount:(fun source ->
           let active_tab, is_empty = Signal.sample source in

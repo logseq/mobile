@@ -6,6 +6,7 @@ val app :
   unit -> (Model.logseq_model, Model.logseq_action) Lui_app.reducer_app
 
 val show_journal_tasks : unit -> bool
+val task_lookback : unit -> Journal_task_dates.lookback
 val show_notifications : unit -> bool
 
 val flush_event : Lui_protocol.event -> string

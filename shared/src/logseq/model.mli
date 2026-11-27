@@ -49,6 +49,7 @@ type tasks_view =
   ; compact : bool
   ; show_completed : bool
   ; show_past : bool
+  ; lookback : Journal_task_dates.lookback
   }
 
 val default_tasks_view : tasks_view
@@ -431,6 +432,7 @@ type logseq_model =
   ; destination : primary_destination
   ; home_scroll_request : int
   ; tasks_view : tasks_view
+  ; tasks_lookback_sheet_open : bool
   ; tasks_selection_mode : bool
   ; sidebar_open : bool
   ; viewport_width : int
@@ -658,6 +660,7 @@ type logseq_action =
   | ScrollHomeToTop
   | ShowTasks
   | SetTasksView of tasks_view
+  | SetTasksLookbackSheet of bool
   | SelectTasks
   | ShowNotifications
   | ToggleRecentNotifications

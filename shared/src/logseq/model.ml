@@ -62,11 +62,13 @@ type tasks_view =
   ; compact : bool
   ; show_completed : bool
   ; show_past : bool
+  ; lookback : Journal_task_dates.lookback
   }
 
 let default_tasks_view =
   {tab = TasksToday; group_by_page = true; sort_tasks = ScheduledDate;
-   sort_pages = PageUpdated; compact = false; show_completed = true; show_past = true}
+   sort_pages = PageUpdated; compact = false; show_completed = true; show_past = true;
+   lookback = Journal_task_dates.OneWeek}
 
 type ui_session =
   { graph_id : string option
@@ -445,6 +447,7 @@ type logseq_model =
   ; destination : primary_destination
   ; home_scroll_request : int
   ; tasks_view : tasks_view
+  ; tasks_lookback_sheet_open : bool
   ; tasks_selection_mode : bool
   ; sidebar_open : bool
   ; viewport_width : int
@@ -672,6 +675,7 @@ type logseq_action =
   | ScrollHomeToTop
   | ShowTasks
   | SetTasksView of tasks_view
+  | SetTasksLookbackSheet of bool
   | SelectTasks
   | ShowNotifications
   | ToggleRecentNotifications
@@ -882,6 +886,7 @@ let initial () =
     destination = JournalsDestination;
     home_scroll_request = 0;
     tasks_view = default_tasks_view;
+    tasks_lookback_sheet_open = false;
     tasks_selection_mode = false;
     sidebar_open = false;
     viewport_width = 0;
@@ -2569,6 +2574,12 @@ let rec update (current : logseq_model) action =
     let applied = if projection.is_pdf_patch || projection.is_collaboration_patch then current
       else apply_core_snapshot current projection in
     let graph_changed = applied.selected_graph_id <> current.selected_graph_id in
+    let applied =
+      let lookback model = journal_task_field "lookback" model.journal_tasks in
+      if not graph_changed && lookback applied <> lookback current
+        && journal_task_field "success" applied.journal_tasks = `Bool true then
+        settle_hidden_task_editor applied
+      else applied in
     let applied = if graph_changed then {applied with collaboration = `Null; reaction_picker = None; discussion_target = None;
       discussion_composition = None; expanded_discussions = [];
       discussion_draft = ""; saved_discussion_drafts = []; discussion_error = None} else applied in
@@ -3043,7 +3054,8 @@ let rec update (current : logseq_model) action =
            let request = Yojson.Basic.from_string payload in
            let graph = Option.fold ~none:`Null ~some:(fun id -> `String id) resolved_current.selected_graph_id in
            journal_task_field "graphId" request = graph
-           && journal_task_field "day" request = journal_task_field "day" resolved_current.journal_tasks
+           && (journal_task_field "day" request = `Null
+               || journal_task_field "day" request = journal_task_field "day" resolved_current.journal_tasks)
          | _ -> false in
        let journal_tasks =
          match resolved_current.journal_tasks with
@@ -3421,6 +3433,7 @@ let rec update (current : logseq_model) action =
         sidebar_open = sidebar_after_navigation current;
         graph_menu_open = false;
         tasks_selection_mode = false;
+        tasks_lookback_sheet_open = false;
         pending_push_route = None;
         destination;
       }
@@ -3430,9 +3443,16 @@ let rec update (current : logseq_model) action =
   | SetTasksView _ when tasks_selection_active current -> current
   | SetTasksView tasks_view ->
     let updated = settle_hidden_task_editor ~remount:(current.tasks_view.tab <> tasks_view.tab)
-      { current with tasks_view } in
-    if { current.tasks_view with tab = tasks_view.tab } = tasks_view then updated
-    else update updated SaveUISession
+      { current with tasks_view; tasks_lookback_sheet_open = false } in
+    let updated =
+      if { current.tasks_view with tab = tasks_view.tab } = tasks_view then updated
+      else update updated SaveUISession in
+    (match updated.selected_graph_id with
+     | Some graph when current.tasks_view.lookback <> tasks_view.lookback ->
+       let payload = Yojson.Basic.to_string (`Assoc ["action", `String "refreshJournalTasks"; "graphId", `String graph]) in
+       update updated (SubmitNodeProperty ("journal-tasks.refresh", payload))
+     | _ -> updated)
+  | SetTasksLookbackSheet open_ -> {current with tasks_lookback_sheet_open = open_}
   | SelectTasks ->
     { (cancel_outliner_editing current) with tasks_selection_mode = true }
   | ShowFlashcards when not (List.mem "flashcards" current.sidebar_tabs) -> current

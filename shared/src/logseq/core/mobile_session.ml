@@ -146,12 +146,12 @@ let host_options ?journal_tasks ?show_journal_tasks (database : Database.mobile_
       Some (fun day -> Graph.journal_page_uuid graph day);
   }
 
-let create_rpc_session ?show_journal_tasks ?show_notifications database ring catalog =
+let create_rpc_session ?show_journal_tasks ?task_lookback ?show_notifications database ring catalog =
   let journal_tasks = Journal_task_dates.create_cache () in
   let options = host_options ~journal_tasks ?show_journal_tasks database ring catalog in
-  Rpc.create_session ~journal_tasks {options with show_notifications}
+  Rpc.create_session ~journal_tasks {options with task_lookback; show_notifications}
 
-let create ?show_journal_tasks ?show_notifications crypto_call =
+let create ?show_journal_tasks ?task_lookback ?show_notifications crypto_call =
   let ring = Platform.create_keyring crypto_call Http.send in
   let graph =
     Graph.create
@@ -166,7 +166,7 @@ let create ?show_journal_tasks ?show_notifications crypto_call =
       }
   in
   let database = Database.create graph in
-  let session = create_rpc_session ?show_journal_tasks ?show_notifications database ring None in
+  let session = create_rpc_session ?show_journal_tasks ?task_lookback ?show_notifications database ring None in
   session.Types.state :=
     { !(session.Types.state) with Types.sidebar_deferred = true };
   { database; keyring = ring; session = ref session }
@@ -177,6 +177,7 @@ let call (host : mobile_session) request =
     let catalog = Database.open_catalog host.database path in
     let options = Types.host !(host.session) in
     let session = create_rpc_session ?show_journal_tasks:options.show_journal_tasks
+      ?task_lookback:options.task_lookback
       ?show_notifications:options.show_notifications host.database host.keyring (Some catalog) in
     session.Types.state :=
       { !(session.Types.state) with Types.sidebar_deferred = true };
@@ -184,7 +185,7 @@ let call (host : mobile_session) request =
     Rpc.call session snapshot_request
   | None -> Rpc.call !(host.session) request
 
-let start ?show_journal_tasks ?show_notifications crypto_call =
-  let host = create ?show_journal_tasks ?show_notifications crypto_call in
+let start ?show_journal_tasks ?task_lookback ?show_notifications crypto_call =
+  let host = create ?show_journal_tasks ?task_lookback ?show_notifications crypto_call in
   Callback.register "logseq_mobile_call" (fun request -> call host request);
   host

@@ -17,6 +17,6 @@ val host_options :
   E2ee_keyring.e2ee_keyring ->
   Sqlite.session option ->
   Session_types.host_options
-val create : ?show_journal_tasks:(unit -> bool) -> ?show_notifications:(unit -> bool) -> (string -> string) -> mobile_session
+val create : ?show_journal_tasks:(unit -> bool) -> ?task_lookback:(unit -> Journal_task_dates.lookback) -> ?show_notifications:(unit -> bool) -> (string -> string) -> mobile_session
 val call : mobile_session -> string -> string
-val start : ?show_journal_tasks:(unit -> bool) -> ?show_notifications:(unit -> bool) -> (string -> string) -> mobile_session
+val start : ?show_journal_tasks:(unit -> bool) -> ?task_lookback:(unit -> Journal_task_dates.lookback) -> ?show_notifications:(unit -> bool) -> (string -> string) -> mobile_session
