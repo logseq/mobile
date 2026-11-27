@@ -359,18 +359,27 @@ let with_favorite_graphs f =
     f host call fields cache download)
 
 let shortcut_captures_without_an_open_graph () =
-  with_favorite_graphs (fun host call fields cache _ ->
+  with_favorite_graphs (fun host call fields _ _ ->
     let module Ds = Datascript in
     let graph = host.Mobile_session.database.Mobile_database.graph in
-    cache "graph-b";
     check_eq !(graph.current) None;
     let graph_fields = fields "graph-b" in
-    let directory =
-      List.assoc "activePath" graph_fields |> Yojson.Basic.Util.to_string |> Filename.dirname in
+    let path name = List.assoc name graph_fields |> Yojson.Basic.Util.to_string in
+    let active = path "activePath" in
+    Graph_sqlite.prepare_staging active;
+    ignore (Ds.store (Graph_bootstrap.install_canonical_entities
+      (Ds.parse_tx_data_string Graph_bootstrap_data.transaction_edn
+       |> List.map Graph_bootstrap.normalize_scalar_maps) (Graph_store.storage active)));
+    (match Sync_checkpoint.save_checkpoint_atomic (path "checkpointPath")
+       (Sync_checkpoint.create "graph-b" "1" 12) with
+     | Ok () -> () | Error message -> fail message);
     let uuid = "00000000-0000-4000-8000-000000000311" in
+    let alice = "00000000-0000-4000-8000-000000000001" in
+    let token = "header.eyJzdWIiOiAiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwgImNvZ25pdG86dXNlcm5hbWUiOiAiQWxpY2UiLCAiZW1haWwiOiAiYWxpY2VAZXhhbXBsZS5jb20ifQ.signature" in
     ignore (call "captureLocalShortcutText" (graph_fields @ [
-      "catalogPath", `String (Filename.concat directory "catalog.sqlite");
+      "catalogPath", `String (Filename.concat (Filename.dirname active) "catalog.sqlite");
       "baseUrl", `String "https://example.com";
+      "token", `String token;
       "uuid", `String uuid;
       "text", `String "Captured from Shortcuts";
     ]));
@@ -381,7 +390,11 @@ let shortcut_captures_without_an_open_graph () =
     let db = Option.get (Mobile_graph.projected_db graph) in
     let eid = Option.get (Ds.entid db "block/uuid" (Ds.Uuid uuid)) in
     let block = Option.get (Graph_read.block (fun value -> Ok value) db eid) in
-    check_eq block.title "Captured from Shortcuts")
+    check_eq block.title "Captured from Shortcuts";
+    let authors = Graph_read.ref_eids db eid "logseq.property/created-by-ref" in
+    check_eq ~msg:"capture retains its author after reopening without a token"
+      (List.map (fun author -> Graph_read.value db author "block/uuid") authors)
+      [Some (Ds.Uuid alice)])
 
 let favorite_ids response =
   let open Yojson.Basic.Util in
