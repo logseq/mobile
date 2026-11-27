@@ -799,6 +799,16 @@ private struct LGNavigationContent: View {
         verticalToolbar && !selectionActive && hasCollapsedComposer && captureActionIDs.count == 4
     }
 
+    private var sideTabsID: Int? {
+        guard usesSideCaptureActions, let index = bottomChromeIndex, let chrome = childID(at: index) else { return nil }
+        func tabStrip(in node: Int) -> Int? {
+            if context.extensionIdentifier(of: node) == "bottom-tab-strip" { return node }
+            let _ = context.measureStamp(of: node)
+            return context.childIDs(of: node).lazy.compactMap(tabStrip(in:)).first
+        }
+        return tabStrip(in: chrome)
+    }
+
     private var rootTitleContent: Int? {
         guard let toolbarStartIndex,
               let titleSlot = childID(at: toolbarStartIndex + 1) else { return nil }
@@ -1141,7 +1151,7 @@ private struct LGNavigationContent: View {
             .background {
                 if toolbarStartIndex != nil {
                     LGCaptureRailHost(
-                        content: AnyView(captureRail
+                        content: AnyView(sideControls
                             .environment(\.luiSemanticColors, semanticColors)
                             .environment(\.locale, locale)
                             .environment(\.colorScheme, colorScheme)),
@@ -1152,6 +1162,17 @@ private struct LGNavigationContent: View {
                 }
             }
             #endif
+    }
+
+    private var sideControls: some View {
+        VStack(spacing: 9) {
+            captureRail
+            if let tabs = sideTabsID {
+                context.nodeView(of: tabs)
+                    .environment(\.lgRendersSideTabs, true)
+            }
+        }
+        .fixedSize()
     }
 
     private var captureRail: some View {
@@ -1423,6 +1444,7 @@ private struct LGNavigationContent: View {
     private var floatingBottomChrome: some View {
         sizedBottomChrome
             .environment(\.lgUsesSideCaptureActions, usesSideCaptureActions)
+            .environment(\.lgPlacesTabsOnSide, sideTabsID != nil)
             .fixedSize(horizontal: false, vertical: true)
     }
 

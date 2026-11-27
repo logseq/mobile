@@ -4,6 +4,11 @@ import SwiftUI
 import UIKit
 #endif
 
+extension EnvironmentValues {
+    @Entry var lgPlacesTabsOnSide = false
+    @Entry var lgRendersSideTabs = false
+}
+
 @MainActor
 struct LGBottomTabStrip: View {
     let context: LUIAppleExtensionViewContext
@@ -12,6 +17,8 @@ struct LGBottomTabStrip: View {
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.lgPlacesTabsOnSide) private var placesTabsOnSide
+    @Environment(\.lgRendersSideTabs) private var rendersSideTabs
     @GestureState private var dragPosition: CGFloat?
     @State private var pendingSelection: Int?
     @State private var size: CGSize = .zero
@@ -37,7 +44,9 @@ struct LGBottomTabStrip: View {
     @ViewBuilder var body: some View {
         let _ = context.revision
         #if os(iOS)
-        if #available(iOS 26.0, *), let items = nativeItems {
+        if rendersSideTabs, let items = nativeItems {
+            sideStrip(items)
+        } else if !placesTabsOnSide, #available(iOS 26.0, *), let items = nativeItems {
             let horizontalMargin: CGFloat = 21
             LGNativeBottomTabBar(
                 items: items, selectedIndex: selectedIndex,
@@ -50,7 +59,7 @@ struct LGBottomTabStrip: View {
             .background(LGSidebarPanExclusion())
             // Align the floating items within UITabBar with the trailing actions.
             .offset(y: 11)
-        } else {
+        } else if !placesTabsOnSide {
             fallbackStrip
         }
         #else
@@ -93,6 +102,47 @@ struct LGBottomTabStrip: View {
     }
 
     #if os(iOS)
+    private func sideStrip(_ items: [LGNativeBottomTabBar.Item]) -> some View {
+        let primary = colors["foreground"] ?? .primary
+        let accent = colors["link"] ?? .accentColor
+        return VStack(spacing: 2) {
+            ForEach(items.indices, id: \.self) { index in
+                let item = items[index]
+                let selected = index == selectedIndex
+                Button {
+                    guard context.isUserInteractionEnabled else { return }
+                    try? context.emit(name: "select", values: ["index": .int(index)])
+                } label: {
+                    if let icon = item.icon(selected ? item.selectedImage : item.image,
+                                            foreground: UIColor(primary), accent: UIColor(accent)) {
+                        Image(uiImage: icon)
+                            .renderingMode(item.unread == true ? .original : .template)
+                            .font(.system(size: 23))
+                            .foregroundStyle(selected ? accent : primary)
+                            .frame(width: 44, height: 44)
+                            .background {
+                                if selected { indicator(dragging: false) }
+                            }
+                            .contentShape(Rectangle())
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(item.title)
+                .accessibilityIdentifier("tab.bottom.\(item.name)")
+                .accessibilityAddTraits(selected ? .isSelected : [])
+                .simultaneousGesture(TapGesture(count: 2).onEnded {
+                    guard item.name == "home", context.isUserInteractionEnabled else { return }
+                    try? context.emit(name: "home-double-tap")
+                })
+            }
+        }
+        .padding(.horizontal, 2)
+        .padding(.vertical, 4)
+        .modifier(LGLiquidGlassSurface(shape: .capsule))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("group.side.tabs")
+    }
+
     private var nativeItems: [LGNativeBottomTabBar.Item]? {
         guard case let .string(json) = context.property("items") else { return nil }
         return try? JSONDecoder().decode([LGNativeBottomTabBar.Item].self, from: Data(json.utf8))
@@ -175,7 +225,7 @@ private struct LGNativeBottomTabBar: UIViewRepresentable {
             item.accessibilityIdentifier = "tab.bottom.\(name)"
         }
 
-        @MainActor private func icon(_ iconName: String, foreground: UIColor, accent: UIColor) -> UIImage? {
+        @MainActor func icon(_ iconName: String, foreground: UIColor, accent: UIColor) -> UIImage? {
             switch LGIconPolicy.icons[iconName] {
             case let .systemName(symbol):
                 if name == "notifications",
