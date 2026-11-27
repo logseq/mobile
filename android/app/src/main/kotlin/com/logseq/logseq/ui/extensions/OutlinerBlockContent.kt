@@ -84,7 +84,11 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.isOutOfBounds
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
@@ -181,6 +185,18 @@ private data class OutlinerGesturePolicy(
     val allowsDrag: Boolean,
     val hasMenu: Boolean,
 )
+
+private suspend fun AwaitPointerEventScope.awaitOutlinerTap(down: PointerInputChange): PointerInputChange? {
+    val touchSlop = viewConfiguration.touchSlop
+    while (true) {
+        val change = awaitPointerEvent(PointerEventPass.Main).changes.singleOrNull() ?: return null
+        if (change.id != down.id || change.isConsumed || change.isOutOfBounds(size, extendedTouchPadding) ||
+            (change.position - down.position).getDistance() > touchSlop
+        ) return null
+        if (change.changedToUpIgnoreConsumed()) return change
+        if (awaitPointerEvent(PointerEventPass.Final).changes.any { it.isConsumed }) return null
+    }
+}
 
 @Suppress("DEPRECATION") // The gesture overload lets a hold release to the menu or move to lift the block.
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -291,7 +307,6 @@ internal fun OutlinerBlockContent(
                     awaitEachGesture {
                         val initialDown = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                         val policy = gesturePolicy
-                        val pass = if (policy.takesTap) PointerEventPass.Main else PointerEventPass.Initial
                         if (policy.takesTap) {
                             val down = awaitPointerEvent(PointerEventPass.Main).changes
                                 .firstOrNull { it.id == initialDown.id && !it.isConsumed } ?: return@awaitEachGesture
@@ -299,10 +314,13 @@ internal fun OutlinerBlockContent(
                         }
                         val origin = OutlinerDragOrigin(uuid, rowPosition.x + initialDown.position.x)
                         val finished = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
-                            val up = waitForUpOrCancellation(pass)
-                            if (up != null && policy.takesTap) {
-                                up.consume()
-                                currentContext.emit(policy.tapEvent, "uuid" to uuid)
+                            if (policy.takesTap) {
+                                awaitOutlinerTap(initialDown)?.let { up ->
+                                    up.consume()
+                                    currentContext.emit(policy.tapEvent, "uuid" to uuid)
+                                }
+                            } else {
+                                waitForUpOrCancellation(PointerEventPass.Initial)
                             }
                             true
                         }

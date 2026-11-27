@@ -167,14 +167,16 @@ private fun TaskDateSheet(context: LuiExtensionContext, state: JSONObject) {
                     context.emit("choose", mapOf("value" to "repeat:$choice"))
                 }
             }
-            TextButton(
-                onClick = {
-                    focus.clearFocus()
-                    context.emit("clear")
-                },
-                enabled = enabled && state.optBoolean("canClear"),
-                modifier = Modifier.padding(horizontal = 12.dp).testTag("task-dates.clear"),
-            ) { Text(state.optString("clearTitle")) }
+            if (state.optBoolean("canClear")) {
+                TextButton(
+                    onClick = {
+                        focus.clearFocus()
+                        context.emit("clear")
+                    },
+                    enabled = enabled,
+                    modifier = Modifier.padding(horizontal = 12.dp).testTag("task-dates.clear"),
+                ) { Text(state.optString("clearTitle")) }
+            }
         }
     }
 }

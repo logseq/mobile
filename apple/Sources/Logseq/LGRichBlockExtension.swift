@@ -264,6 +264,8 @@ struct LGAssetPreview: View {
     var allowsInteraction: () -> Bool = { true }
     var selectBlock: (() -> Void)?
     var selectionLabel: String?
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.luiSemanticColors) private var semanticColors
     @Environment(\.lgImagePreviews) private var imagePreviews
     @Environment(\.lgOpenPDF) private var openPDF
     @State private var downloadedURL: URL?
@@ -355,6 +357,10 @@ struct LGAssetPreview: View {
         AssetPresentationPolicy.kind(assetType: assetType, localPath: localPath)
     }
 
+    private var isPDF: Bool {
+        AssetPresentationPolicy.isPDF(assetType: assetType, path: localPath.isEmpty ? title : localPath)
+    }
+
     #if os(iOS)
     private var filePreview: some View {
         Button {
@@ -363,7 +369,7 @@ struct LGAssetPreview: View {
             downloadError = nil
             isLoadingFile = true
         } label: {
-            HStack {
+            HStack(alignment: isPDF ? .top : .center) {
                 fileSummary
                 if isLoadingFile { ProgressView() }
             }
@@ -409,14 +415,25 @@ struct LGAssetPreview: View {
 
     private var fileSummary: some View {
         HStack(spacing: 8) {
-            if !AssetPresentationPolicy.isPDF(assetType: assetType, path: localPath.isEmpty ? title : localPath) {
+            if !isPDF {
                 IconImage(name: kind == .audio ? "audio" : "paperclip")
                     .frame(width: 18, height: 18)
             }
-            Text(verbatim: title.isEmpty ? "Untitled file" : title)
+            let label = Text(verbatim: title.isEmpty ? "Untitled file" : title)
                 .font(.body)
                 .fontWeight(.medium)
                 .lineLimit(3)
+            if isPDF {
+                label.foregroundStyle(semanticColors["link"] ?? LogseqThemePolicy.linkColor(isDark: colorScheme == .dark))
+            } else {
+                label
+            }
         }
+        #if os(iOS)
+        .padding(.vertical, isPDF ? OutlinerNativeTextLayoutPolicy.verticalInset(
+            fontLineHeight: UIFont.preferredFont(forTextStyle: .body).lineHeight,
+            minimumLineHeight: OutlinerLayoutMetrics.titleLineHeight
+        ) : 0)
+        #endif
     }
 }

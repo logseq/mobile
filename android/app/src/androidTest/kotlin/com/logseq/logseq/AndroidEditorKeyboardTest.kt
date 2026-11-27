@@ -91,10 +91,15 @@ class AndroidEditorKeyboardTest {
         }
     }
 
-    private fun acknowledge(block: String, title: String, caret: Int) {
+    private fun acknowledge(block: String, title: String, caret: Int, selectionRevision: Int? = null) {
         ui.runOnIdle {
             val ops = JSONArray()
-            mapOf("block-id" to block, "title" to title, "caret-utf16-offset" to caret).forEach { (name, value) ->
+            buildMap {
+                put("block-id", block)
+                put("title", title)
+                put("caret-utf16-offset", caret)
+                selectionRevision?.let { put("selection-revision", it) }
+            }.forEach { (name, value) ->
                 ops.put(JSONObject().put("op", "set-extension-prop").put("id", 2).put("property", name).put("value", value))
             }
             assertTrue(backend.lastError, backend.applyJson(JSONObject().put("generation", ++generation).put("ops", ops).toString()))
@@ -148,6 +153,7 @@ class AndroidEditorKeyboardTest {
         editor.assertTextEquals("Hello 中文 📝")
         acknowledge("keyboard-block", "Hello ", 6)
         acknowledge("next-block", "中文 📝", 0)
+        acknowledge("next-block", "中文 📝", 0, selectionRevision = 1)
         ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("新📝中文 📝")
         ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().any {
             it.name == "text-change" && it.values["title"] == "新📝中文 📝"

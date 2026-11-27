@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.ext.SdkExtensions
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -25,6 +26,7 @@ import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.draw.alpha
@@ -33,7 +35,9 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.pdf.ExperimentalPdfApi
@@ -428,8 +432,16 @@ internal fun pdfTextSelectionAvailable(): Boolean =
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    val enabled = !loading && open != null
+    val bodyStyle = outlinerBodyStyle
+    val titleLineHeight = with(LocalDensity.current) {
+        maxOf(bodyStyle.lineHeight.toPx(), 24.dp.toPx()).toSp()
+    }
     Column {
-        TextButton(enabled = !loading && open != null, onClick = {
+        Row(Modifier.fillMaxWidth().testTag("pdf.open.$uuid").clickable(
+            enabled = enabled,
+            role = Role.Button,
+        ) {
             scope.launch {
                 loading = true
                 error = null
@@ -441,9 +453,14 @@ internal fun pdfTextSelectionAvailable(): Boolean =
                 catch (failure: Exception) { error = failure.localizedMessage }
                 finally { loading = false }
             }
-        }, modifier = Modifier.testTag("pdf.open.$uuid")) {
-            Text(title.ifEmpty { "PDF" })
-            if (loading) CircularProgressIndicator(Modifier.size(20.dp).padding(start = 4.dp))
+        }) {
+            Text(title.ifEmpty { "PDF" }, modifier = Modifier.weight(1f, fill = false).padding(top = 2.dp),
+                color = if (enabled) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                style = bodyStyle.copy(lineHeight = titleLineHeight, lineHeightStyle = LineHeightStyle(
+                    alignment = LineHeightStyle.Alignment.Center, trim = LineHeightStyle.Trim.None,
+                )))
+            if (loading) CircularProgressIndicator(Modifier.padding(start = 4.dp, top = 2.dp).size(20.dp))
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
