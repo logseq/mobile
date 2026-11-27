@@ -22,4 +22,9 @@ class SidebarSwipeTest {
     @Test fun aClosingFlickCanDismissAStillVisiblePanel() {
         assertFalse(sidebarSettlesOpen(position = 0.77f, velocity = -2f, revealed = 0.77f, opening = false))
     }
+
+    @Test fun motionBackTowardOpenAtReleaseDoesNotUndoAClosingDrag() {
+        assertFalse(sidebarSettlesOpen(position = 0.45f, velocity = 2f, revealed = 0.45f, opening = false))
+        assertTrue(sidebarSettlesOpen(position = 0.55f, velocity = 2f, revealed = 0.55f, opening = false))
+    }
 }

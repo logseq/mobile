@@ -81,7 +81,9 @@ import SwiftUI
         try backend.performPress(node: find("button.sidebar")!)
         try await Task.sleep(for: .milliseconds(700))
         guard let scroll = views(window).compactMap({ $0 as? UIScrollView }).first(where: {
-            $0.contentSize.height > 3000 && $0.bounds.width < window.bounds.width * 0.85
+            $0.contentSize.height > 3000 && (overlay
+                ? abs($0.bounds.width - window.bounds.width) < 1
+                : $0.bounds.width < window.bounds.width * 0.85)
         }) else { throw failure("Missing Recent/Favorites scroller") }
         print("SIDEBAR_SCROLL type=\(type(of: scroll)) size=\(scroll.contentSize) frame=\(scroll.frame) inset=\(scroll.adjustedContentInset)")
         let bottom = scroll.contentSize.height - scroll.bounds.height

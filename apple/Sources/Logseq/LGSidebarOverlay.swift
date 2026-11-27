@@ -4,8 +4,14 @@ import SwiftUI
 import UIKit
 #endif
 
+struct LGSidebarBackdrop {
+    let panelWidth: CGFloat
+    let settings: AnyView
+    let dismiss: () -> Void
+}
+
 extension EnvironmentValues {
-    @Entry var logseqSidebarTranslucent = false
+    @Entry var logseqSidebarBackdrop: LGSidebarBackdrop?
 }
 
 @MainActor
@@ -117,9 +123,10 @@ private struct LGPhoneSidebar: View {
             .background {
                 LGSidebarPan(
                     canStart: { velocity in
+                        guard abs(velocity.x) > 2 * abs(velocity.y) else { return false }
                         let visible = presentation.progress
-                        return abs(velocity.x) > 2 * abs(velocity.y) &&
-                            (velocity.x > 0 ? enabled && visible < 0.99 : visible > 0.01)
+                        return open ? velocity.x < 0 && visible > 0.01
+                            : enabled && velocity.x > 0 && visible < 0.99
                     },
                     isClosed: { presentation.progress == 0 },
                     exclusions: panExclusions,
@@ -214,6 +221,7 @@ private struct LGSidebarLayers: View, Animatable {
     var body: some View {
         let visible = presentation.sample(progress)
         let blocksMain = open || visible > 0.001
+        let panelInteractive = open && visible > 0.95
         let dark = colorScheme == .dark
         let palette = LogseqThemePolicy.palette(mode: .system, systemIsDark: dark, darkTheme: darkTheme)
         ZStack(alignment: .leading) {
@@ -239,32 +247,31 @@ private struct LGSidebarLayers: View, Animatable {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
 
-            if blocksMain {
-                Button(action: dismiss) { Color.clear.contentShape(Rectangle()) }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.leading, panelWidth)
-                    .accessibilityLabel(dismissLabel)
-                    .accessibilityIdentifier("button.sidebar.dismiss")
-                    .accessibilityHidden(!open)
-            }
-
             if hasOpened {
                 panel
-                    .environment(\.logseqSidebarTranslucent, true)
-                    .frame(width: panelWidth)
-                    .frame(maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .overlay(alignment: .bottomTrailing) {
-                        settings.padding(settingsInsets)
-                    }
+                    .environment(\.logseqSidebarBackdrop, LGSidebarBackdrop(
+                        panelWidth: panelWidth,
+                        settings: AnyView(settings.padding(settingsInsets)),
+                        dismiss: dismiss
+                    ))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .blur(radius: reduceTransparency || visible == 0 ? 0 : 12 * (1 - visible).squareRoot())
                     .opacity(visible)
                     .offset(x: reduceMotion ? 0 : (visible - 1) * panelWidth)
-                    .allowsHitTesting(open && visible > 0.95)
+                    .allowsHitTesting(panelInteractive)
                     .accessibilityHidden(!open)
                     .accessibilityAction(.escape, dismiss)
+            }
+
+            if panelInteractive {
+                // Keep the accessible close target fixed while the backdrop scrolls.
+                Color.clear
+                    .allowsHitTesting(false)
+                    .accessibilityRepresentation {
+                        Button(dismissLabel, action: dismiss)
+                            .accessibilityIdentifier("button.sidebar.dismiss")
+                    }
+                    .padding(.leading, panelWidth)
             }
         }
         .accessibilityElement(children: .contain)

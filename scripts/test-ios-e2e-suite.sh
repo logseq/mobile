@@ -28,7 +28,7 @@ all_flows=(
   tests/e2e/ios-page-share.yaml
   tests/e2e/ios-page-favorite.yaml
   tests/e2e/ios-settings-theme-parity.yaml
-  tests/e2e/ios-settings-tabs.yaml
+  tests/e2e/ios-sidebar-destinations.yaml
   tests/e2e/ios-sidebar-page-empty-block-delete.yaml
   tests/e2e/ios-rich-block-rendering.yaml
   tests/e2e/ios-flashcard-decks.yaml
@@ -88,7 +88,7 @@ case $selector in
   settings)
     flows=(
       tests/e2e/ios-settings-theme-parity.yaml
-      tests/e2e/ios-settings-tabs.yaml
+      tests/e2e/ios-sidebar-destinations.yaml
     )
     ;;
   content)

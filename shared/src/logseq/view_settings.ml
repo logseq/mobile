@@ -245,199 +245,6 @@ let runtime_log_row record_source : t =
       separator [];
     ]
 
-let settings_tab_row (context : Lui_ui.ui_context) model_source tab title
-    send : t =
-  let title = View_base.tr (Signal.sample model_source) title in
-  let label_source =
-    Signal.map (fun (current : Model.logseq_model) ->
-        View_base.tab_toggle_label current tab)
-      model_source
-  in
-  let toggle_disabled_source =
-    Signal.map (fun (_ : Model.logseq_model) ->
-        Model.required_sidebar_tab_ tab)
-      model_source
-  in
-  let movement_visible_source =
-    Signal.map (fun (current : Model.logseq_model) ->
-        View_base.tab_movement_visible_ current tab)
-      model_source
-  in
-  let up_disabled_source =
-    Signal.map (fun (current : Model.logseq_model) ->
-        View_base.tab_move_up_disabled_ current tab)
-      model_source
-  in
-  let down_disabled_source =
-    Signal.map (fun (current : Model.logseq_model) ->
-        View_base.tab_move_down_disabled_ current tab)
-      model_source
-  in
-  let selection_glyph_source =
-    Signal.map (fun (current : Model.logseq_model) ->
-        View_base.tab_selection_glyph current tab)
-      model_source
-  in
-  let selection_icon_source =
-    Signal.map (fun (current : Model.logseq_model) ->
-        View_base.tab_selection_icon_name current tab)
-      model_source
-  in
-  if Lui_ui.host context = KotlinHost then
-    row ~cross:`center ~padding:8 ~background:"surface-container-low"
-      ~corner_radius:12
-      ~accessibility_identifier:("row.settings.tab." ^ tab)
-      [
-        row ~grow:1.0 ~cross:`center ~gap:8
-          [
-            View_base.with_label_signal label_source
-              (View_base.with_string_prop_signal InlineIconName
-                 selection_icon_source
-                 (button ~icon_placement:`trailing ~variant:`ghost
-                    ~disabled_signal:toggle_disabled_source
-                    ~accessibility_identifier:
-                      (View_base.tab_toggle_identifier tab)
-                    ~on_press:(fun _ ->
-                      ignore (send (Model.ToggleSidebarTab tab)))
-                    ~text:title []));
-            spacer [];
-            if_ ~test:movement_visible_source
-              (icon_button ~icon:(`app "arrow-up") ~size:`icon
-                 ~disabled_signal:up_disabled_source ~variant:`ghost
-                 ~label:(View_base.tr (Signal.sample model_source) "Move tab up")
-                 ~accessibility_identifier:(View_base.tab_up_identifier tab)
-                 ~on_press:(fun _ ->
-                   ignore (send (Model.MoveSidebarTab (tab, -1))))
-                 []);
-            if_ ~test:movement_visible_source
-              (icon_button ~icon:(`app "arrow-down") ~size:`icon
-                 ~disabled_signal:down_disabled_source ~variant:`ghost
-                 ~label:(View_base.tr (Signal.sample model_source) "Move tab down")
-                 ~accessibility_identifier:
-                   (View_base.tab_down_identifier tab)
-                 ~on_press:(fun _ ->
-                   ignore (send (Model.MoveSidebarTab (tab, 1))))
-                 []);
-          ];
-      ]
-  else
-    list_item
-      ~accessibility_identifier:("row.settings.tab." ^ tab)
-      [
-        row ~grow:1.0 ~cross:`center ~gap:8
-          [
-            View_base.with_label_signal label_source
-              (button ~grow:1.0 ~variant:`ghost
-                 ~disabled_signal:toggle_disabled_source
-                 ~accessibility_identifier:
-                   (View_base.tab_toggle_identifier tab)
-                 ~on_press:(fun _ ->
-                   ignore (send (Model.ToggleSidebarTab tab)))
-                 ~text:title []);
-            text ~value:(reactive selection_glyph_source)
-              ~foreground:"accent" [];
-            if_ ~test:movement_visible_source
-              (button ~disabled_signal:up_disabled_source ~variant:`ghost
-                 ~label:(View_base.tr (Signal.sample model_source) "Move tab up")
-                 ~accessibility_identifier:(View_base.tab_up_identifier tab)
-                 ~on_press:(fun _ ->
-                   ignore (send (Model.MoveSidebarTab (tab, -1))))
-                 ~text:"\xE2\x86\x91" []);
-            if_ ~test:movement_visible_source
-              (button ~disabled_signal:down_disabled_source
-                 ~variant:`ghost ~label:(View_base.tr (Signal.sample model_source) "Move tab down")
-                 ~accessibility_identifier:
-                   (View_base.tab_down_identifier tab)
-                 ~on_press:(fun _ ->
-                   ignore (send (Model.MoveSidebarTab (tab, 1))))
-                 ~text:"\xE2\x86\x93" []);
-          ];
-      ]
-
-let settings_tabs_screen (context : Lui_ui.ui_context) model_source send :
-    t =
-  if Lui_ui.host context = KotlinHost then
-    column ~grow:1.0 ~cross:`stretch ~gap:10 ~padding:16
-      ~accessibility_identifier:"screen.settings.tabs"
-      [
-        text ~style_class:"headline" ~foreground:"muted-foreground"
-          ~value:(View_base.tr (Signal.sample model_source) "Visible tabs") [];
-        list ~grow:1.0 ~gap:8
-          ~accessibility_identifier:"list.settings.tabs"
-          [
-            settings_tab_row context model_source "journals" "Journals"
-              send;
-            if_
-              ~test:
-                (Signal.map View_base.settings_flashcards_before_graphs_
-                   model_source)
-              (settings_tab_row context model_source "flashcards"
-                 "Flashcards" send);
-            settings_tab_row context model_source "graphs" "Graphs" send;
-            if_
-              ~test:
-                (Signal.map View_base.settings_flashcards_after_graphs_
-                   model_source)
-              (settings_tab_row context model_source "flashcards"
-                 "Flashcards" send);
-            text ~style_class:"footnote" ~foreground:"muted-foreground"
-              ~value:
-                (View_base.tr (Signal.sample model_source)
-                   "Journals and Graphs are always available. Use the arrows to reorder tabs.")
-              [];
-            if_
-              ~test:
-                (Signal.map View_base.settings_available_tabs_present_
-                   model_source)
-              (text ~style_class:"headline" ~foreground:"muted-foreground"
-                 ~accessibility_identifier:"text.settings.tabs.available"
-                 ~value:(View_base.tr (Signal.sample model_source) "Available tabs") []);
-            if_
-              ~test:
-                (Signal.map View_base.settings_available_tabs_present_
-                   model_source)
-              (settings_tab_row context model_source "flashcards"
-                 "Flashcards" send);
-          ];
-      ]
-  else
-    list ~accessibility_identifier:"screen.settings.tabs"
-      [
-        heading ~level:`h3 ~value:(View_base.tr (Signal.sample model_source) "Visible tabs") [];
-        settings_tab_row context model_source "journals" "Journals" send;
-        if_
-          ~test:
-            (Signal.map View_base.settings_flashcards_before_graphs_
-               model_source)
-          (settings_tab_row context model_source "flashcards"
-             "Flashcards" send);
-        settings_tab_row context model_source "graphs" "Graphs" send;
-        if_
-          ~test:
-            (Signal.map View_base.settings_flashcards_after_graphs_
-               model_source)
-          (settings_tab_row context model_source "flashcards"
-             "Flashcards" send);
-        text ~style_class:"footnote" ~foreground:"muted-foreground"
-          ~value:
-            (View_base.tr (Signal.sample model_source)
-               "Journals and Graphs are always available. Use the arrows to reorder tabs.")
-          [];
-        if_
-          ~test:
-            (Signal.map View_base.settings_available_tabs_present_
-               model_source)
-          (heading ~level:`h3
-             ~accessibility_identifier:"text.settings.tabs.available"
-             ~value:(View_base.tr (Signal.sample model_source) "Available tabs") []);
-        if_
-          ~test:
-            (Signal.map View_base.settings_available_tabs_present_
-               model_source)
-          (settings_tab_row context model_source "flashcards"
-             "Flashcards" send);
-      ]
-
 let runtime_log_toolbar (context : Lui_ui.ui_context) model_source send : t
     =
   let log_button text_signal label identifier action : toolbar_el =
@@ -553,30 +360,6 @@ let settings_general_card (context : Lui_ui.ui_context) model_source send :
         settings_appearance_control context model_source send;
         settings_dark_theme_control context model_source send;
         settings_language_control context model_source send;
-        list_item
-          ~accessibility_identifier:"link.settings.tabs"
-          ~on_press:(press send Model.OpenSettingsTabs)
-          [
-            row ~grow:1.0 ~cross:`center ~gap:12
-              [
-                column ~grow:1.0 ~gap:2
-                  ~accessibility_identifier:"layout.settings.tabs-copy"
-                  [
-                    text ~value:(View_base.tr (Signal.sample model_source) "Tabs") [];
-                    text
-                      ~value:
-                        (reactive (Signal.map View_base.settings_tabs_summary
-                           model_source))
-                      ~style_class:"footnote"
-                      ~foreground:"muted-foreground"
-                      ~accessibility_identifier:
-                        "text.settings.tabs.selection" [];
-                  ];
-                icon ~name:(`app "chevron-right") ~width:20 ~height:20
-                  ~foreground:"muted-foreground"
-                  ~accessibility_identifier:"icon.settings.tabs" [];
-              ];
-          ];
       ]
   else
     column ~gap:12 ~padding:16 ~background:"surface" ~corner_radius:14
@@ -601,24 +384,6 @@ let settings_general_card (context : Lui_ui.ui_context) model_source send :
             text ~value:(View_base.tr (Signal.sample model_source) "Language") [];
             spacer [];
             settings_language_control context model_source send;
-          ];
-        separator [];
-        list_item ~padding:0
-          ~accessibility_identifier:"link.settings.tabs"
-          ~on_press:(press send Model.OpenSettingsTabs)
-          [
-            row ~grow:1.0 ~cross:`center
-              [
-                text ~value:(View_base.tr (Signal.sample model_source) "Tabs") [];
-                spacer [];
-                text
-                  ~value:
-                    (reactive (Signal.map View_base.settings_tabs_summary
-                       model_source))
-                  ~style_class:"single-line" ~foreground:"secondary"
-                  ~accessibility_identifier:"text.settings.tabs.selection"
-                  [];
-              ];
           ];
       ]
 
@@ -941,22 +706,6 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
       settings_appearance_control context model_source send;
       settings_dark_theme_control context model_source send;
       settings_language_control context model_source send;
-      list_item ~accessibility_identifier:"link.settings.tabs"
-        ~on_press:(press send Model.OpenSettingsTabs)
-        [
-          row ~grow:1.0 ~cross:`center
-            [
-              text ~value:(View_base.tr (Signal.sample model_source) "Tabs") [];
-              spacer [];
-              text
-                ~value:
-                  (reactive (Signal.map View_base.settings_tabs_summary
-                     model_source))
-                ~style_class:"single-line" ~foreground:"secondary"
-                ~accessibility_identifier:
-                  "text.settings.tabs.selection" [];
-            ];
-        ];
       heading ~value:(View_base.tr (Signal.sample model_source) "Editor") ~foreground:"muted-foreground"
         ~accessibility_identifier:"label.settings.editor" [];
       with_native_control_tint "switch" (toggle
@@ -1038,45 +787,6 @@ let settings_screen (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = KotlinHost then
     settings_kotlin_screen context model_source send
   else settings_form_screen context model_source send
-
-let settings_tabs_sheet (context : Lui_ui.ui_context) model_source send :
-    t =
-  if Lui_ui.host context = KotlinHost then
-    View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Tabs") ~style_class:"navigation-content"
-      ~accessibility_identifier:"sheet.settings"
-      ~on_dismiss:(press send Model.BackSettings)
-      [
-        column ~grow:1.0
-          ~accessibility_identifier:"layout.settings.tabs-sheet"
-          [
-            settings_tabs_screen context model_source send;
-            row ~padding_horizontal:16 ~padding_vertical:12
-              ~background:"background"
-              ~accessibility_identifier:"toolbar.settings.actions"
-              [
-                button ~variant:`secondary ~grow:1.0
-                  ~accessibility_identifier:"button.connection.cancel"
-                  ~on_press:(press send Model.BackSettings)
-                  ~text:(View_base.tr (Signal.sample model_source) "Back to Settings") [];
-              ];
-          ];
-      ]
-  else
-    View_base.sheet ~model_source ~title:(View_base.tr (Signal.sample model_source) "Tabs") ~style_class:"navigation-list"
-      ~accessibility_identifier:"sheet.settings.tabs"
-      ~on_dismiss:(press send Model.BackSettings)
-      [
-        settings_tabs_screen context model_source send;
-        toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Tabs actions")
-          ~style_class:"navigation-actions"
-          ~accessibility_identifier:"toolbar.settings.actions"
-          [
-            Lui_elements.toolbar_button ~style_class:"cancellation-action navigation-back-action" ~foreground:"foreground"
-              ~accessibility_identifier:"button.connection.cancel"
-              ~on_press:(press send Model.BackSettings)
-              ~text:(View_base.tr (Signal.sample model_source) "Settings") [];
-          ];
-      ]
 
 let runtime_log_actions model_source (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then
@@ -1167,9 +877,6 @@ let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
       [
         settings_screen context model_source send;
         if_
-          ~test:(Signal.map View_base.settings_tabs_visible_ model_source)
-          (settings_tabs_sheet context model_source send);
-        if_
           ~test:(Signal.map View_base.runtime_log_visible_ model_source)
           (runtime_log_sheet context model_source send);
         toolbar ~orientation:`horizontal ~label:(View_base.tr (Signal.sample model_source) "Settings actions")
@@ -1197,8 +904,6 @@ let settings_sheet (context : Lui_ui.ui_context) model_source send : t =
       ignore (mount context ~parent:node (stack [
         if_ ~test:(Signal.map View_base.settings_main_visible_ model_source)
           (settings_main_sheet context model_source send);
-        if_ ~test:(Signal.map View_base.settings_tabs_visible_ model_source)
-          (settings_tabs_sheet context model_source send);
         if_ ~test:(Signal.map View_base.runtime_log_visible_ model_source)
           (runtime_log_sheet context model_source send);
       ]));

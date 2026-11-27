@@ -1,10 +1,10 @@
-# The sidebar shows Graphs, Flashcards, Favorites, and Recent. Home and Notifications live in the bottom tabs.
+# Home, Graphs, and Flashcards appear above Favorites and Recent.
 expect prop:accessibility-identifier=button.graph-add
 press prop:accessibility-identifier=button.graph-add
 type prop:accessibility-identifier=field.graph-name "Drive Graph"
 press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
-expect-absent prop:accessibility-identifier=link.sidebar.journals
+expect prop:accessibility-identifier=link.sidebar.home
 expect prop:accessibility-identifier=tab.bottom.home
 expect prop:accessibility-identifier=link.sidebar.flashcards
 expect prop:accessibility-identifier=tab.bottom.notifications

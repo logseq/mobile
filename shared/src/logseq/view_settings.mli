@@ -21,14 +21,6 @@ val settings_community_link_row :
   (Model.logseq_action -> 'a) -> Lui_elements.t
 val runtime_log_row :
   Model.runtime_log_record Signal.signal -> Lui_elements.t
-val settings_tab_row :
-  Lui_ui.ui_context ->
-  Model.logseq_model Signal.signal ->
-  string -> string -> (Model.logseq_action -> 'a) -> Lui_elements.t
-val settings_tabs_screen :
-  Lui_ui.ui_context ->
-  Model.logseq_model Signal.signal ->
-  (Model.logseq_action -> 'a) -> Lui_elements.t
 val runtime_log_toolbar :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
@@ -53,10 +45,6 @@ val settings_runtime_log_row : Model.logseq_model Signal.signal -> Lui_ui.ui_con
 val sign_in_label : ?centered:bool -> Model.logseq_model Signal.signal -> Lui_elements.t
 val settings_sign_out_row : Model.logseq_model Signal.signal -> Lui_ui.ui_context -> (Model.logseq_action -> bool) -> Lui_elements.t
 val settings_screen :
-  Lui_ui.ui_context ->
-  Model.logseq_model Signal.signal ->
-  (Model.logseq_action -> bool) -> Lui_elements.t
-val settings_tabs_sheet :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->
   (Model.logseq_action -> bool) -> Lui_elements.t

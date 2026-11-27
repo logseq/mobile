@@ -1,4 +1,4 @@
-# Start on Journals with a short first entry and the sidebar closed.
+# Start on Journals with a short first entry and the overlay sidebar closed.
 appId: com.logseq.logseq
 ---
 - assertVisible:
@@ -23,9 +23,25 @@ appId: com.logseq.logseq
       - assertVisible:
           id: "button.sidebar.dismiss"
       - swipe:
-          start: "90%,20%"
+          start: "92%,70%"
+          end: "92%,30%"
+          duration: 350
+      - assertVisible:
+          id: "button.sidebar.dismiss"
+      - swipe:
+          start: "96%,20%"
           end: "5%,20%"
           duration: 300
+      - assertVisible:
+          id: "button.sidebar"
+      - tapOn:
+          id: "button.sidebar"
+      - assertVisible:
+          id: "button.sidebar.dismiss"
+      - swipe:
+          start: "78%,20%"
+          end: "10%,20%"
+          duration: 350
       - assertVisible:
           id: "button.sidebar"
       - swipe:

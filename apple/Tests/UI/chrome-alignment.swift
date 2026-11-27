@@ -75,17 +75,17 @@ import SwiftUI
         let settings = try frame("button.sidebar.settings")
         let sidebar = try frame("sidebar.navigation")
         let composer = try frame("row.bottom.capture")
-        let graphsButton = try frame("link.sidebar.graphs")
-        let graphsID = try id("link.sidebar.graphs")
-        guard let contentID = backend.model(id: graphsID)?.children.first,
-              let graphs = frames[contentID] else { throw failure("Missing Graphs label frame") }
+        let homeButton = try frame("link.sidebar.home")
+        let homeID = try id("link.sidebar.home")
+        guard let contentID = backend.model(id: homeID)?.children.first,
+              let home = frames[contentID] else { throw failure("Missing Home label frame") }
         let toolbar = try frame("button.sidebar")
-        print("CHROME sidebar=\(sidebar) graphs=\(graphs) toolbar=\(toolbar) settings=\(settings) composer=\(composer)")
-        if graphs.midY <= toolbar.midY || graphs.midY > toolbar.maxY + 4 {
-            errors.append("Graphs must sit just below the header controls")
+        print("CHROME sidebar=\(sidebar) home=\(home) toolbar=\(toolbar) settings=\(settings) composer=\(composer)")
+        if home.midY <= toolbar.midY || home.midY > toolbar.maxY + 4 {
+            errors.append("Home must sit just below the header controls")
         }
-        if graphsButton.minY < window.safeAreaInsets.top {
-            errors.append("The Graphs touch target must clear the status area")
+        if homeButton.minY < window.safeAreaInsets.top {
+            errors.append("The Home touch target must clear the status area")
         }
         if abs(window.bounds.maxX - window.safeAreaInsets.right - settings.maxX - 16) > 1
             || settings.width < 44 || settings.height < 44 {

@@ -73,7 +73,7 @@ let with_ui_state model_source elem =
       ignore (Signal.own context.ui_scope (Signal.observe model_source (fun (model : Model.logseq_model) ->
         let screen =
           if model.authentication_form.opened || View_base.authentication_screen_visible_ model then "authentication"
-          else if model.settings_open || model.settings_tabs_open || model.runtime_log_open then "settings"
+          else if model.settings_open || model.runtime_log_open then "settings"
           else if View_base.graph_picker_screen_visible_ model then "graphs"
           else if model.pdf_workspace <> None then "pdf"
           else if model.search_open then
@@ -87,7 +87,7 @@ let with_ui_state model_source elem =
               if model.app_navigation_path <> [] || model.selected_page <> None then "page" else "journals"
         in
         let editor = model.outliner_editing <> None in
-        let presentation = model.authentication_form.opened || model.settings_open || model.settings_tabs_open || model.runtime_log_open
+        let presentation = model.authentication_form.opened || model.settings_open || model.runtime_log_open
           || model.sync_details_open || model.create_graph_open || model.graph_password_open
           || model.pending_sign_out || model.pending_node_deletion <> None || model.pending_graph_deletion <> None in
         let state = screen, editor, presentation in
@@ -268,6 +268,11 @@ let native_sidebar_schema () =
   let open Lui_protocol in
   Lui_extension.component "native-sidebar" [profile IOS SwiftUIHost]
     true [] [] []
+
+let sidebar_scroll_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  component "sidebar-scroll" [profile AndroidOS KotlinHost] true [] [] []
 
 let sidebar_overlay_schema () =
   let open Lui_protocol in
@@ -476,6 +481,7 @@ let extension_registry () =
        [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]
        true [] [] []);
   Lui_extension.register_component registry (native_sidebar_schema ());
+  Lui_extension.register_component registry (sidebar_scroll_schema ());
   Lui_extension.register_component registry (let open Lui_protocol in
     let open Lui_extension in
     component "composer-task-toggle" [profile AndroidOS KotlinHost] false []

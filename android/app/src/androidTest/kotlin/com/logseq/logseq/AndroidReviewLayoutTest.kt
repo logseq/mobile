@@ -30,6 +30,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
@@ -197,8 +198,8 @@ class AndroidReviewLayoutTest {
             down(Offset(width * 0.08f, y))
             moveTo(Offset(width * 0.36f, y), delayMillis = 450)
         }
-        val journalLabel = ui.onNodeWithText("Journals", useUnmergedTree = true).getUnclippedBoundsInRoot()
-        assertTrue("The sidebar label becomes visible before the gesture reaches its opening threshold", journalLabel.right > 0.dp)
+        val homeLabel = ui.onNodeWithText("Home", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertTrue("The sidebar label becomes visible before the gesture reaches its opening threshold", homeLabel.right > 0.dp)
         ui.onRoot().performTouchInput {
             advanceEventTime(200)
             up()
@@ -208,7 +209,7 @@ class AndroidReviewLayoutTest {
         ui.onRoot().performTouchInput {
             swipeRight(startX = width * 0.08f, endX = width * 0.78f, durationMillis = 350)
         }
-        ui.onNodeWithTag("link.sidebar.journals").assertIsDisplayed()
+        ui.onNodeWithTag("link.sidebar.home").assertIsDisplayed()
         assertEquals(initial, toolbar.getUnclippedBoundsInRoot())
         ui.onRoot().performTouchInput { click(Offset(width * 0.94f, height * 0.60f)) }
         ui.runOnIdle {
@@ -217,7 +218,7 @@ class AndroidReviewLayoutTest {
             assertEquals(listOf(HapticFeedbackType.SegmentTick, HapticFeedbackType.SegmentTick), hapticEvents)
         }
         ui.onNodeWithTag("button.sidebar").assertIsDisplayed().performTouchInput { click(center) }
-        ui.onNodeWithTag("link.sidebar.journals").assertIsDisplayed()
+        ui.onNodeWithTag("link.sidebar.home").assertIsDisplayed()
         assertEquals(initial, toolbar.getUnclippedBoundsInRoot())
         val shell = ui.onNodeWithTag("application.shell").getUnclippedBoundsInRoot()
         val settings = ui.onNodeWithTag("button.sidebar.settings").assertIsDisplayed()
@@ -226,6 +227,112 @@ class AndroidReviewLayoutTest {
             shell.bottom - gear.bottom <= 24.dp)
         settings.performTouchInput { click(center) }
         ui.onNodeWithTag("screen.settings").assertIsDisplayed()
+    }
+
+    @Test fun sidebarScrollsAndDismissesFromThePanelAndBackdrop() {
+        val recent = JSONArray().apply {
+            repeat(40) { put(JSONObject().put("uuid", "recent-$it").put("title", "Recent page $it")) }
+        }
+        app(projection = JSONObject().put("recentPages", recent))
+        ui.onRoot().performTouchInput {
+            swipeRight(startX = width * 0.08f, endX = width * 0.78f, durationMillis = 350)
+        }
+        val backdrop = ui.onNodeWithTag("button.sidebar.dismiss").assertIsDisplayed()
+        val home = ui.onNodeWithTag("link.sidebar.home")
+        val settings = ui.onNodeWithTag("button.sidebar.settings")
+        val row = ui.onNodeWithTag("link.sidebar.page.recent-0")
+        val initialTop = row.getUnclippedBoundsInRoot().top
+        val initialHomeTop = home.getUnclippedBoundsInRoot().top
+        val initialSettings = settings.getUnclippedBoundsInRoot()
+        backdrop.performTouchInput {
+            swipe(Offset(centerX, height * 0.70f), Offset(centerX, height * 0.35f), durationMillis = 450)
+        }
+        val scrolledTop = row.getUnclippedBoundsInRoot().top
+        assertTrue("Dragging on the backdrop scrolls the sidebar pages", scrolledTop < initialTop - 48.dp)
+        val homeTravel = home.getUnclippedBoundsInRoot().top - initialHomeTop
+        assertTrue("Destinations and pages scroll together",
+            (homeTravel - (scrolledTop - initialTop)) in (-1).dp..1.dp)
+        assertEquals(initialSettings, settings.getUnclippedBoundsInRoot())
+        val panelRight = backdrop.fetchSemanticsNode().boundsInRoot.left
+        val panelEdge = panelRight - 2f
+        ui.onRoot().performTouchInput {
+            swipe(Offset(panelEdge, height * 0.30f), Offset(panelEdge, height * 0.65f), durationMillis = 450)
+        }
+        assertTrue("The panel's right edge also scrolls the sidebar pages",
+            row.getUnclippedBoundsInRoot().top > scrolledTop + 48.dp)
+        backdrop.performTouchInput {
+            swipe(Offset(width * 0.90f, centerY), Offset(width * 0.15f, centerY), durationMillis = 300)
+        }
+        backdrop.assertIsDisplayed()
+        ui.onRoot().performTouchInput {
+            swipe(Offset(panelEdge, centerY), Offset(panelRight * 0.15f, centerY), durationMillis = 300)
+        }
+        backdrop.assertDoesNotExist()
+        ui.onNodeWithTag("button.sidebar").assertIsDisplayed().performClick()
+        backdrop.assertIsDisplayed()
+        ui.onRoot().performTouchInput {
+            down(Offset(width * 0.96f, centerY))
+            moveTo(Offset(width * 0.52f, centerY), delayMillis = 80)
+            advanceEventTime(110)
+            moveTo(Offset(width * 0.53f, centerY), delayMillis = 8)
+            moveTo(Offset(width * 0.54f, centerY), delayMillis = 8)
+            up()
+        }
+        backdrop.assertDoesNotExist()
+        ui.onNodeWithTag("button.sidebar").assertIsDisplayed().performClick()
+        backdrop.performTouchInput { click(center) }
+        backdrop.assertDoesNotExist()
+        ui.onNodeWithTag("button.sidebar").assertIsDisplayed()
+    }
+
+    @Test fun sidebarStaysClosedAfterAReleasePositionReversal() {
+        app()
+        ui.onNodeWithTag("button.sidebar").performClick()
+        val backdrop = ui.onNodeWithTag("button.sidebar.dismiss").assertIsDisplayed()
+        val panelWidth = backdrop.fetchSemanticsNode().boundsInRoot.left
+        ui.onRoot().performTouchInput {
+            val start = width * 0.96f
+            val halfway = start - panelWidth / 2
+            down(Offset(start, centerY))
+            moveTo(Offset(halfway - 3f, centerY), delayMillis = 80)
+            moveTo(Offset(halfway + 1f, centerY), delayMillis = 12)
+            up()
+        }
+        backdrop.assertDoesNotExist()
+        ui.onNodeWithTag("button.sidebar").assertIsDisplayed().performClick()
+        backdrop.assertIsDisplayed()
+        ui.onRoot().performTouchInput {
+            val start = width * 0.96f
+            down(Offset(start, centerY))
+            moveTo(Offset(start - panelWidth * 0.65f, centerY), delayMillis = 80)
+            moveTo(Offset(start - panelWidth * 0.30f, centerY), delayMillis = 140)
+            up()
+        }
+        backdrop.assertIsDisplayed()
+    }
+
+    @Test fun sidebarKeepsClosingWhenATouchInterruptsTheSwipePastHalfway() {
+        app()
+        ui.onNodeWithTag("button.sidebar").performClick()
+        val backdrop = ui.onNodeWithTag("button.sidebar.dismiss").assertIsDisplayed()
+        ui.onRoot().performTouchInput {
+            down(Offset(width * 0.96f, centerY))
+            moveTo(Offset(width * 0.48f, centerY), delayMillis = 80)
+            down(1, Offset(width * 0.75f, centerY))
+            up(1)
+            up()
+        }
+        backdrop.assertDoesNotExist()
+        ui.onNodeWithTag("button.sidebar").assertIsDisplayed().performClick()
+        backdrop.assertIsDisplayed()
+        ui.onRoot().performTouchInput {
+            down(Offset(width * 0.96f, centerY))
+            moveTo(Offset(width * 0.06f, centerY), delayMillis = 80)
+        }
+        backdrop.assertDoesNotExist()
+        ui.onRoot().performTouchInput { cancel() }
+        backdrop.assertDoesNotExist()
+        ui.onNodeWithTag("button.sidebar").assertIsDisplayed()
     }
 
     @Test fun graphSwitchIsOnlyInTheJournalsHeader() {
@@ -241,25 +348,34 @@ class AndroidReviewLayoutTest {
         pressBack()
         ui.onNodeWithTag("button.sidebar").performClick()
         ui.onNode(graphSwitch and hasAnyAncestor(hasTestTag("sidebar.navigation"))).assertDoesNotExist()
-        ui.onNodeWithTag("link.sidebar.graphs").performClick()
+        val home = ui.onNodeWithTag("link.sidebar.home")
+        val graphsRow = ui.onNodeWithTag("link.sidebar.graphs")
+        val flashcards = ui.onNodeWithTag("link.sidebar.flashcards")
+        assertTrue(home.getUnclippedBoundsInRoot().top < graphsRow.getUnclippedBoundsInRoot().top)
+        assertTrue(graphsRow.getUnclippedBoundsInRoot().top < flashcards.getUnclippedBoundsInRoot().top)
+        graphsRow.performClick()
         ui.onNodeWithTag("button.graph-switch").assertDoesNotExist()
+        ui.onNodeWithTag("button.sidebar").performClick()
+        home.performTouchInput { click(center) }
+        ui.onNodeWithTag("pane.journals").assertIsDisplayed()
+        ui.onNodeWithTag("button.sidebar.dismiss").assertDoesNotExist()
     }
 
     @Test fun sidebarSettingsAndRowsSlideTogether() {
         app()
-        val journals = ui.onNodeWithTag("link.sidebar.journals")
+        val home = ui.onNodeWithTag("link.sidebar.home")
         val settings = ui.onNodeWithTag("button.sidebar.settings")
         ui.mainClock.autoAdvance = false
         try {
             ui.onNodeWithTag("button.sidebar").performClick()
             ui.mainClock.advanceTimeBy(96)
-            val movingJournals = journals.getUnclippedBoundsInRoot().left
+            val movingHome = home.getUnclippedBoundsInRoot().left
             val movingSettings = settings.getUnclippedBoundsInRoot().left
             ui.mainClock.advanceTimeBy(700)
-            val journalTravel = journals.getUnclippedBoundsInRoot().left - movingJournals
+            val homeTravel = home.getUnclippedBoundsInRoot().left - movingHome
             val settingsTravel = settings.getUnclippedBoundsInRoot().left - movingSettings
-            assertTrue("The sidebar was in motion when sampled", journalTravel > 1.dp)
-            val travelDifference = journalTravel - settingsTravel
+            assertTrue("The sidebar was in motion when sampled", homeTravel > 1.dp)
+            val travelDifference = homeTravel - settingsTravel
             assertTrue("Settings and the sidebar rows travel together", travelDifference >= (-1).dp && travelDifference <= 1.dp)
         } finally {
             ui.mainClock.autoAdvance = true

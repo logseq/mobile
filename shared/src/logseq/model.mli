@@ -465,7 +465,6 @@ type logseq_model =
   ; pending_sign_out : bool
   ; connection_menu_open : bool
   ; settings_open : bool
-  ; settings_tabs_open : bool
   ; runtime_log_open : bool
   ; appearance : string
   ; dark_theme : string
@@ -478,7 +477,6 @@ type logseq_model =
   ; community_links : settings_community_link list
   ; spell_check : bool
   ; auto_correction : bool
-  ; sidebar_tabs : string list
   ; base_url : string
   ; base_url_draft : string
   ; version : string
@@ -717,8 +715,6 @@ type logseq_action =
   | OpenSettings
   | ResumeSettings
   | DismissSettings
-  | OpenSettingsTabs
-  | BackSettings
   | OpenSettingsAppearanceMenu
   | CloseSettingsAppearanceMenu
   | ChangeAppearance of string
@@ -731,8 +727,6 @@ type logseq_action =
   | ChooseJournalTitleFormat of string
   | ToggleSpellCheck of bool
   | ToggleAutoCorrection of bool
-  | ToggleSidebarTab of string
-  | MoveSidebarTab of string * int
   | ChangeBaseURL of string
   | ApplySettings
   | ExportGraphDatabase
@@ -826,14 +820,9 @@ val available_task_statuses : task_status list -> task_status list
 val string_vector_contains_ : string list -> string -> bool
 val graph_local_ : logseq_model -> string -> bool
 val remove_string : string list -> string -> string list
-val required_sidebar_tab_ : string -> bool
-val valid_sidebar_tab_ : string -> bool
 val journal_tasks_collapsed : logseq_model -> string list
 val journal_task_retry_available_ : logseq_model -> bool
 val outliner_task_selection_ : logseq_model -> bool
-val normalize_sidebar_tabs : string list -> string list
-val toggle_sidebar_tab : string list -> string -> string list
-val move_sidebar_tab : string list -> string -> int -> string list
 val bounded_url_delimiter : int -> int -> int
 val string_index_of_opt : string -> string -> int
 val valid_base_url_ : string -> bool
