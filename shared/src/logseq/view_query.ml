@@ -954,7 +954,13 @@ let collection_json ?(fill_height = false) ~render_block model_source parsed sen
       | Some (_, id, None) when !finished <> Some id -> finished := Some id; Signal.set editing None; Signal.set settings ""
       | _ -> ())));
     let edit row property =
-      Signal.set editing (Some (row, property)) in
+      let attr = jtext (jfield "attr" property) in
+      let task_date = List.find_map (fun (name, key) ->
+        if key = attr then Some name else None) Journal_task_dates.fields in
+      match row.block, task_date with
+      | Some block, Some field when not block.row.Model.opens_as_page ->
+        ignore (send (Model.OpenBlockTaskDate (block.row.row_uuid, field)))
+      | _ -> Signal.set editing (Some (row, property)) in
     let cell view item attr =
       let row = item.json in
       List.find_opt (fun property -> jfield "attr" property = `String attr) (jlist (jfield "properties" row))

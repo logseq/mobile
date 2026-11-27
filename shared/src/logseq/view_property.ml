@@ -205,6 +205,16 @@ let view ?(compact = false) ?task_completed ~render_block model_source raw_sourc
           let own source = Signal.own_signal context.ui_scope source in
           let first = Signal.sample property_source in
           let attr = text (field "attr" first) in
+          let task_date =
+            if not compact && field "isPage" (Signal.sample source) = `Bool true then None
+            else List.find_map (fun (name, key) ->
+              if key = attr then Some name else None) Journal_task_dates.fields in
+          let timestamp property = int_of_string_opt (text (field "editorValue" property)) in
+          let task_date_value current property =
+            match timestamp property with
+            | Some millis when abs_float (float_of_int millis) <= 8640000000000000. ->
+              task_date_label current millis
+            | _ -> display_value property in
           let id = "property." ^ owner ^ "." ^ attr in
           let editing = Signal.state context.ui_scheduler None in
           let checked_value p = field "value" (field "raw" p) = `Bool true in
@@ -226,17 +236,19 @@ let view ?(compact = false) ?task_completed ~render_block model_source raw_sourc
           let edit () =
             let property = Signal.sample property_source in
             if field "editable" property = `Bool true then
-              if field "textLayout" property = `Bool true && field "ref" property = `Bool true then
+              match task_date with
+              | Some name -> ignore (send (Model.OpenBlockTaskDate (owner, name)))
+              | None when field "textLayout" property = `Bool true && field "ref" property = `Bool true ->
                 submit (["action", `String "editText"; "attr", `String attr; "expected", field "raw" property]
                   @ Option.fold ~none:[] ~some:(fun graph -> ["graphId", `String graph])
                       (Signal.sample model_source).Model.selected_graph_id)
-              else Signal.set editing (Some property) in
+              | None -> Signal.set editing (Some property) in
           let send_block = function
             | (Model.BeginOutlinerEdit _ | Model.BeginOutlinerEditAt _) as action ->
               if field "editable" (Signal.sample property_source) = `Bool true then send action else true
             | action -> send action in
-          let task_icon = match compact, attr with true, "logseq.property/scheduled" -> Some "calendar"
-            | true, "logseq.property/deadline" -> Some "deadline" | _ -> None in
+          let task_icon = match compact, task_date with true, Some "scheduled" -> Some "calendar"
+            | true, Some "deadline" -> Some "deadline" | _ -> None in
           let label = Lui_elements.text ~value:(reactive (own (Signal.map2 property_title model_source property_source)))
             ~foreground:"muted-foreground" ~style_class:"callout" ~text_alignment:`start
             ~accessibility_identifier:("property.label." ^ owner ^ "." ^ attr) [] in
@@ -246,7 +258,8 @@ let view ?(compact = false) ?task_completed ~render_block model_source raw_sourc
                 (model.pending_effects @ model.in_flight_effects)) property_source model_source) in
           let value = button ~variant:`ghost ~foreground:"muted-foreground" ~text_alignment:`start
             ~min_height:(if compact then 28 else 32) ~padding_horizontal:0 ~padding_vertical:0 ~grow:(if compact then 0.0 else 1.0)
-            ~text:(reactive (own (Signal.map2 (fun current p -> let value = display_value p in
+            ~text:(reactive (own (Signal.map2 (fun current p ->
+              let value = if task_date = None then display_value p else task_date_value current p in
               if value = "" then View_base.tr current "Empty"
               else if field "kind" p = `String "datetime" && List.mem value ["Today"; "Tomorrow"]
               then View_base.tr current value else value) model_source property_source)))
@@ -286,15 +299,7 @@ let view ?(compact = false) ?task_completed ~render_block model_source raw_sourc
               column ~cross:(if compact then `start else `stretch) [
               (match task_icon with
               | Some icon_name ->
-                let edit_task_date () =
-                  let name = if attr = "logseq.property/scheduled" then "scheduled" else "deadline" in
-                  ignore (send (Model.OpenBlockTaskDate (owner, name))) in
-                let timestamp property = int_of_string_opt (text (field "editorValue" property)) in
-                let value = own (Signal.map2 (fun current property ->
-                  match timestamp property with
-                  | Some millis when abs_float (float_of_int millis) <= 8640000000000000. ->
-                    task_date_label current millis
-                  | _ -> display_value property) model_source property_source) in
+                let value = own (Signal.map2 task_date_value model_source property_source) in
                 let overdue_signal = match task_completed, attr with
                   | Some completed, "logseq.property/deadline" ->
                     let today = own (Signal.map (fun (current : Model.logseq_model) ->
@@ -309,7 +314,7 @@ let view ?(compact = false) ?task_completed ~render_block model_source raw_sourc
                 compact_task_metadata ~icon_name ~disabled_signal:disabled ?overdue_signal
                   ~icon_identifier:("property.label." ^ owner ^ "." ^ attr)
                   ~identifier:("property.value." ^ owner ^ "." ^ attr)
-                  ~label:(property_title (Signal.sample model_source) first) value edit_task_date
+                  ~label:(property_title (Signal.sample model_source) first) value edit
               | None -> fields [
                 label;
                 reactive (fun text_layout -> if text_layout then

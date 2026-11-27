@@ -1446,7 +1446,17 @@ let task_dates_are_visible_and_editable_in_the_outline () =
         let label = find ("property.label." ^ Q.alpha ^ "." ^ attr) in
         check ~msg:"zoomed task dates use ordinary property labels" (label <> -1);
         check_eq ~msg:"zoomed task date key is text rather than an icon" (App_test.node host label) (Some Lui_protocol.Text);
-        check_eq (App_test.property_string host label Lui_protocol.TextValue) title)
+        check_eq (App_test.property_string host label Lui_protocol.TextValue) title;
+        let value = find ("property.value." ^ Q.alpha ^ "." ^ attr) in
+        check (value <> -1);
+        App_test.dispatch app (Lui_protocol.Press value); App_test.flush app;
+        let identifier = "native-task-date-sheet" in
+        let sheet = App_test.extension_node app identifier in
+        check ~msg:"zoomed task dates open the shared task calendar" (sheet <> -1);
+        check_eq ~msg:"task dates do not open the generic datetime editor"
+          (App_test.extension_node app "native-property-date") (-1);
+        App_test.dispatch app (Lui_protocol.ExtensionEvent (sheet, identifier, "dismiss", Lui_protocol.String_map.empty));
+        App_test.flush app)
         ["logseq.property/scheduled", "Scheduled"; "logseq.property/deadline", "Deadline"]);
     check ~msg:"displaying task dates does not add extra semantic writes" (List.length (Graph_runtime.pending_operations runtime) < 10)))
     [App_test.ios_backend; App_test.kotlin_backend]

@@ -51,7 +51,8 @@ let render ?(defer_values = false) db ~owner ~encode_block =
       | `Assoc fields -> `Assoc (["title", `String "Set tags"; "filterValues", `List choices] @
           List.filter (fun (name, _) -> not (List.mem name ["title"; "filterValues"])) fields)
       | _ -> `Null in
-    Ok (`Assoc ["ownerUuid", `String owner; "canDelete", `Bool (Node_title.can_delete db id);
+    Ok (`Assoc ["ownerUuid", `String owner; "isPage", `Bool (Node_title.is_page db id);
+      "canDelete", `Bool (Node_title.can_delete db id);
       "tagPicker", tag_picker; "canAdd", `Bool (Node_title.can_edit db id); "classSchema", `Bool class_;
       "availableProperties", `List catalog; "schemaProperties", `List (List.map property schema_attrs);
       "rename", rename; "properties", `List (List.map (fun attr ->
