@@ -60,7 +60,8 @@ import UIKit
         try runtime.applyHostUpdate(kind: "graph-loading", payload: "false")
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first!
         let window = UIWindow(windowScene: scene)
-        let host = UIHostingController(rootView: LGRendererRoot(renderer: runtime.renderer))
+        let host = UIHostingController(rootView: LGRendererRoot(renderer: runtime.renderer)
+            .environment(\.layoutDirection, .rightToLeft))
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer { window.isHidden = true; window.rootViewController = nil; runtime.stop() }
@@ -132,7 +133,9 @@ import UIKit
             try await wait("Resizing back must preserve the original split") { abs(pdf.bounds.width - beforeResize) < 1 }
             guard pdf.document === documentBeforeResize else { throw failure("Resizing must retain the PDF document") }
             let frame = pdf.convert(pdf.bounds, to: window)
-            guard frame.width > 100, frame.maxX < window.bounds.width - 100 else {
+            guard let originalMain,
+                  frame.width > 100,
+                  originalMain.convert(originalMain.bounds, to: window).minX >= frame.maxX else {
                 throw failure("The PDF must occupy the left column and leave main on the right: \(frame)")
             }
             guard host.presentedViewController == nil else { throw failure("PDF opening must not present Quick Look or a modal") }
