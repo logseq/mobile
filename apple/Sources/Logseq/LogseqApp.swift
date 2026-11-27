@@ -187,6 +187,7 @@ public struct LogseqRootView : View {
     let syncCoordinator: GraphSyncCoordinator
     private struct LocalLaunchResult: Sendable {
         let catalogResponse: String
+        let catalogGraphIDs: [String]
         let graphResponse: String?
         let isEncrypted: Bool?
     }
@@ -765,24 +766,25 @@ public struct LogseqRootView : View {
                 )
             )
             configureGraph()
-            guard !graphID.isEmpty,
-                  let catalogData = catalogResponse.data(using: .utf8),
-                  let catalog = try? JSONDecoder().decode(
-                    LogseqRPCResponse.self,
-                    from: catalogData
-                  ) else {
+            let catalog = catalogResponse.data(using: .utf8).flatMap {
+                try? JSONDecoder().decode(LogseqRPCResponse.self, from: $0)
+            }
+            let catalogGraphs = catalog?.result?.graphs ?? []
+            let catalogGraphIDs = catalogGraphs.map(\.id)
+            guard !graphID.isEmpty, catalog != nil else {
                 return LocalLaunchResult(
                     catalogResponse: catalogResponse,
+                    catalogGraphIDs: catalogGraphIDs,
                     graphResponse: nil,
                     isEncrypted: nil
                 )
             }
-            let isEncrypted = catalog.result?.graphs?
-                .first(where: { $0.id == graphID })?.isEncrypted ?? false
-            let graphResponse = openGraph(isEncrypted: isEncrypted, graphName: catalog.result?.graphs?
-                .first(where: { $0.id == graphID })?.name ?? "Graph")
+            let selectedGraph = catalogGraphs.first(where: { $0.id == graphID })
+            let isEncrypted = selectedGraph?.isEncrypted ?? false
+            let graphResponse = openGraph(isEncrypted: isEncrypted, graphName: selectedGraph?.name ?? "Graph")
             return LocalLaunchResult(
                 catalogResponse: catalogResponse,
+                catalogGraphIDs: catalogGraphIDs,
                 graphResponse: graphResponse,
                 isEncrypted: isEncrypted
             )
@@ -799,7 +801,7 @@ public struct LogseqRootView : View {
         guard let result = localLaunchResult,
               !didApplyLocalLaunchResult else { return }
         didApplyLocalLaunchResult = true
-        applyLocalGraphIDsToLG(from: result.catalogResponse)
+        applyLocalGraphIDsToLG(from: result.catalogGraphIDs)
         if let isEncrypted = result.isEncrypted {
             UserDefaults.standard.set(isEncrypted, forKey: "logseq.selectedGraphEncrypted")
         }
@@ -829,15 +831,12 @@ public struct LogseqRootView : View {
         drainSharedCapturesIfReady()
     }
 
-    private func applyLocalGraphIDsToLG(from catalogResponse: String) {
-        guard let data = catalogResponse.data(using: .utf8),
-              let response = try? JSONDecoder().decode(LogseqRPCResponse.self, from: data)
-        else { return }
-        let graphIDs = (response.result?.graphs ?? []).compactMap { graph in
+    private func applyLocalGraphIDsToLG(from catalogGraphIDs: [String]) {
+        let graphIDs = catalogGraphIDs.filter { graphID in
             LogseqGraphLocalStorage.isDownloaded(
                 databasePath: databasePath,
-                graphID: graph.id
-            ) ? graph.id : nil
+                graphID: graphID
+            )
         }
         guard let payloadData = try? JSONEncoder().encode(graphIDs),
               let payload = String(data: payloadData, encoding: .utf8)
@@ -1207,6 +1206,7 @@ public final class LogseqAppDelegate : Sendable {
 
     @MainActor public func onInit() {
         let initStart = ProcessInfo.processInfo.systemUptime
+        LogseqCore.shared.warmUp()
         #if os(iOS)
         LogseqCrashReporting.start()
         Task { @MainActor in
