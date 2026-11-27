@@ -5344,10 +5344,7 @@ let dictionaries = [
     ("One week", "一周");
     ("One month", "一个月");
     ("Three months", "三个月");
-    ("Custom…", "自定义…");
-    ("Custom time range", "自定义时间范围");
-    ("Number of days", "天数");
-    ("Enter 1 to 36,600 days, including today.", "请输入 1 到 36,600 天，包含今天。");
+    ("One year", "一年");
     ("Repeat", "重复");
     ("Does not repeat", "不重复");
     ("Daily", "每天");
@@ -5817,10 +5814,7 @@ let dictionaries = [
     ("One week", "一週");
     ("One month", "一個月");
     ("Three months", "三個月");
-    ("Custom…", "自訂…");
-    ("Custom time range", "自訂時間範圍");
-    ("Number of days", "天數");
-    ("Enter 1 to 36,600 days, including today.", "請輸入 1 到 36,600 天，包含今天。");
+    ("One year", "一年");
     ("Repeat", "重複");
     ("Does not repeat", "不重複");
     ("Daily", "每天");

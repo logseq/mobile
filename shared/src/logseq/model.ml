@@ -447,7 +447,6 @@ type logseq_model =
   ; destination : primary_destination
   ; home_scroll_request : int
   ; tasks_view : tasks_view
-  ; tasks_lookback_sheet_open : bool
   ; tasks_selection_mode : bool
   ; sidebar_open : bool
   ; viewport_width : int
@@ -675,7 +674,6 @@ type logseq_action =
   | ScrollHomeToTop
   | ShowTasks
   | SetTasksView of tasks_view
-  | SetTasksLookbackSheet of bool
   | SelectTasks
   | ShowNotifications
   | ToggleRecentNotifications
@@ -886,7 +884,6 @@ let initial () =
     destination = JournalsDestination;
     home_scroll_request = 0;
     tasks_view = default_tasks_view;
-    tasks_lookback_sheet_open = false;
     tasks_selection_mode = false;
     sidebar_open = false;
     viewport_width = 0;
@@ -3433,7 +3430,6 @@ let rec update (current : logseq_model) action =
         sidebar_open = sidebar_after_navigation current;
         graph_menu_open = false;
         tasks_selection_mode = false;
-        tasks_lookback_sheet_open = false;
         pending_push_route = None;
         destination;
       }
@@ -3443,7 +3439,7 @@ let rec update (current : logseq_model) action =
   | SetTasksView _ when tasks_selection_active current -> current
   | SetTasksView tasks_view ->
     let updated = settle_hidden_task_editor ~remount:(current.tasks_view.tab <> tasks_view.tab)
-      { current with tasks_view; tasks_lookback_sheet_open = false } in
+      { current with tasks_view } in
     let updated =
       if { current.tasks_view with tab = tasks_view.tab } = tasks_view then updated
       else update updated SaveUISession in
@@ -3452,7 +3448,6 @@ let rec update (current : logseq_model) action =
        let payload = Yojson.Basic.to_string (`Assoc ["action", `String "refreshJournalTasks"; "graphId", `String graph]) in
        update updated (SubmitNodeProperty ("journal-tasks.refresh", payload))
      | _ -> updated)
-  | SetTasksLookbackSheet open_ -> {current with tasks_lookback_sheet_open = open_}
   | SelectTasks ->
     { (cancel_outliner_editing current) with tasks_selection_mode = true }
   | ShowFlashcards when not (List.mem "flashcards" current.sidebar_tabs) -> current

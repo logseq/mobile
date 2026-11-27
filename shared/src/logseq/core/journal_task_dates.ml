@@ -12,26 +12,19 @@ let identity value = Ok value
 let week_days = 7
 let max_upcoming_days = 31
 
-type lookback = OneWeek | OneMonth | ThreeMonths | CustomDays of int
-
-let custom_days text =
-  let text = String.trim text in
-  if String.for_all (function '0' .. '9' -> true | _ -> false) text then
-    match int_of_string_opt text with
-    | Some days when days >= 1 && days <= 36_600 -> Some days
-    | _ -> None
-  else None
+type lookback = OneWeek | OneMonth | ThreeMonths | OneYear
 
 let lookback_to_string = function
   | OneWeek -> "week"
   | OneMonth -> "month"
   | ThreeMonths -> "three-months"
-  | CustomDays days -> string_of_int days
+  | OneYear -> "year"
 
 let lookback_of_string = function
   | "month" -> OneMonth
   | "three-months" -> ThreeMonths
-  | value -> Option.fold ~none:OneWeek ~some:(fun days -> CustomDays days) (custom_days value)
+  | "year" -> OneYear
+  | _ -> OneWeek
 
 let task_group_key section page = "task-page:" ^ section ^ ":" ^ page
 
@@ -82,12 +75,14 @@ let rows ?actor ?on_comment_reference ?(includes = fun _ -> true) ?(lookback = O
   let first_upcoming = offset_day 1 in
   let module Date = Dev_query.Date_time_util in
   let midnight = Date.journal_day_to_local_ms today in
+  let calendar_start period count =
+    Cache_model.journal_day_for_ms
+      (Int64.to_int Date.(plus Days 1 (minus period count midnight))) in
   let first_today = match lookback with
     | OneWeek -> offset_day (1 - week_days)
-    | CustomDays days -> offset_day (1 - days)
-    | OneMonth | ThreeMonths ->
-      let months = if lookback = OneMonth then 1 else 3 in
-      Cache_model.journal_day_for_ms (Int64.to_int Date.(plus Days 1 (minus Months months midnight))) in
+    | OneMonth -> calendar_start Date.Months 1
+    | ThreeMonths -> calendar_start Date.Months 3
+    | OneYear -> calendar_start Date.Years 1 in
   let last_upcoming = Cache_model.journal_day_for_ms (Int64.to_int (Date.plus Months 1 midnight)) in
   let upcoming_end = Option.map (fun days -> min last_upcoming (offset_day days)) lookahead in
   let last_activity eid =
