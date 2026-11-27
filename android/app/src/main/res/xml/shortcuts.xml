@@ -37,18 +37,6 @@
             android:data="logseq://camera" />
     </shortcut>
     <shortcut
-        android:shortcutId="audio"
-        android:enabled="true"
-        android:icon="@drawable/ic_record_audio"
-        android:shortcutShortLabel="@string/record_audio"
-        android:shortcutLongLabel="@string/record_audio">
-        <intent
-            android:action="android.intent.action.VIEW"
-            android:targetPackage="com.logseq.logseq"
-            android:targetClass="com.logseq.logseq.MainActivity"
-            android:data="logseq://audio" />
-    </shortcut>
-    <shortcut
         android:shortcutId="journal"
         android:enabled="true"
         android:icon="@drawable/ic_shortcut_journal"
@@ -59,5 +47,17 @@
             android:targetPackage="com.logseq.logseq"
             android:targetClass="com.logseq.logseq.MainActivity"
             android:data="logseq://journal" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="audio"
+        android:enabled="true"
+        android:icon="@drawable/ic_record_audio"
+        android:shortcutShortLabel="@string/record_audio"
+        android:shortcutLongLabel="@string/record_audio">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.logseq.logseq"
+            android:targetClass="com.logseq.logseq.MainActivity"
+            android:data="logseq://audio" />
     </shortcut>
 </shortcuts>
