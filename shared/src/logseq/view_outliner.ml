@@ -621,10 +621,9 @@ let code_block_content ~allow_drag model_source retained_source row_source send 
       reactive (fun calculator -> if not calculator then input else
         row ~gap:0 ~cross:`start
           ~accessibility_identifier:("outliner.calculator." ^ current_row.row_uuid) [box ~grow:1.0 [input];
-          box ~min_width:64 ~padding:12 [
-            text ~value:(reactive (fun source -> String.concat "\n" (Node_presentation.calculator_results source)) source)
-              ~font_family:"monospace" ~font_size:"17" ~foreground:"muted-foreground"
-              ~accessibility_identifier:("outliner.calculator.results." ^ current_row.row_uuid) []]]) calculator;
+          text ~value:(reactive (fun source -> String.concat "\n" (Node_presentation.calculator_results source)) source)
+            ~min_width:64 ~padding:12 ~font_family:"monospace" ~font_size:"17" ~foreground:"muted-foreground"
+            ~accessibility_identifier:("outliner.calculator.results." ^ current_row.row_uuid) []]) calculator;
     ])
 
 let annotation_page_link row_source send =
