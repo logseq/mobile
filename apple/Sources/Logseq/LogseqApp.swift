@@ -435,6 +435,10 @@ public struct LogseqRootView : View {
     }
 
     public var databasePath: String {
+        Self.localDatabasePath
+    }
+
+    fileprivate nonisolated static var localDatabasePath: String {
         URL.documentsDirectory
             .appendingPathComponent("logseq.sqlite")
             .path
@@ -916,33 +920,6 @@ public struct LogseqRootView : View {
         drainSharedCapturesIfReady()
     }
 
-    public func captureShortcutText(_ text: String, task: Bool) async -> Bool {
-        await waitForLocalLaunchLoad()
-        guard let graphID = store.snapshot.selectedGraphId else { return false }
-        let saved = await store.captureShortcutText(text, graphID: graphID, task: task)
-        if saved { LogseqBackgroundRefresh.syncNow() }
-        return saved
-    }
-
-    public func captureShortcutPhoto(_ data: Data, title: String, contentType: String) async -> Bool {
-        await waitForLocalLaunchLoad()
-        guard let graphID = store.snapshot.selectedGraphId,
-              store.snapshot.isGraphUnlocked == true else { return false }
-        let directory = SharedCaptureStorage.sharedDirectory
-        guard let asset = try? SharedCaptureAssetStager.stage(
-            data: data, title: title, contentType: contentType, sharedDirectory: directory
-        ) else { return false }
-        let saved = await captureSharedAsset(asset, id: UUID().uuidString.lowercased(), graphID: graphID)
-        if saved {
-            LogseqBackgroundRefresh.syncNow()
-        } else {
-            let staged = directory.appendingPathComponent(asset.stagedFileName)
-            // If the import did not move the photo, discard its temporary copy.
-            try? FileManager.default.removeItem(at: staged)
-        }
-        return saved
-    }
-
     public func setWidgetTaskStatus(
         graphId: String,
         uuid: String,
@@ -1132,6 +1109,94 @@ struct LogseqCognitoConfiguration: Decodable {
             )
         }
         return configuration
+    }
+}
+
+@MainActor public enum LogseqJournalShortcutCapture {
+    public struct Graph: Decodable, Sendable {
+        public let id: String
+        public let name: String
+    }
+
+    private struct Response<Value: Decodable>: Decodable {
+        let ok: Bool
+        let result: Value?
+    }
+
+    private static let lastGraphKey = "logseq.lastShortcutCaptureGraphId"
+    private static let selectedGraphKey = "logseq.selectedGraphId"
+
+    public static func availableGraphs() async -> [Graph] {
+        let catalogPath = LogseqLogseqRuntime.localDatabasePath
+        let response = await call("shortcutGraphs", ["catalogPath": catalogPath])
+        let graphs = (try? JSONDecoder().decode(Response<[Graph]>.self, from: response))?.result ?? []
+        return graphs.filter { LogseqGraphLocalStorage.isDownloaded(databasePath: catalogPath, graphID: $0.id) }
+    }
+
+    public static func defaultGraph(in graphs: [Graph]) -> Graph? {
+        let defaults = UserDefaults.standard
+        for key in [lastGraphKey, selectedGraphKey] {
+            if let id = defaults.string(forKey: key), let graph = graphs.first(where: { $0.id == id }) {
+                return graph
+            }
+        }
+        return graphs.count == 1 ? graphs.first : nil
+    }
+
+    public static func captureText(_ text: String, task: Bool, graphID: String?) async -> Bool {
+        await capture("captureLocalShortcutText", graphID: graphID, fields: ["text": text, "task": task])
+    }
+
+    public static func capturePhoto(
+        _ data: Data, title: String, contentType: String, graphID: String?
+    ) async -> Bool {
+        let directory = SharedCaptureStorage.sharedDirectory
+        guard let asset = try? SharedCaptureAssetStager.stage(
+            data: data, title: title, contentType: contentType, sharedDirectory: directory
+        ) else { return false }
+        let file = directory.appendingPathComponent(asset.stagedFileName)
+        defer { try? FileManager.default.removeItem(at: file) }
+        var fields: [String: Any] = [
+            "title": asset.title, "assetType": asset.assetType, "assetSize": asset.size,
+            "assetChecksum": asset.checksum, "localPath": file.path
+        ]
+        if let dimensions = LGImageDimensions.read(at: file) {
+            fields["imageDimensions"] = ["width": dimensions.width, "height": dimensions.height]
+        }
+        return await capture("captureLocalShortcutPhoto", graphID: graphID, fields: fields)
+    }
+
+    private static func capture(_ action: String, graphID: String?, fields: [String: Any]) async -> Bool {
+        let graphs = await availableGraphs()
+        let target = if let graphID { graphs.first { $0.id == graphID } } else { defaultGraph(in: graphs) }
+        guard let target else { return false }
+        let catalogPath = LogseqLogseqRuntime.localDatabasePath
+        let directory = LogseqGraphLocalStorage.directoryURL(
+            databasePath: catalogPath, graphID: target.id, graphName: target.name
+        )
+        var payload = fields
+        payload["uuid"] = UUID().uuidString.lowercased()
+        payload["graphId"] = target.id
+        payload["catalogPath"] = catalogPath
+        payload["baseUrl"] = LogseqSettingsPolicy.storedBaseURL()
+        payload["activePath"] = directory.appendingPathComponent("graph.sqlite").path
+        payload["checkpointPath"] = directory.appendingPathComponent("sync.checkpoint").path
+        let response = await call(action, payload)
+        struct Outcome: Decodable { let ok: Bool }
+        guard (try? JSONDecoder().decode(Outcome.self, from: response))?.ok == true else { return false }
+        let defaults = UserDefaults.standard
+        defaults.set(target.id, forKey: lastGraphKey)
+        if target.id == defaults.string(forKey: selectedGraphKey) { LogseqBackgroundRefresh.syncNow() }
+        return true
+    }
+
+    private static func call(_ action: String, _ fields: [String: Any]) async -> Data {
+        guard let data = try? JSONSerialization.data(withJSONObject: fields) else { return Data() }
+        let response = await LogseqCore.callAsync(LogseqRPCRequest(
+            method: "dispatch",
+            params: LogseqRPCParams(action: action, payload: String(decoding: data, as: UTF8.self))
+        ))
+        return Data(response.utf8)
     }
 }
 

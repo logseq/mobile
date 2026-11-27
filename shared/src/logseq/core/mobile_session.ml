@@ -171,6 +171,63 @@ let create ?show_journal_tasks ?show_notifications crypto_call =
     { !(session.Types.state) with Types.sidebar_deferred = true };
   { database; keyring = ring; session = ref session }
 
+let shortcut_graphs catalog =
+  match Sqlite.restore_string catalog graph_catalog_address with
+  | Some body -> Api.graphs_from_graphs_body body
+  | None -> []
+
+let shortcut_action host action payload =
+  let module Wire = Rpc_wire in
+  Wire.action_response
+    (let ( let* ) = Result.bind in
+     let* fields = Wire.action_fields action (Option.value ~default:"" payload) in
+     let checked result = Wire.graph_workflow_result "capture_failed" result in
+     let* path = checked (Wire.required_string fields "catalogPath") in
+     if action = "shortcutGraphs" then
+       let graphs =
+         if not (Sys.file_exists path) then []
+         else
+           let catalog = Sqlite.open_session path in
+           Fun.protect ~finally:(fun () -> Sqlite.close catalog) (fun () -> shortcut_graphs catalog)
+       in
+       Ok (Wire.success (`List (List.filter_map (fun (graph : Api.api_graph) ->
+         if graph.ready then Some (`Assoc ["id", `String graph.id; "name", `String graph.name])
+         else None) graphs)))
+     else
+       let* graph_id = checked (Wire.required_string fields "graphId") in
+       let capture session =
+         let action = if action = "captureLocalShortcutPhoto" then "addAsset" else "captureShortcutText" in
+         Rpc.dispatch session action payload
+       in
+       match !(host.database.graph.current) with
+       | Some opened when opened.graph_id = graph_id ->
+         Ok (capture !(host.session))
+       | _ ->
+         let* base_url = checked (Wire.required_string fields "baseUrl") in
+         let* active_path = checked (Wire.required_string fields "activePath") in
+         let* checkpoint_path = checked (Wire.required_string fields "checkpointPath") in
+         let* () = checked
+           (if List.for_all Sys.file_exists [path; active_path; checkpoint_path] then Ok ()
+            else Error "The selected graph is not downloaded") in
+         (* The foreground host may be editing or syncing another graph. *)
+         let database = Database.create (Graph.create host.database.graph.crypto) in
+         Fun.protect ~finally:(fun () -> Database.close database) (fun () ->
+           let catalog = Database.open_catalog database path in
+           let* graph = checked (Option.to_result ~none:"The selected graph is unavailable"
+             (List.find_opt (fun (graph : Api.api_graph) -> graph.id = graph_id && graph.ready)
+               (shortcut_graphs catalog))) in
+           let session = create_rpc_session database host.keyring (Some catalog) in
+           let dispatch action fields =
+             Rpc.dispatch session action (Some (Yojson.Basic.to_string (`Assoc fields))) in
+           ignore (dispatch "configure" ["baseUrl", `String base_url; "graphId", `String graph_id;
+             "token", `String ""]);
+           let opened = dispatch "openGraph" ["graphId", `String graph_id; "activePath", `String active_path;
+             "checkpointPath", `String checkpoint_path; "isEncrypted", `Bool graph.e2ee] in
+           let response =
+             if Yojson.Basic.Util.member "ok" (Yojson.Basic.from_string opened) = `Bool true
+             then capture session else opened in
+           Ok response))
+
 let call (host : mobile_session) request =
   match Payload.database_open_path request with
   | Some path ->
@@ -182,7 +239,15 @@ let call (host : mobile_session) request =
       { !(session.Types.state) with Types.sidebar_deferred = true };
     host.session := session;
     Rpc.call session snapshot_request
-  | None -> Rpc.call !(host.session) request
+  | None ->
+    let session = !(host.session) in
+    Rpc_wire.call (fun () -> Rpc.snapshot_visible session)
+      (fun action payload ->
+        match action with
+        | "shortcutGraphs" | "captureLocalShortcutText" | "captureLocalShortcutPhoto" ->
+          shortcut_action host action payload
+        | _ -> Rpc.dispatch session action payload)
+      request
 
 let start ?show_journal_tasks ?show_notifications crypto_call =
   let host = create ?show_journal_tasks ?show_notifications crypto_call in

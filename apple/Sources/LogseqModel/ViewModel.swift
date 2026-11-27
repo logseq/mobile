@@ -999,22 +999,6 @@ private struct CreateSyncGraphPayload: Encodable {
         await captureShared(text: text, title: nil, url: nil, id: id)
     }
 
-    public func captureShortcutText(_ text: String, graphID: String, task: Bool) async -> Bool {
-        struct Payload: Encodable {
-            let uuid: String
-            let text: String
-            let graphId: String
-            let task: Bool
-        }
-        lastError = nil
-        await dispatchEncodedAndWait("captureShortcutText", Payload(
-            uuid: UUID().uuidString.lowercased(), text: text, graphId: graphID, task: task
-        ))
-        guard lastError == nil else { return false }
-        syncPending()
-        return true
-    }
-
     public func captureShared(text: String?, title: String?, url: String?, id: String) async -> Bool {
         struct Payload: Encodable { let uuid: String; let text: String?; let title: String?; let url: String? }
         lastError = nil
