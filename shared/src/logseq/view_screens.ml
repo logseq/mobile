@@ -520,6 +520,114 @@ let root_outliner_view ?scroll_to_top (context : Lui_ui.ui_context) model_source
           ]))));
     ])
 
+let duo_journal_book model_source send classic : t =
+  custom (fun context parent ->
+    let node = Lui_ui.extension context "duo-journal-book" in
+    let scheduler = context.Lui_ui.ui_scheduler in
+    let wide = Signal.state scheduler false in
+    let selected = Signal.state scheduler 0 in
+    let active = Signal.value wide in
+    let position = Signal.value selected in
+    let home_request = Signal.cutoff Int.equal (Signal.map (fun current ->
+      current.Model.home_scroll_request) model_source) in
+    let observed_home_request = ref (Signal.sample home_request) in
+    ignore (Signal.own context.ui_scope (Signal.observe home_request (fun request ->
+      if request <> !observed_home_request then begin
+        observed_home_request := request;
+        Signal.set selected 0
+      end)));
+    let day_plus = Dev_query.Date_time_util.journal_day_plus in
+    let rows = Signal.cutoff ( == ) (Signal.map (fun current ->
+      current.Model.journal_outliner_rows) model_source) in
+    let rows = Signal.cutoff ( == )
+      (Signal.map2 (fun active rows -> if active then rows else []) active rows) in
+    let grouped = Signal.map (fun rows ->
+      let days = Hashtbl.create 8 in
+      List.iter (fun (row : Model.outline_row) ->
+        Option.iter (fun day ->
+          let previous = Option.value ~default:[] (Hashtbl.find_opt days day) in
+          Hashtbl.replace days day (row :: previous)) row.journal_day) rows;
+      Hashtbl.fold (fun day _ anchor -> max day anchor) days
+        (Cache_model.journal_day_for_ms (Session_types.now_ms ())), days) rows in
+    let has_more = Signal.cutoff Bool.equal (Signal.map (fun current ->
+      current.Model.has_older_journals) model_source) in
+    let can_turn = Signal.map (fun current ->
+      View_base.journal_home_visible_ current
+      && current.outliner_editing = None
+      && current.outliner_selected_block_ids = []
+      && not current.composer_expanded
+      && current.discussion_composition = None) model_source in
+    let window = Signal.map2 (fun (active, index) ((anchor, days), has_more) ->
+      if not active then [] else
+      let oldest = Hashtbl.fold (fun day _ oldest -> min day oldest) days anchor in
+      List.filter (fun candidate ->
+        candidate >= 0
+        && (candidate = index || has_more
+            || Option.fold ~none:false ~some:(fun day -> day >= oldest)
+                 (day_plus anchor (-2 * candidate)))) [index - 1; index; index + 1])
+      (Signal.map2 (fun active index -> active, index) active position)
+      (Signal.map2 (fun grouped has_more -> grouped, has_more) grouped has_more) in
+    let first = Signal.map (function index :: _ -> index | [] -> 0) window in
+    let state name wrap source =
+      Lui_ui.extension_property_signal context node name (Signal.map wrap source) in
+    attach context parent node;
+    state "can-turn" View_base.bool_wire_value can_turn;
+    state "first-index" View_base.int_wire_value first;
+    state "selected-index" View_base.int_wire_value position;
+    Lui_ui.on_event context node (function
+      | ExtensionEvent (_, _, "resize", fields) ->
+        (match String_map.find_opt "width" fields with
+         | Some (IntValue width) ->
+           let enable = width >= 600 in
+           Signal.set wide enable;
+           if enable && View_base.older_journals_visible_ (Signal.sample model_source) then
+             ignore (send Model.LoadOlderJournals)
+         | _ -> ())
+      | ExtensionEvent (_, _, "select", fields) ->
+        (match String_map.find_opt "index" fields with
+         | Some (IntValue index) when Signal.sample can_turn && List.mem index (Signal.sample window) ->
+           Signal.set selected index;
+           let anchor, days = Signal.sample grouped in
+           let oldest = Hashtbl.fold (fun day _ oldest -> min day oldest) days anchor in
+           if Signal.sample has_more && Option.fold ~none:false ~some:(fun day -> day <= oldest)
+               (day_plus anchor (-2 * (index + 1))) then
+             ignore (send Model.LoadOlderJournals)
+         | _ -> ())
+      | _ -> ());
+    let visible = Signal.map View_base.journal_home_visible_ model_source in
+    let page index side =
+      let day = Signal.map2 (fun (anchor, _) index ->
+        Option.value ~default:anchor (day_plus anchor (-2 * index - side))) grouped index in
+      reactive (fun day ->
+        let recorded_rows =
+          Signal.cutoff (fun a b -> a == b || a = b)
+            (Signal.map (fun (_, days) -> Option.value ~default:[] (Hashtbl.find_opt days day)
+              |> List.rev) grouped) in
+        let projection = Signal.map2 (fun (current : Model.logseq_model) rows ->
+          View_base.journal_navigation_model
+            {current with journal_outliner_rows = rows; has_older_journals = false})
+            model_source recorded_rows in
+        let empty = Signal.map (fun rows -> rows = []) recorded_rows in
+        box ~grow:1.0 ~accessibility_identifier:("journal.duo.day." ^ string_of_int day) [
+          if_ ~test:empty
+            (column ~padding:24 [
+              View_outliner.page_heading_text ~accessibility_identifier:"journal.duo.empty-title"
+                (Signal.map (fun current -> View_base.journal_display_title current (Some day)
+                   (Journal.day_title day)) model_source)
+            ]);
+          if_ ~test:(Signal.map not empty) (root_outliner_view context projection visible send)
+        ]) day in
+    ignore (mount context ~parent:node (box ~grow:1.0 [classic]));
+    ignore (mount context ~parent:node (box ~grow:1.0 [
+      keyed ~source:window ~key:Fun.id ~cmp:Int.compare ~mount:(fun index ->
+        row ~grow:1.0 ~gap:0 ~cross:`stretch [
+          page index 1;
+          box ~width:1 ~background:"border" [];
+          page index 0;
+        ])
+    ]));
+    node)
+
 let retained_journal_pane (context : Lui_ui.ui_context) model_source send
     : t =
   let scroll_to_top =
@@ -543,6 +651,13 @@ let retained_journal_pane (context : Lui_ui.ui_context) model_source send
          model_source)
       send
   in
+  let content =
+    if uses_ios_native_header context then
+      keyed
+        ~source:(Signal.map (fun current -> [current.Model.selected_graph_id]) model_source)
+        ~key:Fun.id ~cmp:compare
+        ~mount:(fun _ -> duo_journal_book model_source send content)
+    else content in
   box ~grow:1.0 ~accessibility_identifier:"pane.journals" [content]
 
 let journal_tree_panes (context : Lui_ui.ui_context) model_source send : t

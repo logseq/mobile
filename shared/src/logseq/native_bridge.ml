@@ -701,7 +701,8 @@ let extension_event node identifier name text value =
   let open Lui_protocol in
   let values =
     match identifier, name with
-    | "bottom-tab-strip", "select" -> ["index", IntValue value]
+    | ("bottom-tab-strip" | "duo-journal-book"), "select" -> ["index", IntValue value]
+    | "duo-journal-book", "resize" -> ["width", IntValue value]
     | "native-pdf-workspace", "event" -> ["payload", StringValue text]
     | "outliner-block-row", "set-priority" -> ["priority", StringValue text]
     | ("outliner-block-row" | "outliner-block-content"), "set-status" -> ["uuid", StringValue text; "count", IntValue value]
