@@ -41,7 +41,7 @@ struct LGSidebarOverlay: View {
         UIDevice.current.userInterfaceIdiom == .pad || Self.isDuo
     }
 
-    private static let isDuo: Bool = {
+    static let isDuo: Bool = {
         // Both displays on the Duo keep the existing renderer. The outer display
         // shares a compact size class with other phones.
         #if targetEnvironment(simulator)

@@ -234,12 +234,14 @@ import LogseqModel
                     try saveScreenshot("duo-rail-misaligned.png")
                     throw failure("Capture rail must align with the native overflow: more=\(more), actions=\(actionFrames), safeArea=\(host.view.safeAreaInsets)")
                 }
-                guard let last = actionFrames.last,
-                      window.bounds.maxY - last.maxY <= max(44, window.safeAreaInsets.bottom + 10) else {
-                    throw failure("Capture rail must stay near the bottom edge, without a duplicate safe-area inset: \(actionFrames)")
+                guard let rail = views(window).first(where: { $0.accessibilityIdentifier == "navigation.capture-rail" }) else {
+                    throw failure("Missing the shared side controls")
                 }
-                guard let rail = views(window).first(where: { $0.accessibilityIdentifier == "navigation.capture-rail" }),
-                      actionFrames.allSatisfy({ frame in
+                let railFrame = rail.convert(rail.bounds, to: window)
+                guard window.bounds.maxY - railFrame.maxY <= max(44, window.safeAreaInsets.bottom + 10) else {
+                    throw failure("Side controls must stay near the bottom edge, without a duplicate safe-area inset: \(railFrame)")
+                }
+                guard actionFrames.allSatisfy({ frame in
                           window.hitTest(CGPoint(x: frame.midX, y: frame.midY), with: nil)?.isDescendant(of: rail) == true
                       }) else {
                     throw failure("The visible side actions must receive touches at their rendered positions")

@@ -28,6 +28,7 @@ enum LGExtensionRegistry {
         )
         try OutlinerRowExtension.register(in: registry, playback: LGYouTubePlaybackState())
         #if os(iOS)
+        try LGDuoJournalBook.register(in: registry)
         try OutlinerSelectionToolbar.register(in: registry)
         try LGReactionPickerExtension.register(in: registry)
         #endif

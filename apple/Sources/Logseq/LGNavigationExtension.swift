@@ -757,6 +757,9 @@ private struct LGNavigationContent: View {
     @Environment(\.luiSemanticColors) private var semanticColors
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
     private var search: LGNativeSearchState? { toolbarStartIndex == nil ? nil : inheritedSearch }
     private func nativeSearchHost(_ search: LGNativeSearchState?) -> LGNativeSearchHost {
@@ -768,6 +771,17 @@ private struct LGNavigationContent: View {
     }
     private var searchVisible: Bool { search?.isVisible == true }
     private var verticalToolbar: Bool { verticalToolbarEdge != nil }
+    private var usesUnfoldedDuoHeading: Bool {
+        #if os(iOS)
+        return verticalToolbar && LGSidebarOverlay.isDuo && horizontalSizeClass == .regular
+        #else
+        return false
+        #endif
+    }
+
+    private var showsVerticalRootHeading: Bool {
+        verticalToolbar && toolbarStartIndex != nil && !pdfWorkspaceOpen
+    }
     private var searchRoutes: [Int] {
         guard searchVisible, let search else { return [] }
         return pageRoutes(in: search.context, depth: search.depth)
@@ -797,6 +811,16 @@ private struct LGNavigationContent: View {
 
     private var usesSideCaptureActions: Bool {
         verticalToolbar && !selectionActive && hasCollapsedComposer && captureActionIDs.count == 4
+    }
+
+    private var sideTabsID: Int? {
+        guard usesSideCaptureActions, let index = bottomChromeIndex, let chrome = childID(at: index) else { return nil }
+        func tabStrip(in node: Int) -> Int? {
+            if context.extensionIdentifier(of: node) == "bottom-tab-strip" { return node }
+            let _ = context.measureStamp(of: node)
+            return context.childIDs(of: node).lazy.compactMap(tabStrip(in:)).first
+        }
+        return tabStrip(in: chrome)
     }
 
     private var rootTitleContent: Int? {
@@ -1119,14 +1143,15 @@ private struct LGNavigationContent: View {
     @ViewBuilder
     private var rootNavigationSurface: some View {
         let base = AnyView(transformedRootContent.safeAreaInset(edge: .top, spacing: 0) {
-            if verticalToolbar, toolbarStartIndex != nil {
-                // A principal item would create a second, horizontal bar on Duo.
-                let hideTitle = searchVisible || pdfWorkspaceOpen
+            if showsVerticalRootHeading {
+                // Keep the heading inside the active pane so the graph menu remains tappable.
                 rootHeaderTitle
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .opacity(hideTitle ? 0 : 1)
-                .allowsHitTesting(!hideTitle)
-                .accessibilityHidden(hideTitle)
+                    .frame(maxWidth: .infinity, minHeight: 44,
+                           alignment: usesUnfoldedDuoHeading ? .leading : .center)
+                    .padding(.horizontal, 16)
+                    .opacity(searchVisible ? 0 : 1)
+                    .allowsHitTesting(!searchVisible)
+                    .accessibilityHidden(searchVisible)
             }
         })
         withAppTint(searchSurface(base, active: path.isEmpty))
@@ -1141,7 +1166,7 @@ private struct LGNavigationContent: View {
             .background {
                 if toolbarStartIndex != nil {
                     LGCaptureRailHost(
-                        content: AnyView(captureRail
+                        content: AnyView(sideControls
                             .environment(\.luiSemanticColors, semanticColors)
                             .environment(\.locale, locale)
                             .environment(\.colorScheme, colorScheme)),
@@ -1152,6 +1177,17 @@ private struct LGNavigationContent: View {
                 }
             }
             #endif
+    }
+
+    private var sideControls: some View {
+        VStack(spacing: 9) {
+            captureRail
+            if let tabs = sideTabsID {
+                context.nodeView(of: tabs)
+                    .environment(\.lgRendersSideTabs, true)
+            }
+        }
+        .fixedSize()
     }
 
     private var captureRail: some View {
@@ -1423,6 +1459,7 @@ private struct LGNavigationContent: View {
     private var floatingBottomChrome: some View {
         sizedBottomChrome
             .environment(\.lgUsesSideCaptureActions, usesSideCaptureActions)
+            .environment(\.lgPlacesTabsOnSide, sideTabsID != nil)
             .fixedSize(horizontal: false, vertical: true)
     }
 

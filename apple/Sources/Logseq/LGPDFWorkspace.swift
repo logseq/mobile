@@ -46,6 +46,7 @@ private struct LGPDFSplitContent: View {
     @State private var fraction = 0.5
     @State private var isResizing = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some View {
         GeometryReader { geometry in
@@ -64,6 +65,7 @@ private struct LGPDFSplitContent: View {
                         send(value)
                     })
                         .frame(width: fullScreen ? geometry.size.width : width)
+                        .environment(\.layoutDirection, layoutDirection)
                         .accessibilityIdentifier("pdf.reader")
                     LGPDFResizeHandle(onDelta: { delta in
                         let current = min(max(minimum, available * fraction), available - minimum)
@@ -94,6 +96,7 @@ private struct LGPDFSplitContent: View {
                 .accessibilityHidden(fullScreen)
                 .environment(\.lgPDFWorkspaceOpen, open)
                 .environment(\.lgPDFMainHidden, fullScreen)
+                .environment(\.layoutDirection, layoutDirection)
                 .environment(\.lgOpenPDF, { uuid, title, url in
                     send(["action": "open", "uuid": uuid, "title": title, "path": url.path])
                 })
@@ -104,6 +107,9 @@ private struct LGPDFSplitContent: View {
                 .accessibilityIdentifier(open ? "pdf.main" : "application.main")
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
+            // The reader owns the physical left pane and the divider grows it
+            // to the right. Each pane still lays out its contents in the app's language.
+            .environment(\.layoutDirection, .leftToRight)
             .transaction { if isResizing { $0.disablesAnimations = true } }
         }
     }
