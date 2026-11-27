@@ -335,9 +335,11 @@ let ensure_search_schema connection =
   let existing =
     match
       query connection
-        "SELECT count(*) FROM sqlite_master WHERE (type = 'table' AND name IN \
+        "SELECT coalesce(sum(CASE WHEN name = 'blocks_title_nocase_idx' THEN -10 ELSE 1 END), 0) \
+         FROM sqlite_master WHERE (type = 'table' AND name IN \
          ('search_metadata', 'blocks', 'blocks_fts')) OR (type = 'trigger' \
-         AND name IN ('blocks_ad', 'blocks_ai', 'blocks_au'))"
+         AND name IN ('blocks_ad', 'blocks_ai', 'blocks_au')) OR (type = 'index' \
+         AND name = 'blocks_title_nocase_idx')"
         []
         (fun row -> Db.column_int row 0)
     with
