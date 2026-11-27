@@ -79,6 +79,7 @@ public final class LGPlatformPresentationCoordinator {
 
     #if os(iOS)
     private(set) var taskDateSheet: LGTaskDateSheetRequest?
+    var shortcutCameraGraph: LogseqJournalShortcutCapture.Graph?
 
     func presentTaskDateSheet(_ request: LGTaskDateSheetRequest) {
         // Patches may disable animation while applying model changes. Let the
@@ -261,6 +262,7 @@ struct LGPlatformPresentationHost: ViewModifier {
             .environment(\.lgPlatformPresentation, coordinator)
             .onChange(of: coordinator.journalCalendarPresented || coordinator.graphDownloadProgress != nil
                       || coordinator.taskDateSheet != nil || coordinator.attachmentService != nil
+                      || coordinator.shortcutCameraGraph != nil
                       || !coordinator.pendingDeletionBlockIDs.isEmpty,
                       initial: true) { _, open in
                 LogseqCrashReporting.presentation(.platform, open: open)
@@ -283,6 +285,9 @@ struct LGPlatformPresentationHost: ViewModifier {
                     }
                 }
                 .lgCalendarSheet()
+            }
+            .fullScreenCover(item: $coordinator.shortcutCameraGraph) { graph in
+                LGJournalShortcutCamera(graph: graph)
             }
             .sheet(item: Binding(
                 get: { coordinator.taskDateSheet },
