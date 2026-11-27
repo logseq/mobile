@@ -388,7 +388,7 @@ private fun OutlinerBlockRow(
                                         .padding(top = 2.dp, end = 4.dp)
                                         .size(20.dp)
                                         .semantics {
-                                            testTag = "outliner.task-status-icon.${row.uuid}"
+                                            testTag = "button.block-task-status"
                                             testTagsAsResourceId = true
                                         }
                                         .clickable {
