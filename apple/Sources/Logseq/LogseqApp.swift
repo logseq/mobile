@@ -502,17 +502,6 @@ public struct LogseqRootView : View {
         logStartupStage("app.run.start")
         startLGRenderer()
         let opensWidgetBlock = initialWidgetURL != nil
-        var launchSidebarTask: Task<Void, Never>?
-        if !opensWidgetBlock, let graphID = store.snapshot.selectedGraphId {
-            // Load the sidebar for the already-opened local graph concurrently
-            // with authentication restore instead of waiting behind Keychain I/O.
-            launchSidebarTask = Task { [weak self] in
-                guard let self else { return }
-                let sidebarStart = ProcessInfo.processInfo.systemUptime
-                await self.store.loadLaunchSidebar(graphID: graphID)
-                self.logStartupStage("app.load_sidebar.done", since: sidebarStart)
-            }
-        }
         // A cached widget target can render while authentication restores.
         if !opensWidgetBlock {
             let authStart = ProcessInfo.processInfo.systemUptime
@@ -546,9 +535,7 @@ public struct LogseqRootView : View {
         }
         await resumeLGApplication()
         // A successful graph bootstrap loads the sidebar as part of its projection.
-        if let launchSidebarTask {
-            await launchSidebarTask.value
-        } else if !didResumeCurrentActivation, let graphID = store.snapshot.selectedGraphId {
+        if !didResumeCurrentActivation, let graphID = store.snapshot.selectedGraphId {
             let sidebarStart = ProcessInfo.processInfo.systemUptime
             await store.loadLaunchSidebar(graphID: graphID)
             logStartupStage("app.load_sidebar.done", since: sidebarStart)
