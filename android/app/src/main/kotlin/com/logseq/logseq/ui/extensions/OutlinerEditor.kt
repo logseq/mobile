@@ -262,11 +262,13 @@ internal fun OutlinerEditor(
         if (acknowledged >= 0) {
             repeat(acknowledged + 1) { publishedTitles.removeAt(0) }
         }
-        // An older echo must not replace newer typing or active IME composition.
-        val preserveNativeInput = acknowledged >= 0 &&
-            (!selectionRequested || value.text != modelTitle || value.composition != null)
-        // Caret-only echoes preserve newer native selection; explicit requests change selectionRevision.
-        if (!preserveNativeInput && (blockChanged || selectionRequested || titleChanged)) {
+        val hasNewerInput = selectionRequested && !blockChanged && value.let {
+            it.text != modelTitle || it.composition != null
+        }
+        // A structural acknowledgement can change only the revision after the new block
+        // is already accepting input. A caret request must not replace that text.
+        val preserveNativeInput = acknowledged >= 0 && (!selectionRequested || hasNewerInput)
+        if (!preserveNativeInput && (blockChanged || titleChanged || (selectionRequested && !hasNewerInput))) {
             if (titleChanged) publishedTitles.clear()
             publishedInput = null
             applyingModel = true

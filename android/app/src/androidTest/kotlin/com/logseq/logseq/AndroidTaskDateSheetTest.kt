@@ -8,6 +8,7 @@ import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasTestTag
@@ -68,12 +69,20 @@ class AndroidTaskDateSheetTest {
         val dayLabel = requireNotNull(DatePickerDefaults.dateFormatter().formatDate(
             targetDate, gregorianLocale, forContentDescription = true,
         ))
+        val clear = ui.onNode(hasTestTag("task-dates.clear"))
+        clear.assertIsEnabled()
         ui.onNode(hasText(dayLabel, substring = true) and hasClickAction() and
             hasAnyAncestor(hasTestTag("task-dates.calendar"))).performClick()
         ui.runOnIdle {
             val choose = events.filterIsInstance<LuiEvent.Extension>().single()
             assertEquals("choose", choose.name)
             assertEquals("20301015", choose.values["value"])
+            val empty = payload.put("value", JSONObject.NULL).put("canClear", false)
+            val update = JSONObject().put("op", "set-extension-prop").put("id", 2)
+                .put("property", "payload").put("value", empty.toString())
+            assertTrue(backend.lastError, backend.applyJson(JSONObject().put("generation", 2)
+                .put("ops", JSONArray().put(update)).toString()))
         }
+        clear.assertDoesNotExist()
     }
 }
