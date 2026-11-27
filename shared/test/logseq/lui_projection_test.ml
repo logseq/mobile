@@ -138,11 +138,13 @@ let native_session_roundtrip_preserves_assets_and_returns_home () =
     Model.tab = Model.TasksUpcoming;
     group_by_page = false; sort_tasks = Model.DeadlineDate; sort_pages = Model.PageCreated;
     compact = true; show_completed = false; show_past = false;
+    lookback = Journal_task_dates.OneYear;
   } in
   let original = Model.update {selected_tab with notifications_recent_only = false}
     (Model.SetTasksView preferences) in
   let saved = match original.pending_effects with
-    | [Model.PersistUISessionEffect (_, session)] -> Native_bridge.encode_ui_session session
+    | [Model.PersistUISessionEffect (_, session);
+       Model.NodePropertyEffect (_, "journal-tasks.refresh", _)] -> Native_bridge.encode_ui_session session
     | _ -> Alcotest.fail "Changing Tasks display preferences must save them immediately" in
   ignore (Native_bridge.initialize 2 2 3);
   Fun.protect

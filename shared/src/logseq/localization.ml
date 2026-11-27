@@ -5340,6 +5340,11 @@ let dictionaries = [
     ("Upcoming", "即将到来");
     ("No upcoming tasks", "暂无即将到来的任务");
     ("Task options", "任务选项");
+    ("Time range", "时间范围");
+    ("One week", "一周");
+    ("One month", "一个月");
+    ("Three months", "三个月");
+    ("One year", "一年");
     ("Repeat", "重复");
     ("Does not repeat", "不重复");
     ("Daily", "每天");
@@ -5805,6 +5810,11 @@ let dictionaries = [
     ("Upcoming", "即將到來");
     ("No upcoming tasks", "暫無即將到來的任務");
     ("Task options", "任務選項");
+    ("Time range", "時間範圍");
+    ("One week", "一週");
+    ("One month", "一個月");
+    ("Three months", "三個月");
+    ("One year", "一年");
     ("Repeat", "重複");
     ("Does not repeat", "不重複");
     ("Daily", "每天");

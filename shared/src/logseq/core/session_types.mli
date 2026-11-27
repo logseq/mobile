@@ -74,6 +74,7 @@ type host_options =
   ; storage : Datascript.storage option
   ; outliner_projection_limit : int option
   ; show_journal_tasks : (unit -> bool) option
+  ; task_lookback : (unit -> Journal_task_dates.lookback) option
   ; show_notifications : (unit -> bool) option
   ; open_graph : (string -> (unit, string) result) option
   ; close_graph : (string -> (unit, string) result) option

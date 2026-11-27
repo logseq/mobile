@@ -49,6 +49,7 @@ type tasks_view =
   ; compact : bool
   ; show_completed : bool
   ; show_past : bool
+  ; lookback : Journal_task_dates.lookback
   }
 
 val default_tasks_view : tasks_view

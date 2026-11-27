@@ -12,6 +12,20 @@ let identity value = Ok value
 let week_days = 7
 let max_upcoming_days = 31
 
+type lookback = OneWeek | OneMonth | ThreeMonths | OneYear
+
+let lookback_to_string = function
+  | OneWeek -> "week"
+  | OneMonth -> "month"
+  | ThreeMonths -> "three-months"
+  | OneYear -> "year"
+
+let lookback_of_string = function
+  | "month" -> OneMonth
+  | "three-months" -> ThreeMonths
+  | "year" -> OneYear
+  | _ -> OneWeek
+
 let task_group_key section page = "task-page:" ^ section ^ ":" ^ page
 
 let task_field key = function
@@ -55,13 +69,20 @@ let date = Task_recurrence.date
 let status_attr = "logseq.property/status"
 let doing_ident = "logseq.property/status.doing"
 
-let rows ?actor ?on_comment_reference ?(includes = fun _ -> true) db today lookahead =
+let rows ?actor ?on_comment_reference ?eids ?(lookback = OneWeek) db today lookahead =
   let offset_day days =
     Option.value ~default:today (Dev_query.Date_time_util.journal_day_plus today days) in
-  let first_today = offset_day (1 - week_days) in
   let first_upcoming = offset_day 1 in
   let module Date = Dev_query.Date_time_util in
   let midnight = Date.journal_day_to_local_ms today in
+  let calendar_start period count =
+    Cache_model.journal_day_for_ms
+      (Int64.to_int Date.(plus Days 1 (minus period count midnight))) in
+  let first_today = match lookback with
+    | OneWeek -> offset_day (1 - week_days)
+    | OneMonth -> calendar_start Date.Months 1
+    | ThreeMonths -> calendar_start Date.Months 3
+    | OneYear -> calendar_start Date.Years 1 in
   let last_upcoming = Cache_model.journal_day_for_ms (Int64.to_int (Date.plus Months 1 midnight)) in
   let upcoming_end = Option.map (fun days -> min last_upcoming (offset_day days)) lookahead in
   let last_activity eid =
@@ -89,31 +110,66 @@ let rows ?actor ?on_comment_reference ?(includes = fun _ -> true) db today looka
       details in
   let eids_with_ref attr value =
     Datascript_value.datoms_by_ref db Ds.Aevt attr value |> Seq.map (fun datom -> datom.Ds.e) in
-  let doing_eids = match Ds.entid db "db/ident" (Ds.Keyword doing_ident) with
-    | None -> Seq.empty
-    | Some doing ->
-      let explicit = eids_with_ref status_attr doing in
-      if default_status_eid <> Some doing then explicit
-      else
-        let classes = match Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Task") with
-          | Some task -> Read.class_descendants db task
-          | None -> [] in
-        Seq.append explicit (List.to_seq classes |> Seq.flat_map (eids_with_ref "block/tags")) in
+  let doing = Ds.entid db "db/ident" (Ds.Keyword doing_ident) in
+  let doing_classes =
+    match doing with
+    | Some eid when default_status_eid = Some eid ->
+      (match Ds.entid db "db/ident" (Ds.Keyword "logseq.class/Task") with
+       | Some task -> Read.class_descendants db task
+       | None -> [])
+    | _ -> [] in
   let start = Date.journal_day_to_local_ms first_today in
   let next_after_upcoming = Option.value ~default:last_upcoming (Date.journal_day_plus last_upcoming 1) in
   let stop = Int64.pred (Date.journal_day_to_local_ms next_after_upcoming) in
-  let dated_eids = List.to_seq fields |> Seq.flat_map (fun (_, attr) ->
+  let date_in_range (datom : Ds.datom) =
+    match datom.v with
+    | Ds.Int64 time | Ds.Instant time -> time >= start && time <= stop
+    | _ -> false in
+  let dated_eids () = List.to_seq fields |> Seq.flat_map (fun (_, attr) ->
       let datoms = if Ds.Schema.schema_attr_is_avet_accessible (Ds.schema db) attr then
           Ds.index_range db attr ~start:(Ds.Int64 start) ~stop:(Ds.Int64 stop) ()
         else Ds.Db.datoms db Ds.Aevt ~a:attr () in
-      Seq.filter_map (fun (datom : Ds.datom) ->
-        match datom.v with
-        | Ds.Int64 time | Ds.Instant time when time >= start && time <= stop -> Some datom.e
-        | _ -> None) datoms) in
-  let recent_eids = Seq.init week_days (fun i -> offset_day (-i)) |> Seq.flat_map (fun day ->
-    match Option.bind (Read.journal_page_uuid db day)
-      (fun uuid -> Ds.entid db "block/uuid" (Ds.Uuid uuid)) with
-    | Some page -> eids_with_ref "block/page" page | None -> Seq.empty) in
+      Seq.filter date_in_range datoms |> Seq.map (fun datom -> datom.Ds.e)) in
+  let journal_attr = "block/journal-day" in
+  let journal_pages first last =
+    let first = Int64.of_int first and last = Int64.of_int last in
+    let datoms = if Ds.Schema.schema_attr_is_avet_accessible (Ds.schema db) journal_attr then
+        Ds.index_range db journal_attr ~start:(Ds.Int64 first) ~stop:(Ds.Int64 last) ()
+      else Ds.Db.datoms db Ds.Aevt ~a:journal_attr () in
+    let seen_days = Hashtbl.create week_days in
+    datoms |> Seq.filter_map (fun (datom : Ds.datom) ->
+      match datom.v with
+      | Ds.Int64 day when day >= first && day <= last && not (Hashtbl.mem seen_days day)
+          && not (Read.page_is_hidden db datom.e) && Read.uuid_for_eid db datom.e <> None ->
+        Hashtbl.add seen_days day ();
+        Some datom.e
+      | _ -> None) in
+  let in_today day = day >= first_today && day <= today in
+  let candidates = match eids with
+    | None ->
+      let doing_eids = Option.fold ~none:Seq.empty ~some:(eids_with_ref status_attr) doing in
+      let doing_class_eids = List.to_seq doing_classes |> Seq.flat_map (eids_with_ref "block/tags") in
+      let recent_eids = journal_pages first_today today |> Seq.flat_map (eids_with_ref "block/page") in
+      Seq.concat (List.to_seq [dated_eids (); doing_eids; doing_class_eids; recent_eids])
+    | Some eids ->
+      let canonical_pages = Hashtbl.create (List.length eids) in
+      let on_recent_journal page =
+        match Read.int_value (Read.value db page journal_attr) with
+        | Some day when in_today day ->
+          let canonical = match Hashtbl.find_opt canonical_pages day with
+            | Some value -> value
+            | None ->
+              let value = Option.map fst (Seq.uncons (journal_pages day day)) in
+              Hashtbl.add canonical_pages day value;
+              value in
+          canonical = Some page
+        | _ -> false in
+      List.to_seq eids |> Seq.filter (fun eid ->
+        List.exists (fun (_, attr) ->
+          Seq.exists date_in_range (Ds.Db.datoms db Ds.Eavt ~e:eid ~a:attr ())) fields
+        || Option.exists (Read.has_ref db eid status_attr) doing
+        || List.exists (Read.has_ref db eid "block/tags") doing_classes
+        || List.exists on_recent_journal (Read.ref_eids db eid "block/page")) in
   let order_path eid page =
     let rec collect seen path eid =
       if eid = page || List.mem eid seen then path
@@ -125,7 +181,7 @@ let rows ?actor ?on_comment_reference ?(includes = fun _ -> true) db today looka
         | [] -> path in
     collect [] [] eid in
   let candidates = Seq.filter_map (fun eid ->
-    if not (includes eid) || Hashtbl.mem seen eid then None else (
+    if Hashtbl.mem seen eid then None else (
       Hashtbl.add seen eid ();
       let scheduled_at = date db eid scheduled in
       let deadline_at = date db eid deadline in
@@ -134,16 +190,15 @@ let rows ?actor ?on_comment_reference ?(includes = fun _ -> true) db today looka
       let dates = List.filter_map (Option.map Cache_model.journal_day_for_ms) [scheduled_at; deadline_at] in
       let upcoming = Option.exists (fun last -> List.exists (fun day -> day >= first_upcoming && day <= last) dates)
         upcoming_end in
-      let recent day = day >= first_today && day <= today in
-      let due = lookahead <> None && List.exists recent dates in
+      let due = lookahead <> None && List.exists in_today dates in
       if Read.recycled db eid then None
         else match Read.ref_eids db eid "block/page" with
           | page :: _ ->
             let day = Read.int_value (Read.value db page "block/journal-day") in
             let visible = ident <> Some "logseq.property/status.canceled" in
-            let journal_task = dates = [] && status <> None && Option.exists recent day in
+            let journal_task = dates = [] && status <> None && Option.exists in_today day in
             let recently_active = dates = [] && ident = Some doing_ident
-              && Option.exists (fun date -> recent (Cache_model.journal_day_for_ms date)) (last_activity eid) in
+              && Option.exists (fun date -> in_today (Cache_model.journal_day_for_ms date)) (last_activity eid) in
             let past = (due && not (List.mem today dates)) || (journal_task && day <> Some today) in
             let today_row = visible && (due || journal_task || recently_active) in
             let upcoming_row = visible && upcoming && ident <> Some "logseq.property/status.done" in
@@ -160,7 +215,7 @@ let rows ?actor ?on_comment_reference ?(includes = fun _ -> true) db today looka
                   "repeat", Task_recurrence.recurrence_json db eid;
                   "scheduled", json_int scheduled_at; "deadline", json_int deadline_at]))
               (Read.block ~with_breadcrumbs:false identity db eid)
-          | _ -> None)) (Seq.concat (List.to_seq [dated_eids; doing_eids; recent_eids]))
+          | _ -> None)) candidates
     |> List.of_seq
     |> List.sort (fun (_, _, left, _) (_, _, right, _) -> String.compare left right) in
   let today = List.filter_map (fun (today, _, _, row) -> if today then Some row else None) candidates in
@@ -171,6 +226,7 @@ type cached_projection = {
   day : int;
   timezone : string;
   actor : string option;
+  lookback : lookback;
   db : Ds.db Weak.t;
   result : Json.t;
   comment_references : Uuids.t;
@@ -182,14 +238,16 @@ let create_cache () : cache = ref []
 let remove_cached_graph cache graph = cache := List.remove_assoc graph !cache
 let clear_cache cache = cache := []
 
-let project ?read_rows ?actor cache ~graph ~now ~force db =
+let project ?read_rows ?actor ?(lookback = OneWeek) cache ~graph ~now ~force db =
   let comment_references = ref Uuids.empty in
   let on_comment_reference uuid = comment_references := Uuids.add uuid !comment_references in
-  let read_rows = Option.value ~default:(fun db day days -> rows ?actor ~on_comment_reference db day days) read_rows in
+  let read_rows = Option.value ~default:(fun db day days ->
+    rows ?actor ~on_comment_reference ~lookback db day days) read_rows in
   let day = Cache_model.journal_day_for_ms now in
   let timezone = Int64.to_string (Dev_query.Date_time_util.journal_day_to_local_ms day) in
   let previous = match List.assoc_opt graph !cache with
-    | Some value when value.day = day && value.timezone = timezone && value.actor = actor -> Some value
+    | Some value when value.day = day && value.timezone = timezone && value.actor = actor
+                   && value.lookback = lookback -> Some value
     | _ -> None in
   let remember value =
     let remaining = List.remove_assoc graph !cache in
@@ -200,21 +258,22 @@ let project ?read_rows ?actor cache ~graph ~now ~force db =
   | Some value when not force && Option.exists ((==) db) (Weak.get value.db 0) ->
     remember value
   | _ ->
+    let range = "lookback", `String (lookback_to_string lookback) in
     let result =
       try
         let disabled, days = configuration db in
         let today, upcoming = read_rows db day (if disabled then None else Some days) in
         `Assoc ["graphId", `String graph; "day", `Int day; "error", `Bool false; "success", `Bool true;
-          "retained", `Bool false; "today", today; "upcoming", upcoming]
+          "retained", `Bool false; range; "today", today; "upcoming", upcoming]
       with error ->
         prerr_endline ("journal task query: " ^ Printexc.to_string error);
         let prior name = match previous with Some value -> member name value.result | None -> `List [] in
         `Assoc ["graphId", `String graph; "day", `Int day; "error", `Bool true;
           "retained", `Bool (Option.exists (fun value -> member "success" value.result = `Bool true || member "retained" value.result = `Bool true) previous);
-          "today", prior "today"; "upcoming", prior "upcoming"] in
+          range; "today", prior "today"; "upcoming", prior "upcoming"] in
     let source = Weak.create 1 in
     Weak.set source 0 (Some db);
-    remember {day; timezone; actor; db = source; result; comment_references = !comment_references}
+    remember {day; timezone; actor; lookback; db = source; result; comment_references = !comment_references}
 
 let refreshable_attr = function
   | "block/title" | "block/updated-at" | "block/tx-id"
@@ -256,13 +315,11 @@ let refresh_blocks cache ~before ~after eids =
         let on_comment_reference uuid = comment_references := Uuids.add uuid !comment_references in
         let result = if eids = [] then cached.result else
           let disabled, days = configuration after in
-          let changed = Hashtbl.create (List.length eids) in
           let uuids = Hashtbl.create (List.length eids) in
           List.iter (fun eid ->
-            Hashtbl.replace changed eid ();
             Option.iter (fun uuid -> Hashtbl.replace uuids (`String uuid) ()) (Read.uuid_for_eid after eid)) eids;
-          let today, upcoming = rows ?actor:cached.actor ~on_comment_reference ~includes:(Hashtbl.mem changed)
-            after cached.day (if disabled then None else Some days) in
+          let today, upcoming = rows ?actor:cached.actor ~on_comment_reference ~eids
+            ~lookback:cached.lookback after cached.day (if disabled then None else Some days) in
           let uuid row = task_field "uuid" row in
           let compare_rows left right = compare (uuid left) (uuid right) in
           let replace old updated = match old, updated with

@@ -46,6 +46,10 @@ let show_notifications () =
     let current = App.model app in
     current.Model.destination = Model.NotificationsDestination && View_base.node_navigation_inactive_ current) !current_app
 
+let task_lookback () =
+  Option.fold ~none:Journal_task_dates.OneWeek
+    ~some:(fun app -> (App.model app).Model.tasks_view.lookback) !current_app
+
 let effect_deadlines = Hashtbl.create 8
 
 let debounced_query = function
@@ -148,7 +152,10 @@ let decode_tasks_view options =
       | _ -> defaults.sort_pages);
     compact = bool "compact" defaults.compact;
     show_completed = bool "showCompleted" defaults.show_completed;
-    show_past = bool "showPast" defaults.show_past }
+    show_past = bool "showPast" defaults.show_past;
+    lookback = (match member "lookback" with
+      | `String value -> Journal_task_dates.lookback_of_string value
+      | _ -> defaults.lookback) }
 
 let host_action (update : Host_update.host_update) =
   match update with
@@ -251,7 +258,8 @@ let encode_tasks_view (options : Model.tasks_view) =
     | PageCreated -> "created" in
   `Assoc ["groupByPage", `Bool options.group_by_page; "taskSort", `String task_sort;
     "pageSort", `String page_sort; "compact", `Bool options.compact;
-    "showCompleted", `Bool options.show_completed; "showPast", `Bool options.show_past]
+    "showCompleted", `Bool options.show_completed; "showPast", `Bool options.show_past;
+    "lookback", `String (Journal_task_dates.lookback_to_string options.lookback)]
 
 let encode_ui_session (session : Model.ui_session) =
   "{\"graphId\":" ^ encode_option_string session.graph_id

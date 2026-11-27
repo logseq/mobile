@@ -621,10 +621,9 @@ let code_block_content ~allow_drag model_source retained_source row_source send 
       reactive (fun calculator -> if not calculator then input else
         row ~gap:0 ~cross:`start
           ~accessibility_identifier:("outliner.calculator." ^ current_row.row_uuid) [box ~grow:1.0 [input];
-          box ~min_width:64 ~padding:12 [
-            text ~value:(reactive (fun source -> String.concat "\n" (Node_presentation.calculator_results source)) source)
-              ~font_family:"monospace" ~font_size:"17" ~foreground:"muted-foreground"
-              ~accessibility_identifier:("outliner.calculator.results." ^ current_row.row_uuid) []]]) calculator;
+          text ~value:(reactive (fun source -> String.concat "\n" (Node_presentation.calculator_results source)) source)
+            ~min_width:64 ~padding:12 ~font_family:"monospace" ~font_size:"17" ~foreground:"muted-foreground"
+            ~accessibility_identifier:("outliner.calculator.results." ^ current_row.row_uuid) []]) calculator;
     ])
 
 let annotation_page_link row_source send =
@@ -2171,6 +2170,10 @@ let tasks_menu ~android model_source send =
         ~accessibility_identifier:("tasks.menu." ^ id)
         [dropdown_menu_view (dropdown_menu entries)]
     else dropdown_menu_submenu ~text:(tr label) ~icon ?disabled_signal entries in
+  let today = option (fun options -> options.Model.tab = Model.TasksToday) in
+  let lookback_choice (id, label, value) =
+    choice id label (fun options -> options.Model.lookback)
+      (fun options lookback -> {options with Model.lookback}) value in
   let control = box ~width:44 ~height:44 [
     menu ~icon:(`app "more-horiz") ?style_class:(if android then None else Some "capsule")
       ?foreground:(if android then Some "foreground" else None)
@@ -2201,12 +2204,20 @@ let tasks_menu ~android model_source send =
             choice id label (fun options -> options.Model.compact)
               (fun options compact -> { options with Model.compact }) value)
             ["compact", "Compact", true; "expanded", "Expanded", false]);
-        if_dropdown_menu_item ~test:(option (fun options -> options.Model.tab = Model.TasksToday))
+        if_dropdown_menu_item ~test:today
           (dropdown_menu_separator []);
-        if_dropdown_menu_item ~test:(option (fun options -> options.Model.tab = Model.TasksToday))
+        if_dropdown_menu_item ~test:today
+          (submenu "range" "Time range" (`app "calendar")
+            (List.map lookback_choice Journal_task_dates.[
+              "range.week", "One week", OneWeek;
+              "range.month", "One month", OneMonth;
+              "range.three-months", "Three months", ThreeMonths;
+              "range.year", "One year", OneYear;
+            ]));
+        if_dropdown_menu_item ~test:today
           (toggle "completed" "Show completed tasks" (fun options -> options.Model.show_completed)
              (fun options show_completed -> { options with Model.show_completed }));
-        if_dropdown_menu_item ~test:(option (fun options -> options.Model.tab = Model.TasksToday))
+        if_dropdown_menu_item ~test:today
           (toggle "past" "Show past-dated tasks" (fun options -> options.Model.show_past)
              (fun options show_past -> { options with Model.show_past }));
       ]

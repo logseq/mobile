@@ -125,7 +125,8 @@ let journal_tasks_json ?(force = false) session =
      | Some db ->
        let cache = session.Types.journal_tasks in
        let actor = Option.map snd (collaboration_identity session) in
-       Journal_task_dates.project ?actor cache ~graph:graph_id ~now:(now_ms ()) ~force db
+       let lookback = Option.map (fun read -> read ()) (host session).Types.task_lookback in
+       Journal_task_dates.project ?actor ?lookback cache ~graph:graph_id ~now:(now_ms ()) ~force db
      | None -> `Null)
   | _ -> `Null
 
