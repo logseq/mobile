@@ -195,13 +195,17 @@ let shortcut_action host action payload =
          else None) graphs)))
      else
        let* graph_id = checked (Wire.required_string fields "graphId") in
+       let* token = checked (Wire.optional_string fields "token") in
        let capture session =
          let action = if action = "captureLocalShortcutPhoto" then "addAsset" else "captureShortcutText" in
          Rpc.dispatch session action payload
        in
        match !(host.database.graph.current) with
        | Some opened when opened.graph_id = graph_id ->
-         Ok (capture !(host.session))
+         let creator = host.database.graph.creator in
+         let previous = !creator in
+         Option.iter (fun identity -> creator := Some identity) (Option.bind token Created_by.of_token);
+         Fun.protect ~finally:(fun () -> creator := previous) (fun () -> Ok (capture !(host.session)))
        | _ ->
          let* base_url = checked (Wire.required_string fields "baseUrl") in
          let* active_path = checked (Wire.required_string fields "activePath") in
@@ -220,7 +224,7 @@ let shortcut_action host action payload =
            let dispatch action fields =
              Rpc.dispatch session action (Some (Yojson.Basic.to_string (`Assoc fields))) in
            ignore (dispatch "configure" ["baseUrl", `String base_url; "graphId", `String graph_id;
-             "token", `String ""]);
+             "token", `String (Option.value ~default:"" token)]);
            let opened = dispatch "openGraph" ["graphId", `String graph_id; "activePath", `String active_path;
              "checkpointPath", `String checkpoint_path; "isEncrypted", `Bool graph.e2ee] in
            let response =
