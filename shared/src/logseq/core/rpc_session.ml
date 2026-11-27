@@ -2423,16 +2423,20 @@ let rec dispatch session action payload =
           let* uuid = Rpc.required_string fields "uuid" in
           let* text = Shared_capture.text fields in
           let* now = Rpc.optional_int fields "now" in
-          let status = Option.bind (Graph_read.default_task_status_eid db)
-            (Graph_read.choice_metadata widget_decrypt db) in
-          let* status = Option.to_result ~none:"The graph has no default task status" status in
-          let* operations = capture_operations session uuid text (Option.value ~default:(now_ms ()) now)
-            (Some status) in
+          let* operations =
+            capture_operations session uuid text (Option.value ~default:(now_ms ()) now) None in
           match operations with
           | [] -> Error "The capture is unavailable"
           | first :: _ ->
-            enqueue_semantic session
-              {first with Ops.intent = Ops.Atomic (List.map (fun op -> op.Ops.intent) operations)}
+            let intents = List.map (fun op -> op.Ops.intent) operations in
+            let* tx = Pending_projection.compile db (Ops.Atomic intents) in
+            let inserted = Datascript.db_with tx db in
+            let expected = Outliner_effects.stored_status_value inserted uuid in
+            let status = Ops.Set_property {
+              uuid; attr = "logseq.property/status"; expected;
+              value = Some (Ops.Ref_ident "logseq.property/status.todo");
+            } in
+            enqueue_semantic session {first with Ops.intent = Ops.Atomic (intents @ [status])}
         in
         match capture () with
         | Ok () -> snapshot_visible session

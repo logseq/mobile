@@ -35,12 +35,20 @@ let empty_or_invalid_shared_payload_does_not_create_a_note () =
     ["uuid", `String "share-id"; "text", `Int 3]]
 
 let shortcut_task_captures_in_the_selected_graph () =
-  Result_view_test.with_runtime (fun session runtime _ ->
+  Result_view_test.with_runtime (fun session runtime conn ->
+    let module Ds = Datascript in
+    let db = Ds.conn_db conn in
+    let status_property = Option.get (Ds.entid db "db/ident" (Ds.Keyword "logseq.property/status")) in
+    let doing = Option.get (Ds.entid db "db/ident" (Ds.Keyword "logseq.property/status.doing")) in
+    ignore (Ds.transact_conn conn [
+      Ds.Add (Ds.Entity_id status_property, "logseq.property/default-value", Ds.Ref doing)]);
+    Graph_runtime.rebase runtime 42 [] [];
+    check_eq (Graph_read.default_task_status_eid (Graph_runtime.db runtime)) (Some doing);
     let uuid = "7b173b08-48bc-4441-be18-0d53767727ba" in
     let now = Session_types.now_ms () in
     let capture graph = call session "captureShortcutText" [
       "graphId", `String graph; "uuid", `String uuid;
-      "task", `Bool true; "text", `String "Review the notes"; "now", `Int now] in
+      "task", `Bool true; "text", `String "Review the notes #Task"; "now", `Int now] in
     check_eq (U.member "ok" (capture "another-graph")) (`Bool false);
     check_eq (Graph_runtime.pending_operations runtime) [];
     let result = capture "plain-1" in
@@ -48,7 +56,7 @@ let shortcut_task_captures_in_the_selected_graph () =
     let db = Graph_runtime.db runtime in
     let eid = Option.get (Datascript.entid db "block/uuid" (Datascript.Uuid uuid)) in
     let block = Option.get (Graph_read.block (fun value -> Ok value) db eid) in
-    check_eq block.title "Review the notes";
+    check ~msg:"captured block retains its text" (String.starts_with ~prefix:"Review the notes" block.title);
     let page = Option.get (Datascript.entid db "block/uuid" (Datascript.Uuid block.page_id)) in
     check_eq (Graph_read.int_value (Graph_read.value db page "block/journal-day"))
       (Some (Cache_model.journal_day_for_ms now));
@@ -302,6 +310,6 @@ let cases = [
   case "late recording transcripts are core owned and idempotent" late_recording_transcripts_are_core_owned_and_idempotent;
   case "shared text is canonical and retries are idempotent" shared_text_is_canonical_and_retries_are_idempotent;
   case "empty or invalid shared payload does not create a note" empty_or_invalid_shared_payload_does_not_create_a_note;
-  case "shortcut tasks use the selected graph and default task status" shortcut_task_captures_in_the_selected_graph;
+  case "shortcut tasks use Todo regardless of the graph default" shortcut_task_captures_in_the_selected_graph;
   case "deep links share capture and quick action semantics" deep_links_share_capture_and_quick_action_semantics;
 ]
