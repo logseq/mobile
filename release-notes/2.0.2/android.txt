@@ -1,4 +1,4 @@
-- Black is now the default dark theme. You can switch to Solarized in Settings.
-- Embedded pages and blocks now appear as inline outlines. Tap the arrow next to an embed to open its source.
-- Improve dark-mode contrast in the sidebar, sheets, and sign-in screen.
-- Keep the graph usable during sync recovery and prevent Enter from splitting a block while the keyboard is composing text.
+- Block discussions. Leave inline comments and emoji reactions. Follow replies and reactions in Notifications or via push.
+- A dedicated Tasks tab. See what’s due today and what’s coming up. Set scheduled dates and deadlines as you create tasks.
+- Block menus. Long-press a block for quick access to reactions, comments, and task dates.
+- More responsive editing. Typing in Journals and editing tasks feel faster during sync. Long journals scroll more smoothly and jump less as images load.
