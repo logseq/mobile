@@ -1,5 +1,6 @@
 package com.logseq.logseq
 
+import android.accessibilityservice.AccessibilityService
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialExpressiveTheme
@@ -300,6 +301,44 @@ class AndroidOutlinerSpacingTest {
             filter.applyJson(requireNotNull(bridge).applySnapshot(response.toString()))
         }
         assertTrue("The selection still covers the bullet after dismissal", bulletBackground() != resting)
+    }
+
+    @Test fun holdingDirectlyOnALinkOpensTheBlockMenu() {
+        render {
+            val response = JSONObject(snapshot())
+            val block = response.getJSONObject("result").getJSONArray("outlinerRows")
+                .getJSONObject(0).getJSONObject("block")
+            block.put("title", "Parent reference").put("markup", JSONArray().put(
+                JSONObject().put("type", "nodeReference").put("title", "Parent reference").put("uuid", "target"),
+            ))
+            response.toString()
+        }
+        val link = ui.onNodeWithText("[[Parent reference]]", useUnmergedTree = true)
+        val menu = ui.onNodeWithTag("outliner.block.menu")
+        for (drift in listOf(false, true)) {
+            link.performTouchInput {
+                val start = Offset(6.dp.toPx(), center.y)
+                down(start)
+                if (drift) {
+                    advanceEventTime(100)
+                    moveTo(start + Offset(2.dp.toPx(), 1.dp.toPx()))
+                }
+                advanceEventTime(700)
+                up()
+            }
+            menu.assertIsDisplayed()
+            assertTrue(InstrumentationRegistry.getInstrumentation().uiAutomation
+                .performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK))
+            menu.assertDoesNotExist()
+        }
+        ui.runOnIdle {
+            assertTrue(events.filterIsInstance<LuiEvent.Extension>().none { it.name == "open-node" })
+        }
+        link.performTouchInput { click(Offset(6.dp.toPx(), center.y)) }
+        ui.runOnIdle {
+            val opened = events.filterIsInstance<LuiEvent.Extension>().single { it.name == "open-node" }
+            assertEquals("target", opened.values["uuid"])
+        }
     }
 
     @Test fun nestedBulletsAndTextUseTheSameIndentStep() {

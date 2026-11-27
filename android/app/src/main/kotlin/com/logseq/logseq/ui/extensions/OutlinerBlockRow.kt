@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.draganddrop.dragAndDropSource
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,7 +44,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInRoot
@@ -68,7 +68,6 @@ import dev.lui.LuiExtensionProperty
 import dev.lui.LuiExtensionRegistry
 import dev.lui.LuiExtensionValueKind
 import dev.lui.luiThemeColor
-import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -688,38 +687,40 @@ private fun OutlinerRowRichBody(
         .then(if (hoverColor == Color.Transparent) Modifier else Modifier.background(hoverColor, RoundedCornerShape(8.dp)))
         .onPlaced { rowBounds.coords = it }
         .dragAndDropSource(block = {
-            while (true) {
-                val down = awaitPointerEventScope { awaitFirstDown(requireUnconsumed = false) }
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                val mainDown = awaitPointerEvent(PointerEventPass.Main).changes.singleOrNull { it.id == down.id }
+                    ?: return@awaitEachGesture
+                val childOwnsTap = mainDown.isConsumed
                 val policy = gesturePolicy
-                val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
-                    awaitPointerEventScope { awaitOutlinerTap(down) }
+                val finished = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                    val up = awaitOutlinerTap(down)
+                    if (up != null && policy.takesTap && !childOwnsTap) {
+                        up.consume()
+                        currentContext.emit(policy.tapEvent, "uuid" to uuid)
+                    }
+                    true
                 }
-                if (up != null) {
-                    if (policy.takesTap) currentContext.emit(policy.tapEvent, "uuid" to uuid)
-                    continue
-                }
-                val stillDown = awaitPointerEventScope {
-                    val event = currentEvent
-                    event.changes.singleOrNull { it.id == down.id }?.let {
-                        it.pressed && !it.isConsumed &&
-                            (it.position - down.position).getDistance() <= viewConfiguration.touchSlop
-                    } == true
-                }
-                if (!stillDown) continue
+                if (finished == true) return@awaitEachGesture
+
+                // A link can own the tap while the parent still recognizes a hold.
+                val held = currentEvent.changes.singleOrNull { it.id == down.id && it.pressed }
+                    ?: return@awaitEachGesture
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 setMenuHeld(true)
                 val originX = rowBounds.coords?.takeIf { it.isAttached }?.positionInRoot()?.x ?: 0f
                 val origin = OutlinerDragOrigin(uuid, originX + down.position.x)
                 try {
                     while (true) {
-                        val pointer = awaitPointerEventScope {
-                            awaitPointerEvent(PointerEventPass.Main).changes.firstOrNull { it.id == down.id }
-                        } ?: break
-                        if (pointer.changedToUpIgnoreConsumed() || !pointer.pressed) {
+                        val pointer = awaitPointerEvent(PointerEventPass.Initial).changes
+                            .singleOrNull { it.id == down.id } ?: break
+                        if (pointer.isConsumed) break
+                        pointer.consume()
+                        if (!pointer.pressed) {
                             setMenuOpen(true)
                             break
                         }
-                        if (policy.allowsDrag && (pointer.position - down.position).getDistance() >= viewConfiguration.touchSlop) {
+                        if (policy.allowsDrag && (pointer.position - held.position).getDistance() >= viewConfiguration.touchSlop) {
                             currentContext.emit("drag-start", "uuid" to uuid)
                             startTransfer(DragAndDropTransferData(ClipData.newPlainText("Logseq block", uuid), localState = origin))
                             break
