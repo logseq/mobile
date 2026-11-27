@@ -4930,7 +4930,7 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   let strip = descendant_with_extension renderer application row "bottom-tab-strip" in
   let current_strip () =
     descendant_with_extension renderer application (native_bottom_chrome renderer application) "bottom-tab-strip" in
-  let swipe_to index =
+  let select_tab index =
     dispatch application (Lui_protocol.ExtensionEvent (current_strip (), "bottom-tab-strip", "select",
       Lui_protocol.String_map.singleton "index" (Lui_protocol.IntValue index)));
     flush application in
@@ -4942,20 +4942,29 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
     (List.map (fun id -> id, 58) (children renderer tabs)
      @ List.map (fun id -> id, 50) (children renderer actions));
   check_eq (property_string renderer capture Lui_protocol.InlineIconName) "app:capture-circle";
+  let before_hold = App.model application in
+  dispatch application (Lui_protocol.LongPress capture);
+  flush application;
+  check_eq ~msg:"holding Capture requests the compact Photos picker"
+    (App.model application).pending_effects
+    (before_hold.pending_effects
+     @ [Model.PresentAttachmentEffect (before_hold.next_effect_id, "quick-photos")]);
+  check ~msg:"holding Capture leaves the text composer collapsed"
+    (not (App.model application).composer_expanded);
   check_eq (selected (tab "home")) true;
-  swipe_to 1;
+  select_tab 1;
   check_eq (selected (tab "tasks")) true;
   check_eq (extension_property application strip "selected-index") (Some (Lui_protocol.IntValue 1));
   check_eq (selected (tab "home")) false;
   check (descendant_with_identifier renderer (Lui_app.root_node application) "tasks.empty" <> -1);
-  swipe_to 3;
+  select_tab 3;
   check_eq (App.model application).destination Model.TasksDestination;
   let root = Lui_app.root_node application in
   let inbox () = descendant_with_identifier renderer root "screen.notifications" in
   let retained_inbox = inbox () in
   check_eq (node renderer retained_inbox) (Some Lui_protocol.VirtualList);
   check (not (selected retained_inbox));
-  swipe_to 2;
+  select_tab 2;
   check_eq (App.model application).destination Model.NotificationsDestination;
   check (selected (tab "notifications"));
   check_eq (inbox ()) retained_inbox;
@@ -4981,21 +4990,22 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   check_eq ~msg:"iOS keeps main's compact native-navigation inset"
     (property_int renderer top_inset Lui_protocol.HeightValue)
     16;
-  let double_home () =
-    dispatch application (Lui_protocol.ExtensionEvent (current_strip (), "bottom-tab-strip", "home-double-tap",
-      Lui_protocol.String_map.empty));
-    flush application in
   check_eq (App.model application).home_scroll_request 0;
-  double_home ();
-  swipe_to 1;
+  select_tab 0;
+  check_eq ~msg:"a single Home reselect requests a return to the top"
+    (App.model application).home_scroll_request 1;
+  select_tab 1;
   send application Model.ExpandComposer;
   flush application;
   check ~msg:"Capture defaults to a task on Tasks" ((App.model application).selected_task_status <> None);
   send application Model.DismissComposer;
   flush application;
-  double_home ();
-  check_eq (App.model application).home_scroll_request 2;
+  select_tab 0;
+  check_eq ~msg:"switching from Tasks to Home keeps the previous scroll position"
+    (App.model application).home_scroll_request 1;
   check_eq (App.model application).destination Model.JournalsDestination;
+  select_tab 0;
+  check_eq (App.model application).home_scroll_request 2;
   send application Model.ExpandComposer;
   flush application;
   check_eq ~msg:"Dismissing an empty task capture preserves normal capture on Home"
@@ -11493,7 +11503,7 @@ let composer_attachment_previews_remove_only_the_selected_draft () =
     descendant_with_identifier renderer root "composer.asset.asset-a"
   in
   let remove =
-    descendant_with_identifier renderer preview "composer.asset.remove"
+    descendant_with_extension renderer application preview "composer-attachment-remove"
   in
   let attachment =
     descendant_with_identifier renderer root "button.attachment"
@@ -11511,7 +11521,8 @@ let composer_attachment_previews_remove_only_the_selected_draft () =
   check_eq ~msg:"the add symbol keeps a regular stroke weight"
     (property renderer attachment Lui_protocol.StyleClass)
     None;
-  dispatch application (Lui_protocol.Press remove);
+  dispatch application (Lui_protocol.ExtensionEvent
+    (remove, "composer-attachment-remove", "remove", Lui_protocol.String_map.empty));
   flush application;
   check_eq ~msg:"the close button removes only its own draft"
     (List.length (App.model application).composer_assets) 1;

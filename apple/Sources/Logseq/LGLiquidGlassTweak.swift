@@ -99,10 +99,17 @@ struct LGBottomChromeSwitch: View {
 
 private struct LGBottomBarActions: ViewModifier {
     @Environment(\.lgUsesSideCaptureActions) private var usesSideCaptureActions
+    #if os(iOS)
+    @Environment(\.lgPlatformPresentation) private var presentation
+    #endif
 
     func body(content: Content) -> some View {
         if !usesSideCaptureActions {
             content.modifier(LGBottomBarGlass(surface: .trailing))
+                #if os(iOS)
+                // A held Capture button can release after the picker has opened.
+                .disabled(presentation?.attachmentService == .quickPhotos)
+                #endif
         }
     }
 }

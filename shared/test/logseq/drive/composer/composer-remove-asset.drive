@@ -10,6 +10,6 @@ wait prop:accessibility-identifier=button.attachment
 press prop:accessibility-identifier=button.attachment
 press prop:accessibility-identifier=button.attachment.camera
 wait prop:accessibility-identifier=composer.asset.asset-1
-press prop:accessibility-identifier=composer.asset.remove
+ext ext:composer-attachment-remove composer-attachment-remove remove '{}'
 expect-absent prop:accessibility-identifier=composer.asset.asset-1
 expect-absent text:"Photo.jpg"

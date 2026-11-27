@@ -9,7 +9,8 @@ appId: com.logseq.logseq.PageBenchmark
     timeout: 20000
 - assertNotVisible:
     id: outliner.block-action.home-tap-0
-- doubleTapOn:
+- tapOn:
+    retryTapIfNoChange: false
     id: tab.bottom.home
 - assertVisible:
     id: outliner.block-action.home-tap-0

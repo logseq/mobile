@@ -14,6 +14,18 @@ public enum LGAttachmentService: String, CaseIterable, Sendable {
     case camera
     case photos
     case audio
+    #if os(iOS)
+    case quickPhotos = "quick-photos"
+    #endif
+}
+
+extension PhotosPickerItem {
+    func loadImageForAttachment() async throws -> (Data, String) {
+        guard let data = try await loadTransferable(type: Data.self) else {
+            throw CocoaError(.fileReadUnknown)
+        }
+        return (data, supportedContentTypes.first?.preferredFilenameExtension ?? "jpg")
+    }
 }
 
 struct LGAttachmentRequest {
@@ -247,16 +259,20 @@ struct LGPlatformPresentationHost: ViewModifier {
                 importPhotos(items)
             }
             #endif
-            .alert(deletionTitle, isPresented: deletionBinding) {
-                Button("Delete", role: .destructive) {
-                    confirmOutlinerDelete()
-                    coordinator.dismissDeletion()
-                }
-                Button("Cancel", role: .cancel) {
-                    coordinator.dismissDeletion()
-                }
-            } message: {
-                Text("This deletes the block and all of its children. Pages use Recycle instead.")
+            .background {
+                Color.clear
+                    .alert(deletionTitle, isPresented: deletionBinding) {
+                        Button("Delete", role: .destructive) {
+                            confirmOutlinerDelete()
+                            coordinator.dismissDeletion()
+                        }
+                        Button("Cancel", role: .cancel) {
+                            coordinator.dismissDeletion()
+                        }
+                    } message: {
+                        Text("This deletes the block and all of its children. Pages use Recycle instead.")
+                    }
+                    .tint(.primary)
             }
             #if os(iOS)
             .environment(\.lgPlatformPresentation, coordinator)
@@ -315,6 +331,16 @@ struct LGPlatformPresentationHost: ViewModifier {
                 .presentationDetents([.fraction(0.58), .large])
                 .presentationDragIndicator(.hidden)
                 .presentationCornerRadius(32)
+            }
+            .sheet(isPresented: presentationBinding(for: .quickPhotos)) {
+                LGQuickPhotoPicker { data, fileExtension in
+                    try await importPhoto(data, fileExtension: fileExtension, targetBlockID: request.targetBlockID)
+                    coordinator.completeAttachment(requestID: request.id)
+                }
+                .id(request.id)
+                .modifier(LGSheetSurface())
+                .presentationDetents([.height(164)])
+                .presentationDragIndicator(.hidden)
             }
             .sheet(isPresented: presentationBinding(for: .audio)) {
                 AudioRecorderSheet(
@@ -401,19 +427,20 @@ struct LGPlatformPresentationHost: ViewModifier {
         Task {
             for item in items {
                 do {
-                    guard let data = try await item.loadTransferable(type: Data.self) else { continue }
-                    let fileExtension = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
-                    let title = "Photo-\(UUID().uuidString).\(fileExtension)"
-                    try addImportedAsset(
-                        try await LGAssetImporter.persist(data: data, title: title),
-                        targetBlockID: request.targetBlockID
-                    )
+                    let (data, fileExtension) = try await item.loadImageForAttachment()
+                    try await importPhoto(data, fileExtension: fileExtension, targetBlockID: request.targetBlockID)
                 } catch {
                     logger.error("Photo import failed: \(String(describing: error))")
                 }
             }
             if closeWhenFinished { coordinator.completeAttachment(requestID: request.id) }
         }
+    }
+
+    private func importPhoto(_ data: Data, fileExtension: String, targetBlockID: String?) async throws {
+        let title = "Photo-\(UUID().uuidString).\(fileExtension)"
+        let asset = try await LGAssetImporter.persist(data: data, title: title)
+        try addImportedAsset(asset, targetBlockID: targetBlockID)
     }
 
     #if os(iOS)

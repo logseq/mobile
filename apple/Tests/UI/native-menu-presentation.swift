@@ -1,33 +1,21 @@
-import UIKit
 import SwiftUI
 @testable import LUIAppleBackend
 @testable import Logseq
 
-@main struct NativeMenuPresentationCheck {
-    static func main() {
-        UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(NativeMenuPresentationDelegate.self))
-    }
-}
+@main struct NativeMenuPresentationCheck: App {
+    private let fixture = NativeMenuPresentationFixture()
 
-@MainActor private final class MenuTouchWindow: UIWindow {
-    var recordTouch: (String) -> Void = { _ in }
-    override func sendEvent(_ event: UIEvent) {
-        for touch in event.allTouches ?? [] where touch.phase == .began {
-            let point = touch.location(in: self)
-            var ancestors: [String] = []
-            var view = touch.view
-            while let current = view {
-                ancestors.append(String(describing: type(of: current)))
-                view = current.superview
-            }
-            recordTouch("TOUCH \(point) " + ancestors.joined(separator: " > "))
+    var body: some Scene {
+        WindowGroup {
+            LGRendererRoot(renderer: fixture.runtime.renderer)
+                .modifier(LGPlatformPresentationHost(
+                    coordinator: fixture.coordinator, confirmOutlinerDelete: {}, stageAsset: fixture.stageAsset
+                ))
         }
-        super.sendEvent(event)
     }
 }
 
-@MainActor final class NativeMenuPresentationDelegate: UIResponder, UIApplicationDelegate {
-    var window: UIWindow?
+@MainActor private final class NativeMenuPresentationFixture {
     let coordinator = LGPlatformPresentationCoordinator()
     var runtime: LGRuntime!
 
@@ -40,7 +28,12 @@ import SwiftUI
         } catch { fatalError("Cannot record menu presentation events: \(error)") }
     }
 
-    func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+    func stageAsset(_ payload: String) throws {
+        record("STAGED " + payload)
+        try runtime.applyHostUpdate(kind: "composer-asset", payload: payload)
+    }
+
+    init() {
         do {
             record("READY")
             let snapshot = #"{"ok":true,"result":{"revision":1,"graphName":"Work","selectedGraphId":"work","graphs":[{"id":"work","name":"Work","isReady":true,"isEncrypted":false},{"id":"other","name":"Other","isReady":true,"isEncrypted":false}],"blocks":[],"outlinerRows":[],"outlinerState":{"selectedBlockIds":[]}}}"#
@@ -61,17 +54,6 @@ import SwiftUI
                 record("EVENT \(event.kind) " + detail)
                 receive?(event)
             }
-            let host = LGRendererRoot(renderer: runtime.renderer)
-                .modifier(LGPlatformPresentationHost(coordinator: coordinator, confirmOutlinerDelete: {}, stageAsset: { [self] payload in
-                    record("STAGED " + payload)
-                    try runtime.applyHostUpdate(kind: "composer-asset", payload: payload)
-                }))
-            let window = MenuTouchWindow(frame: UIScreen.main.bounds)
-            window.recordTouch = { [weak self] in self?.record($0) }
-            window.rootViewController = UIHostingController(rootView: host)
-            self.window = window
-            window.makeKeyAndVisible()
         } catch { fatalError("Native menu presentation fixture failed: \(error)") }
-        return true
     }
 }

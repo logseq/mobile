@@ -46,7 +46,7 @@ with tempfile.TemporaryDirectory(prefix="logseq-native-menus-") as temporary:
             assert "EVENT extension native-navigation-stack dismiss-composer" not in events, events
             print("PASS: composer blank space receives its tap and a single menu selection presents Files")
             sys.exit(0)
-        for service, count in (("photos", 3), ("audio", 3), ("camera", 1), ("files", 1)):
+        for service, count in (("quick-photos", 1), ("photos", 3), ("audio", 3), ("camera", 1), ("files", 1)):
             assert events.count("REQUEST " + service) == count, (service, events)
         assets = [json.loads(line.removeprefix("STAGED ")) for line in events if line.startswith("STAGED ")]
         assert any(asset["assetType"] == "m4a" and asset["assetSize"] > 0 for asset in assets), assets
