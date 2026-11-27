@@ -134,7 +134,7 @@ let native_session_roundtrip_preserves_assets_and_returns_home () =
   let defaults = Model.default_tasks_view in
   let selected_tab = Model.update original (Model.SetTasksView { defaults with tab = Model.TasksUpcoming }) in
   Test_util.check_eq ~msg:"switching Tasks tabs is transient" selected_tab.pending_effects [];
-  let preferences = { defaults with
+  let preferences = {
     Model.tab = Model.TasksUpcoming;
     group_by_page = false; sort_tasks = Model.DeadlineDate; sort_pages = Model.PageCreated;
     compact = true; show_completed = false; show_past = false;
