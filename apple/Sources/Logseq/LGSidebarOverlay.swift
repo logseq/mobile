@@ -6,7 +6,7 @@ import UIKit
 
 struct LGSidebarBackdrop {
     let panelWidth: CGFloat
-    let dismissLabel: String
+    let settings: AnyView
     let dismiss: () -> Void
 }
 
@@ -221,6 +221,7 @@ private struct LGSidebarLayers: View, Animatable {
     var body: some View {
         let visible = presentation.sample(progress)
         let blocksMain = open || visible > 0.001
+        let panelInteractive = open && visible > 0.95
         let dark = colorScheme == .dark
         let palette = LogseqThemePolicy.palette(mode: .system, systemIsDark: dark, darkTheme: darkTheme)
         ZStack(alignment: .leading) {
@@ -249,18 +250,28 @@ private struct LGSidebarLayers: View, Animatable {
             if hasOpened {
                 panel
                     .environment(\.logseqSidebarBackdrop, LGSidebarBackdrop(
-                        panelWidth: panelWidth, dismissLabel: dismissLabel, dismiss: dismiss
+                        panelWidth: panelWidth,
+                        settings: AnyView(settings.padding(settingsInsets)),
+                        dismiss: dismiss
                     ))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .overlay(alignment: .bottomTrailing) {
-                        settings.padding(settingsInsets)
-                    }
                     .blur(radius: reduceTransparency || visible == 0 ? 0 : 12 * (1 - visible).squareRoot())
                     .opacity(visible)
                     .offset(x: reduceMotion ? 0 : (visible - 1) * panelWidth)
-                    .allowsHitTesting(open && visible > 0.95)
+                    .allowsHitTesting(panelInteractive)
                     .accessibilityHidden(!open)
                     .accessibilityAction(.escape, dismiss)
+            }
+
+            if panelInteractive {
+                // Keep the accessible close target fixed while the backdrop scrolls.
+                Color.clear
+                    .allowsHitTesting(false)
+                    .accessibilityRepresentation {
+                        Button(dismissLabel, action: dismiss)
+                            .accessibilityIdentifier("button.sidebar.dismiss")
+                    }
+                    .padding(.leading, panelWidth)
             }
         }
         .accessibilityElement(children: .contain)

@@ -393,6 +393,16 @@ private struct LGSidebarNavigation: View {
                         .padding(.leading, backdrop.panelWidth)
                         .accessibilityHidden(true)
                 }
+                .overlay {
+                    // Keep Settings fixed to the viewport inside the native scroll view.
+                    GeometryReader { geometry in
+                        if let viewport = geometry.bounds(of: .scrollView) {
+                            backdrop.settings
+                                .frame(width: viewport.width, height: viewport.height, alignment: .bottomTrailing)
+                                .position(x: viewport.midX, y: viewport.midY)
+                        }
+                    }
+                }
             } else {
                 rows
             }
@@ -413,18 +423,6 @@ private struct LGSidebarNavigation: View {
             #else
             scroll
             #endif
-        }
-        .overlay {
-            if let backdrop {
-                // Keep the accessible close target within the visible viewport when the list scrolls.
-                Color.clear
-                    .allowsHitTesting(false)
-                    .accessibilityRepresentation {
-                        Button(backdrop.dismissLabel, action: backdrop.dismiss)
-                            .accessibilityIdentifier("button.sidebar.dismiss")
-                    }
-                    .padding(.leading, backdrop.panelWidth)
-            }
         }
         .overlay(alignment: .bottomTrailing) {
             if backdrop == nil {
