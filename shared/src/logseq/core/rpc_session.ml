@@ -3179,7 +3179,7 @@ let rec dispatch session action payload =
   | "beginPendingSync" ->
     let revision = s.model.revision in
     (match s.config with
-     | Some config when h.model_for_graph = None || s.active_graph_id = Some config.Api.graph_id ->
+     | Some config when not (Option.exists ((<>) config.Api.graph_id) s.active_graph_id) ->
        (match resolve_graph config with
         | Ok config -> begin_pending_sync session config
         | Error _ -> ())
