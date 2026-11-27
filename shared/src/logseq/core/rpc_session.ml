@@ -2212,6 +2212,13 @@ let active_widget_db session =
     Option.map (fun db -> config.graph_id, db) (active_graph_db session config.graph_id)
   | _ -> None
 
+let shortcut_capture_db session graph_id =
+  match (state session).active_graph_id with
+  | Some active when active = graph_id -> active_graph_db session graph_id
+  | _ ->
+    Option.bind (active_widget_db session) (fun (active, db) ->
+      if active = graph_id then Some db else None)
+
 let widget_random_interval_ms = 60 * 60 * 1000
 
 let widget_random_sample db visible =
@@ -2414,8 +2421,9 @@ let rec dispatch session action payload =
         send_message session (Some (Json.to_string (`Assoc ["uuid", `String uuid; "text", `String text])))
     | _, Error message | Error message, _ -> Rpc.failure "invalid_shared_capture" message)
   | "captureShortcutText" -> object_action (fun _ fields ->
-    match Rpc.required_string fields "graphId", active_widget_db session with
-    | Ok graph, Some (active, db) when graph = active ->
+    match Option.bind (Result.to_option (Rpc.required_string fields "graphId"))
+      (shortcut_capture_db session) with
+    | Some db ->
       if List.assoc_opt "task" fields = Some (`Bool true) then (
         let ( let* ) = Result.bind in
         let capture () =
@@ -3120,7 +3128,7 @@ let rec dispatch session action payload =
     let asset_field key = List.assoc_opt key (Lazy.force asset_fields) in
     let graph_available = match asset_field "graphId" with
       | None | Some `Null -> true
-      | Some (`String graph) -> Option.exists (fun (active, _) -> active = graph) (active_widget_db session)
+      | Some (`String graph) -> Option.is_some (shortcut_capture_db session graph)
       | _ -> false in
     if not graph_available then Rpc.failure "capture_failed" "The selected graph is unavailable" else
     let prepare_view () =
@@ -3171,11 +3179,11 @@ let rec dispatch session action payload =
   | "beginPendingSync" ->
     let revision = s.model.revision in
     (match s.config with
-     | Some config ->
+     | Some config when h.model_for_graph = None || s.active_graph_id = Some config.Api.graph_id ->
        (match resolve_graph config with
         | Ok config -> begin_pending_sync session config
         | Error _ -> ())
-     | None -> ());
+     | _ -> ());
     (* Request preparation can mark blocks failed. Publish those changes if it did. *)
     if (state session).model.revision = revision then pending_sync_patch session
     else snapshot_visible session
