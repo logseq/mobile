@@ -368,7 +368,7 @@ let rebase ?agenda_update ?changed_attributes runtime server_t operation_ids cha
   refresh_search_after_rebase runtime before operations changed_uuids;
   trace_stage "LOGSEQ_REBASE_METRIC" started "complete"
 
-let repair_legacy_page_creations runtime =
+let repair_legacy_page_creations runtime operations =
   let database = Ds.conn_db runtime.conn in
   if Ds.entid database "db/ident" (Ds.Keyword "logseq.class/Page") <> None then
     List.iter (fun (operation : Ops.pending_operation) ->
@@ -407,9 +407,9 @@ let repair_legacy_page_creations runtime =
                  | Ops.Conflicted _ -> Ops.save runtime.path { operation with state = Ops.Queued }
                  | _ -> ())
               end))
-      | _ -> ()) (Ops.list runtime.path)
+      | _ -> ()) operations
 
-let repair_legacy_page_deletions runtime =
+let repair_legacy_page_deletions runtime operations =
   let database = Ds.conn_db runtime.conn in
   List.iter (fun (operation : Ops.pending_operation) ->
     match operation.intent, operation.state with
@@ -441,7 +441,7 @@ let repair_legacy_page_deletions runtime =
               | Ops.Conflicted _ -> Ops.save runtime.path { operation with state = Ops.Queued }
               | _ -> ())
            end)
-    | _ -> ()) (Ops.list runtime.path)
+    | _ -> ()) operations
 
 let create_base path server_t conn options =
   let started = Unix.gettimeofday () in
@@ -488,10 +488,11 @@ let create_base path server_t conn options =
     }
   in
   trace_stage "LOGSEQ_RUNTIME_METRIC" started "search";
-  if Ops.list runtime.path <> [] then begin
-    repair_legacy_page_creations runtime;
-    repair_legacy_page_deletions runtime
-  end;
+  (match Ops.list runtime.path with
+   | [] -> ()
+   | operations ->
+     repair_legacy_page_creations runtime operations;
+     repair_legacy_page_deletions runtime operations);
   rebase runtime server_t [] [];
   let fresh = match search_index with
     | None -> false
