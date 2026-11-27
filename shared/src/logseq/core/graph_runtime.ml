@@ -368,7 +368,7 @@ let rebase ?agenda_update ?changed_attributes runtime server_t operation_ids cha
   refresh_search_after_rebase runtime before operations changed_uuids;
   trace_stage "LOGSEQ_REBASE_METRIC" started "complete"
 
-let repair_legacy_page_creations runtime =
+let repair_legacy_page_creations runtime operations =
   let database = Ds.conn_db runtime.conn in
   if Ds.entid database "db/ident" (Ds.Keyword "logseq.class/Page") <> None then
     List.iter (fun (operation : Ops.pending_operation) ->
@@ -407,9 +407,9 @@ let repair_legacy_page_creations runtime =
                  | Ops.Conflicted _ -> Ops.save runtime.path { operation with state = Ops.Queued }
                  | _ -> ())
               end))
-      | _ -> ()) (Ops.list runtime.path)
+      | _ -> ()) operations
 
-let repair_legacy_page_deletions runtime =
+let repair_legacy_page_deletions runtime operations =
   let database = Ds.conn_db runtime.conn in
   List.iter (fun (operation : Ops.pending_operation) ->
     match operation.intent, operation.state with
@@ -441,14 +441,19 @@ let repair_legacy_page_deletions runtime =
               | Ops.Conflicted _ -> Ops.save runtime.path { operation with state = Ops.Queued }
               | _ -> ())
            end)
-    | _ -> ()) (Ops.list runtime.path)
+    | _ -> ()) operations
 
 let create_base path server_t conn options =
   let started = Unix.gettimeofday () in
   let search_index =
     match options.search_index_path with
     | Some path ->
-      (try Some (Index.create path)
+      let directory = Filename.dirname path in
+      (try
+         if not (Sys.file_exists directory) then Unix.mkdir directory 0o755;
+         if not (Sys.file_exists path) then
+           close_out (open_out_gen [ Open_creat; Open_wronly ] 0o644 path);
+         Some { Index.path }
        with error ->
          search_error "open" error;
          None)
@@ -483,11 +488,15 @@ let create_base path server_t conn options =
     }
   in
   trace_stage "LOGSEQ_RUNTIME_METRIC" started "search";
-  repair_legacy_page_creations runtime;
-  repair_legacy_page_deletions runtime;
+  (match Ops.list runtime.path with
+   | [] -> ()
+   | operations ->
+     repair_legacy_page_creations runtime operations;
+     repair_legacy_page_deletions runtime operations);
   rebase runtime server_t [] [];
   let fresh = match search_index with
     | None -> false
+    | Some index when (try (Unix.stat index.path).Unix.st_size = 0 with _ -> true) -> false
     | Some index ->
       (try match Graph_sqlite.search_source_version path with
        | Some version -> Graph_sqlite.search_version index.path = Some version

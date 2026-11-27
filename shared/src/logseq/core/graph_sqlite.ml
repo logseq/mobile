@@ -76,25 +76,38 @@ let query connection sql values decode =
     loop [])
 
 let ensure_app_schema connection =
-  List.iter
-    (execute connection)
-    [
-      "CREATE TABLE IF NOT EXISTS logseq_pending_ops (sequence INTEGER \
-       PRIMARY KEY AUTOINCREMENT, operation_id TEXT NOT NULL UNIQUE, base_t \
-       INTEGER NOT NULL, state TEXT NOT NULL, intent TEXT NOT NULL)";
-      "CREATE TABLE IF NOT EXISTS logseq_pending_op_dependencies \
-       (operation_id TEXT NOT NULL, depends_on_operation_id TEXT NOT NULL, \
-       PRIMARY KEY (operation_id, depends_on_operation_id), FOREIGN KEY \
-       (operation_id) REFERENCES logseq_pending_ops(operation_id) ON \
-       DELETE CASCADE, FOREIGN KEY (depends_on_operation_id) REFERENCES \
-       logseq_pending_ops(operation_id) ON DELETE CASCADE)";
-      "CREATE TABLE IF NOT EXISTS logseq_sync_state (key TEXT PRIMARY \
-       KEY, value TEXT NOT NULL)";
-      "CREATE TABLE IF NOT EXISTS logseq_pending_txs (operation_id TEXT \
-       PRIMARY KEY, tx TEXT NOT NULL, reversed_tx TEXT NOT NULL)";
-      "CREATE TABLE IF NOT EXISTS logseq_local_properties (uuid TEXT NOT NULL, \
-       attr TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (uuid, attr))";
-    ]
+  let existing =
+    match
+      query connection
+        "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN \
+         ('logseq_pending_ops', 'logseq_pending_op_dependencies', \
+         'logseq_sync_state', 'logseq_pending_txs', 'logseq_local_properties')"
+        []
+        (fun row -> Db.column_int row 0)
+    with
+    | count :: _ -> count
+    | [] -> 0
+  in
+  if existing < 5 then
+    List.iter
+      (execute connection)
+      [
+        "CREATE TABLE IF NOT EXISTS logseq_pending_ops (sequence INTEGER \
+         PRIMARY KEY AUTOINCREMENT, operation_id TEXT NOT NULL UNIQUE, base_t \
+         INTEGER NOT NULL, state TEXT NOT NULL, intent TEXT NOT NULL)";
+        "CREATE TABLE IF NOT EXISTS logseq_pending_op_dependencies \
+         (operation_id TEXT NOT NULL, depends_on_operation_id TEXT NOT NULL, \
+         PRIMARY KEY (operation_id, depends_on_operation_id), FOREIGN KEY \
+         (operation_id) REFERENCES logseq_pending_ops(operation_id) ON \
+         DELETE CASCADE, FOREIGN KEY (depends_on_operation_id) REFERENCES \
+         logseq_pending_ops(operation_id) ON DELETE CASCADE)";
+        "CREATE TABLE IF NOT EXISTS logseq_sync_state (key TEXT PRIMARY \
+         KEY, value TEXT NOT NULL)";
+        "CREATE TABLE IF NOT EXISTS logseq_pending_txs (operation_id TEXT \
+         PRIMARY KEY, tx TEXT NOT NULL, reversed_tx TEXT NOT NULL)";
+        "CREATE TABLE IF NOT EXISTS logseq_local_properties (uuid TEXT NOT NULL, \
+         attr TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (uuid, attr))";
+      ]
 
 let with_app_db path f =
   with_db path (fun connection ->
@@ -319,24 +332,39 @@ let pending_tx path operation_id =
     | value :: _ -> Some value)
 
 let ensure_search_schema connection =
-  List.iter
-    (execute connection)
-    [
-      "CREATE TABLE IF NOT EXISTS search_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)";
-      "CREATE TABLE IF NOT EXISTS blocks (id TEXT NOT NULL PRIMARY KEY, \
-       title TEXT NOT NULL, page TEXT)";
-      "CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(id, title, \
-       page, tokenize=\"trigram\")";
-      "DROP INDEX IF EXISTS blocks_title_nocase_idx";
-      "CREATE TRIGGER IF NOT EXISTS blocks_ad AFTER DELETE ON blocks BEGIN \
-       DELETE FROM blocks_fts WHERE id = old.id; END";
-      "CREATE TRIGGER IF NOT EXISTS blocks_ai AFTER INSERT ON blocks BEGIN \
-       INSERT INTO blocks_fts (id, title, page) VALUES (new.id, new.title, \
-       new.page); END";
-      "CREATE TRIGGER IF NOT EXISTS blocks_au AFTER UPDATE ON blocks BEGIN \
-       DELETE FROM blocks_fts WHERE id = old.id; INSERT INTO blocks_fts (id, \
-       title, page) VALUES (new.id, new.title, new.page); END";
-    ]
+  let existing =
+    match
+      query connection
+        "SELECT coalesce(sum(CASE WHEN name = 'blocks_title_nocase_idx' THEN -10 ELSE 1 END), 0) \
+         FROM sqlite_master WHERE (type = 'table' AND name IN \
+         ('search_metadata', 'blocks', 'blocks_fts')) OR (type = 'trigger' \
+         AND name IN ('blocks_ad', 'blocks_ai', 'blocks_au')) OR (type = 'index' \
+         AND name = 'blocks_title_nocase_idx')"
+        []
+        (fun row -> Db.column_int row 0)
+    with
+    | count :: _ -> count
+    | [] -> 0
+  in
+  if existing < 6 then
+    List.iter
+      (execute connection)
+      [
+        "CREATE TABLE IF NOT EXISTS search_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)";
+        "CREATE TABLE IF NOT EXISTS blocks (id TEXT NOT NULL PRIMARY KEY, \
+         title TEXT NOT NULL, page TEXT)";
+        "CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(id, title, \
+         page, tokenize=\"trigram\")";
+        "DROP INDEX IF EXISTS blocks_title_nocase_idx";
+        "CREATE TRIGGER IF NOT EXISTS blocks_ad AFTER DELETE ON blocks BEGIN \
+         DELETE FROM blocks_fts WHERE id = old.id; END";
+        "CREATE TRIGGER IF NOT EXISTS blocks_ai AFTER INSERT ON blocks BEGIN \
+         INSERT INTO blocks_fts (id, title, page) VALUES (new.id, new.title, \
+         new.page); END";
+        "CREATE TRIGGER IF NOT EXISTS blocks_au AFTER UPDATE ON blocks BEGIN \
+         DELETE FROM blocks_fts WHERE id = old.id; INSERT INTO blocks_fts (id, \
+         title, page) VALUES (new.id, new.title, new.page); END";
+      ]
 
 let with_search_db path f =
   with_db path (fun connection ->

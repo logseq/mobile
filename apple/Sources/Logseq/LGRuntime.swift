@@ -166,13 +166,13 @@ public final class LGRuntime {
         #if os(iOS)
         LogseqCrashReporting.runtime(.started)
         #endif
-        while !pendingCoreResponses.isEmpty {
-            let response = pendingCoreResponses.removeFirst()
-            try applyCoreResponse(response, synchronously: true)
-        }
         while !pendingHostUpdates.isEmpty {
             let update = pendingHostUpdates.removeFirst()
             try apply(native.applyHostUpdate(kind: update.kind, payload: update.payload))
+        }
+        while !pendingCoreResponses.isEmpty {
+            let response = pendingCoreResponses.removeFirst()
+            try applyCoreResponse(response, synchronously: true)
         }
         scheduleEffectDrain()
     }

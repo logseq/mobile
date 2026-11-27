@@ -47,6 +47,12 @@ public final class LogseqCore {
         )
     }
 
+    public func warmUp() {
+        #if LOGSEQ_CORE
+        _ = LogseqCoreExecutor.shared
+        #endif
+    }
+
     public func initialize() {
         #if LOGSEQ_CORE
         _ = invokeCore { "" }
