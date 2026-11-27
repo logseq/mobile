@@ -442,8 +442,8 @@ public struct LogseqRootView : View {
     private static let startupLogger = os.Logger(subsystem: "com.logseq.logseq", category: "startup")
     private var launchOriginUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
 
-    func markStartupOrigin() {
-        launchOriginUptime = ProcessInfo.processInfo.systemUptime
+    func markStartupOrigin(_ origin: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        launchOriginUptime = origin
     }
 
     func logStartupStage(_ stage: String, since stageStart: TimeInterval? = nil) {
@@ -1227,7 +1227,7 @@ public final class LogseqAppDelegate : Sendable {
         }
         #endif
         let runtime = LogseqLogseqRuntime.shared
-        runtime.markStartupOrigin()
+        runtime.markStartupOrigin(initStart)
         runtime.logStartupStage("init.crash_and_runtime.done", since: initStart)
         let localStart = ProcessInfo.processInfo.systemUptime
         runtime.startLocalLaunchLoad()
