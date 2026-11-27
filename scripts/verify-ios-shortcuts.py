@@ -12,12 +12,16 @@ def metadata(bundle):
 
 host = metadata(app)
 extension = metadata(widget)
-expected = {"QuickAddIntent", "RecordAudioIntent", "OpenJournalIntent", "CaptureToJournalIntent"}
+foreground = {"QuickAddIntent", "RecordAudioIntent", "OpenJournalIntent", "TakePictureIntent"}
+background = {"CaptureToJournalIntent", "CaptureTaskToJournalIntent"}
+expected = foreground | background
 shortcuts = [item["actionIdentifier"] for item in host["autoShortcuts"]]
 assert set(shortcuts) == expected and len(shortcuts) == len(expected), "Every shortcut needs its own discoverable action"
-for identifier in expected:
+for identifier in foreground:
     assert host["actions"][identifier]["openAppWhenRun"], identifier
-for identifier in expected - {"CaptureToJournalIntent"}:
+for identifier in background | {"CapturePhotoToJournalIntent"}:
+    assert not host["actions"][identifier].get("openAppWhenRun"), identifier
+for identifier in foreground - {"TakePictureIntent"}:
     assert extension["actions"][identifier]["openAppWhenRun"], identifier
 for bundle in (host, extension):
     for identifier in ("SetWidgetTaskStatusIntent", "ShowWidgetTaskStatusesIntent", "RefreshRandomBlocksWidgetIntent"):
@@ -36,4 +40,4 @@ assert info["CFBundleIdentifier"] in {
 }, "Widget bundle identifier must belong to the host app"
 assert info["NSExtension"]["NSExtensionPointIdentifier"] == "com.apple.widgetkit-extension"
 assert (widget / info["CFBundleExecutable"]).is_file()
-print("Verified four distinct app shortcuts and the embedded widget extension")
+print("Verified Logseq app shortcuts, background capture actions, and the embedded widget extension")

@@ -1,6 +1,7 @@
 import SwiftUI
 import Logseq
 import AppIntents
+import UniformTypeIdentifiers
 import UserNotifications
 
 private typealias AppRootView = LogseqRootView
@@ -118,7 +119,7 @@ private final class DiscussionNotificationDelegate: NSObject, UNUserNotification
 struct CaptureToJournalIntent: AppIntent {
     static let title: LocalizedStringResource = "Capture to Journal"
     static let description = IntentDescription("Add text to today's Logseq journal.")
-    static let openAppWhenRun = true
+    static let openAppWhenRun = false
 
     @Parameter(
         title: "Text",
@@ -126,12 +127,96 @@ struct CaptureToJournalIntent: AppIntent {
     )
     var text: String
 
+    static var parameterSummary: some ParameterSummary {
+        Summary("Capture \(\.$text) to Logseq")
+    }
+
     @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
-        guard ShortcutCapture.enqueue(text) else {
-            return .result(dialog: "Enter some text to capture.")
-        }
-        LogseqLogseqRuntime.shared.processSharedCaptures()
+        try await captureJournalText(text, task: false)
         return .result(dialog: "Added to today's journal.")
+    }
+}
+
+@available(iOS 17.0, *)
+struct CaptureTaskToJournalIntent: AppIntent {
+    static let title: LocalizedStringResource = "Capture Task to Journal"
+    static let description = IntentDescription("Add a task to today's Logseq journal.")
+    static let openAppWhenRun = false
+
+    @Parameter(title: "Task", requestValueDialog: IntentDialog("What task would you like to capture?"))
+    var text: String
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Capture task \(\.$text) to Logseq")
+    }
+
+    @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
+        try await captureJournalText(text, task: true)
+        return .result(dialog: "Added a task to today's journal.")
+    }
+}
+
+private enum JournalShortcutError: LocalizedError {
+    case emptyText
+    case invalidPhoto
+    case captureFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyText: String(localized: "Enter some text to capture.")
+        case .invalidPhoto: String(localized: "Choose an image to capture.")
+        case .captureFailed: String(localized: "Could not save to the journal. Check that your graph is open and unlocked in Logseq.")
+        }
+    }
+}
+
+@MainActor private func captureJournalText(_ text: String, task: Bool) async throws {
+    let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { throw JournalShortcutError.emptyText }
+    guard await LogseqLogseqRuntime.shared.captureShortcutText(text, task: task) else {
+        throw JournalShortcutError.captureFailed
+    }
+}
+
+@available(iOS 17.0, *)
+struct TakePictureIntent: AppIntent {
+    static let title: LocalizedStringResource = "Take Picture"
+    static let description = IntentDescription("Open the camera in the Logseq journal composer.")
+    static let openAppWhenRun = true
+
+    @MainActor func perform() async throws -> some IntentResult {
+        LogseqLogseqRuntime.shared.acceptSharedCaptureURL(URL(string: "logseq://camera")!)
+        return .result()
+    }
+}
+
+@available(iOS 17.0, *)
+struct CapturePhotoToJournalIntent: AppIntent {
+    static let title: LocalizedStringResource = "Capture Photo to Journal"
+    static let description = IntentDescription("Save a photo to today's Logseq journal. Use after Take Photo in Shortcuts.")
+    static let openAppWhenRun = false
+
+    @Parameter(title: "Photo")
+    var photo: IntentFile
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Capture photo \(\.$photo) to Logseq")
+    }
+
+    @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
+        let title = URL(fileURLWithPath: photo.filename).lastPathComponent
+        let type = if let type = photo.type, type.conforms(to: .image) {
+            type
+        } else {
+            UTType(filenameExtension: (title as NSString).pathExtension)
+        }
+        guard let type, type.conforms(to: .image) else { throw JournalShortcutError.invalidPhoto }
+        let data = photo.data
+        guard !data.isEmpty else { throw JournalShortcutError.invalidPhoto }
+        guard await LogseqLogseqRuntime.shared.captureShortcutPhoto(
+            data, title: title, contentType: type.preferredMIMEType ?? type.identifier
+        ) else { throw JournalShortcutError.captureFailed }
+        return .result(dialog: "Added a photo to today's journal.")
     }
 }
 
@@ -164,6 +249,18 @@ struct LogseqAppShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Capture",
             systemImageName: "square.and.pencil"
+        )
+        AppShortcut(
+            intent: CaptureTaskToJournalIntent(),
+            phrases: ["Capture a task in \(.applicationName)"],
+            shortTitle: "Capture Task",
+            systemImageName: "checkmark.circle"
+        )
+        AppShortcut(
+            intent: TakePictureIntent(),
+            phrases: ["Take a picture in \(.applicationName)"],
+            shortTitle: "Take Picture",
+            systemImageName: "camera"
         )
     }
 }

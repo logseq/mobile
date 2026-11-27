@@ -77,16 +77,15 @@ import LogseqModel
         #expect(writer.pendingItems().isEmpty)
     }
 
-    @Test @MainActor func shortcutCaptureQueuesTrimmedTextForTheJournal() {
-        let suiteName = "ShortcutCaptureTests.\(UUID().uuidString)"
+    @Test @MainActor func inboxQueuesTrimmedTextForTheJournal() {
+        let suiteName = "SharedCaptureInboxTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let inbox = SharedCaptureInbox(defaults: defaults)
 
-        #expect(ShortcutCapture.enqueue("  Remember this  ", inbox: inbox, id: "shortcut-1"))
-        #expect(inbox.pendingItems() == [.text(id: "shortcut-1", text: "Remember this")])
-        #expect(!ShortcutCapture.enqueue("  \n", inbox: inbox, id: "shortcut-2"))
-        #expect(inbox.pendingItems().count == 1)
+        inbox.enqueueText("  Remember this  ", id: "capture-1")
+        inbox.enqueueText("  \n", id: "capture-2")
+        #expect(inbox.pendingItems() == [.text(id: "capture-1", text: "Remember this")])
     }
 
     @Test @MainActor func processorStopsAtFailureAndRetriesWithoutReordering() async {

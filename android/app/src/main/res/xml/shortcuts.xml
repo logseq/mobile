@@ -13,6 +13,30 @@
             android:data="logseq://capture" />
     </shortcut>
     <shortcut
+        android:shortcutId="task"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_task"
+        android:shortcutShortLabel="@string/shortcut_task"
+        android:shortcutLongLabel="@string/shortcut_task_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.logseq.logseq"
+            android:targetClass="com.logseq.logseq.MainActivity"
+            android:data="logseq://task" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="camera"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_camera"
+        android:shortcutShortLabel="@string/shortcut_camera"
+        android:shortcutLongLabel="@string/shortcut_camera">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.logseq.logseq"
+            android:targetClass="com.logseq.logseq.MainActivity"
+            android:data="logseq://camera" />
+    </shortcut>
+    <shortcut
         android:shortcutId="journal"
         android:enabled="true"
         android:icon="@drawable/ic_shortcut_journal"

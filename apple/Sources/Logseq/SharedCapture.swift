@@ -222,19 +222,6 @@ public struct SharedCaptureItem: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-@MainActor public enum ShortcutCapture {
-    @discardableResult public static func enqueue(
-        _ text: String,
-        inbox: SharedCaptureInbox = .shared,
-        id: String = UUID().uuidString.lowercased()
-    ) -> Bool {
-        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return false }
-        inbox.enqueueText(text, id: id)
-        return true
-    }
-}
-
 public enum SharedCaptureStorage {
     public static let appGroupIdentifier = "group.com.logseq.logseq"
 
@@ -273,10 +260,19 @@ public enum SharedCaptureAssetStager {
         contentType: String,
         sharedDirectory: URL
     ) throws -> SharedCaptureAsset {
+        try stage(data: Data(contentsOf: sourceURL), title: sourceURL.lastPathComponent,
+                  contentType: contentType, sharedDirectory: sharedDirectory)
+    }
+
+    static func stage(
+        data: Data,
+        title: String,
+        contentType: String,
+        sharedDirectory: URL
+    ) throws -> SharedCaptureAsset {
         let manager = FileManager.default
         try manager.createDirectory(at: sharedDirectory, withIntermediateDirectories: true)
-        let prepared = LGImageCompression.prepare(try Data(contentsOf: sourceURL),
-            title: sourceURL.lastPathComponent, contentType: contentType)
+        let prepared = LGImageCompression.prepare(data, title: title, contentType: contentType)
         let title = prepared.title
         let safeTitle = title.replacingOccurrences(of: "/", with: "-")
         let safeName = "\(UUID().uuidString.lowercased())-\(safeTitle)"

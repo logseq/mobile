@@ -50,5 +50,5 @@ let deep_link fields =
         | Some uuid, Some (`String "open-block") -> Ok (`Widget_block (graph, uuid))
         | _ -> Ok (`Graph (graph, page, block)))
     | Some "capture" -> (match text values with Ok value -> Ok (`Capture value) | Error _ -> Ok (`Quick_action "capture"))
-    | Some ("audio" | "journal" | "task" as action) -> Ok (`Quick_action action)
+    | Some ("audio" | "camera" | "journal" | "task" as action) -> Ok (`Quick_action action)
     | _ -> Ok (`Ignore)
