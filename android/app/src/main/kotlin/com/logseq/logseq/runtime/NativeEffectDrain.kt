@@ -15,6 +15,7 @@ internal interface NativeEffectRuntime {
     suspend fun takeEffect(): String
     suspend fun resolveEffect(id: Long, succeeded: Boolean, message: String): String
     suspend fun applySnapshot(response: String): String
+    suspend fun completeEffectWithResponse(id: Long, response: String): String
     suspend fun applyHostUpdate(kind: String, payload: String): String
 }
 
@@ -112,6 +113,13 @@ internal class NativeEffectDrain(
                 "finish id=${dispatch.effect.id} kind=${dispatch.effect.kind} " +
                     "succeeded=${resolution.succeeded}"
             )
+            if (dispatch.effect.kind == "return-outliner-editor" &&
+                resolution is NativeEffectResolution.CoreResponse
+            ) {
+                apply(runtime.completeEffectWithResponse(dispatch.effect.id, resolution.response), "completeOutlinerReturn")
+                afterCoreResponseApplied?.invoke(resolution.response)
+                continue
+            }
             if (resolution.succeeded) {
                 when (resolution) {
                     is NativeEffectResolution.CoreResponse -> {

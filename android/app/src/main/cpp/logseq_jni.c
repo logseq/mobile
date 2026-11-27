@@ -303,6 +303,12 @@ JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiApplySnapshot(
   return call_s(env, "logseq_lui_apply_snapshot", response);
 }
 
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiCompleteEffectWithResponse(
+    JNIEnv *env, jclass clazz, jlong effectId, jbyteArray response) {
+  (void)clazz;
+  return call_ls(env, "logseq_lui_complete_effect_with_response", effectId, response);
+}
+
 JNIEXPORT jbyteArray JNICALL Java_com_logseq_logseq_NativeCore_luiApplyHostUpdate(
     JNIEnv *env, jclass clazz, jbyteArray kind, jbyteArray payload) {
   (void)clazz;

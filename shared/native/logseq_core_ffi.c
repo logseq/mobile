@@ -574,6 +574,11 @@ const char *logseq_lui_apply_snapshot(const char *response_json) {
   LUI_RUNTIME_CALL("apply_snapshot", call_lui_string("logseq_lui_apply_snapshot", response_json));
 }
 
+const char *logseq_lui_complete_effect_with_response(int64_t effect_id, const char *response_json) {
+  LUI_RUNTIME_CALL("complete_effect_with_response",
+      call_lui_node_text("logseq_lui_complete_effect_with_response", effect_id, response_json));
+}
+
 const char *logseq_lui_apply_host_update(const char *kind,
                                               const char *payload_json) {
   LUI_RUNTIME_CALL(

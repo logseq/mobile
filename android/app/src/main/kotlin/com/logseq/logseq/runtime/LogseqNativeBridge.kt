@@ -11,8 +11,7 @@ import kotlinx.coroutines.withContext
 //
 // LUI event calls run through the scheduler's UI lane so patches
 // produced mid-flight cannot interleave with a busy core RPC; the effect
-// entry points (takeEffect / resolveEffect / applySnapshot /
-// applyHostUpdate) return "" and re-queue while the core is busy.
+// entry points can return an empty patch while the core is busy.
 // `callCore` runs on NativeCoreThread, the same thread the runtime uses for
 // every other core entry point.
 internal class LogseqNativeBridge(
@@ -130,6 +129,16 @@ internal class LogseqNativeBridge(
             return ""
         }
         return decode(traced("core.luiApplySnapshot") { NativeCore.luiApplySnapshot(encode(response)) })
+    }
+
+    fun completeEffectWithResponse(id: Long, response: String): String {
+        if (runtimeScheduler.isCoreBusy) {
+            runtimeScheduler.runUi { apply(completeEffectWithResponse(id, response)) }
+            return ""
+        }
+        return decode(traced("core.luiCompleteEffectWithResponse") {
+            NativeCore.luiCompleteEffectWithResponse(id, encode(response))
+        })
     }
 
     fun applyHostUpdate(kind: String, payload: String): String {

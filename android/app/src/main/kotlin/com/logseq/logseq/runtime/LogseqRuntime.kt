@@ -273,6 +273,8 @@ internal class LogseqRuntime(
                             onCore { deliverPatch(bridge.resolveEffect(id, succeeded, message)); "" }
                         override suspend fun applySnapshot(response: String) =
                             onCore { deliverPatch(bridge.applySnapshot(response)); "" }
+                        override suspend fun completeEffectWithResponse(id: Long, response: String) =
+                            onCore { deliverPatch(bridge.completeEffectWithResponse(id, response)); "" }
                         override suspend fun applyHostUpdate(kind: String, payload: String) =
                             onCore { deliverPatch(bridge.applyHostUpdate(kind, payload)); "" }
                     },

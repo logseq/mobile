@@ -48,6 +48,7 @@ internal object NativeCore {
     external fun luiTakeEffect(): ByteArray?
     external fun luiResolveEffect(effectId: Long, succeeded: Int, message: ByteArray): ByteArray?
     external fun luiApplySnapshot(response: ByteArray): ByteArray?
+    external fun luiCompleteEffectWithResponse(effectId: Long, response: ByteArray): ByteArray?
     external fun luiApplyHostUpdate(kind: ByteArray, payload: ByteArray): ByteArray?
     external fun logseqCall(request: ByteArray): ByteArray?
     external fun highlightCode(request: ByteArray): ByteArray?

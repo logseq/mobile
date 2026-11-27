@@ -57,7 +57,8 @@ class AndroidEnterPerformanceTest {
     @Test fun repeatedEnterAtTheStartOfFiveHundredBlocksIsResponsive() {
         val arguments = InstrumentationRegistry.getArguments()
         assumeTrue(arguments.getString("verifyEnterPerformance") == "true")
-        assertTrue("The fixture must never run on a physical device", Build.MODEL.startsWith("sdk_gphone"))
+        assertTrue("The fixture must never run on a physical device",
+            Build.HARDWARE == "ranchu" || Build.MODEL.startsWith("sdk_gphone"))
         val context = instrumentation.targetContext
         assertEquals("uiregression", context.getSharedPreferences("logseq", Context.MODE_PRIVATE)
             .getString("logseq.selectedGraphId", ""))

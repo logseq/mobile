@@ -84,8 +84,8 @@ let flush_action action =
   note_effect_deadlines ();
   take_patch ()
 
-let apply_response encoded =
-  let action = try
+let core_response_action encoded =
+  try
     let json = Yojson.Basic.from_string encoded in
     let member name = function
       | `Assoc fields -> Option.value ~default:`Null (List.assoc_opt name fields)
@@ -110,8 +110,19 @@ let apply_response encoded =
     | _ -> (match Response_snapshot.decode_json_response json with
       | Ok projection -> Model.ApplyCoreSnapshot projection
       | Error message -> Model.SyncFailed message)
-    with Yojson.Json_error message -> Model.SyncFailed ("Invalid core response: " ^ message) in
-  flush_action action
+  with Yojson.Json_error message -> Model.SyncFailed ("Invalid core response: " ^ message)
+
+let apply_response encoded = flush_action (core_response_action encoded)
+
+let complete_effect_with_response id encoded =
+  patch_batches := [];
+  let app = app () in
+  (* The editor must see the new focus and the acknowledgement in one patch. *)
+  ignore (Lui_app.send app (core_response_action encoded));
+  ignore (Lui_app.send app (Model.ResolveEffect (id, true, encoded)));
+  ignore (Lui_app.flush app);
+  note_effect_deadlines ();
+  take_patch ()
 
 let session_asset (asset : Host_update.host_composer_asset) :
     Model.composer_asset =
@@ -756,4 +767,5 @@ let () =
   Callback.register "logseq_lui_take_effect" take_effect;
   Callback.register "logseq_lui_resolve_effect" resolve_effect;
   Callback.register "logseq_lui_apply_snapshot" apply_response;
+  Callback.register "logseq_lui_complete_effect_with_response" complete_effect_with_response;
   Callback.register "logseq_lui_apply_host_update" apply_host_update
