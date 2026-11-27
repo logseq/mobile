@@ -445,15 +445,6 @@ let sidebar_page_selected_ (current : Model.logseq_model)
       | Some selected -> selected.uuid = page.uuid
       | None -> false)
 
-let sidebar_tab_visible_ (current : Model.logseq_model) tab =
-  Model.string_vector_contains_ current.sidebar_tabs tab
-
-let flashcards_tab_visible_ (current : Model.logseq_model) =
-  sidebar_tab_visible_ current "flashcards"
-
-let graphs_tab_visible_ (current : Model.logseq_model) =
-  sidebar_tab_visible_ current "graphs"
-
 let composer_collapsed_ (current : Model.logseq_model) =
   not current.composer_expanded
 
@@ -1365,7 +1356,7 @@ let graph_picker_error_message (current : Model.logseq_model) =
   | None -> ""
 
 let settings_main_visible_ (current : Model.logseq_model) =
-  (not current.settings_tabs_open) && not current.runtime_log_open
+  not current.runtime_log_open
 
 let settings_spell_check (current : Model.logseq_model) = current.spell_check
 
@@ -1413,74 +1404,8 @@ let settings_community_link_needs_separator_ (current : Model.logseq_model)
   | Some final_link -> link.id <> final_link.id
   | None -> false
 
-let settings_tabs_visible_ (current : Model.logseq_model) =
-  current.settings_tabs_open
-
-let settings_tab_title tab =
-  match tab with
-  | "journals" -> "Journals"
-  | "flashcards" -> "Flashcards"
-  | _ -> "Graphs"
-
-let settings_tabs_summary (current : Model.logseq_model) =
-  String.concat " · "
-    (List.map (fun tab -> tr current (settings_tab_title tab)) current.sidebar_tabs)
-
 let runtime_log_visible_ (current : Model.logseq_model) =
   current.runtime_log_open
-
-let tab_enabled_ (current : Model.logseq_model) tab =
-  Model.string_vector_contains_ current.sidebar_tabs tab
-
-let tab_toggle_label (current : Model.logseq_model) tab =
-  let title = tr current (settings_tab_title tab) in
-  let template = if tab_enabled_ current tab then "{1}, on" else "{1}, off" in
-  tr_named current template title
-
-let tab_selection_glyph (current : Model.logseq_model) tab =
-  if tab_enabled_ current tab then "✓" else "○"
-
-let tab_selection_icon_name (current : Model.logseq_model) tab =
-  if tab_enabled_ current tab then "app:selected" else "app:unselected"
-
-let tab_selection_foreground (current : Model.logseq_model) tab =
-  if tab_enabled_ current tab then "accent" else "secondary"
-
-let tab_disabled_ (current : Model.logseq_model) tab =
-  not (tab_enabled_ current tab)
-
-let tab_index (current : Model.logseq_model) tab =
-  let rec loop index tabs =
-    match tabs with
-    | [] -> -1
-    | value :: rest -> if value = tab then index else loop (index + 1) rest
-  in
-  loop 0 current.sidebar_tabs
-
-let tab_movement_visible_ (current : Model.logseq_model) tab =
-  tab <> "journals" && tab_enabled_ current tab
-
-let settings_flashcards_before_graphs_ (current : Model.logseq_model) =
-  tab_enabled_ current "flashcards"
-  && tab_index current "flashcards" < tab_index current "graphs"
-
-let settings_flashcards_after_graphs_ (current : Model.logseq_model) =
-  tab_enabled_ current "flashcards"
-  && tab_index current "flashcards" > tab_index current "graphs"
-
-let settings_available_tabs_present_ (current : Model.logseq_model) =
-  not (tab_enabled_ current "flashcards")
-
-let tab_move_up_disabled_ (current : Model.logseq_model) tab =
-  tab_index current tab <= 1
-
-let tab_move_down_disabled_ (current : Model.logseq_model) tab =
-  let index = tab_index current tab in
-  index < 0 || index >= List.length current.sidebar_tabs - 1
-
-let tab_toggle_identifier tab = "toggle.settings.tab." ^ tab
-let tab_up_identifier tab = "button.settings.tab." ^ tab ^ ".up"
-let tab_down_identifier tab = "button.settings.tab." ^ tab ^ ".down"
 
 let runtime_log_level (record : Model.runtime_log_record) = record.level
 

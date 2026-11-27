@@ -278,8 +278,10 @@ private class SidebarMotion(open: Boolean, private val scope: CoroutineScope) {
 }
 
 internal fun sidebarSettlesOpen(position: Float, velocity: Float, revealed: Float, opening: Boolean): Boolean {
+    // A small reversal at lift-off can't reopen a panel dragged past its closing threshold.
+    val projectedVelocity = if (opening) velocity else minOf(velocity, 0f)
     // A sparse touch stream can drop the fling estimate even after the panel visibly opened.
-    return position + velocity * 0.16f >= 0.5f || (opening && revealed >= 0.75f && velocity >= -0.5f)
+    return position + projectedVelocity * 0.16f >= 0.5f || (opening && revealed >= 0.75f && velocity >= -0.5f)
 }
 
 private fun Modifier.sidebarPan(
@@ -317,7 +319,7 @@ private fun Modifier.sidebarPan(
                             velocity.calculateVelocity().x * direction / width
                         } else 0f
                         start = null
-                        select(sidebarSettlesOpen(initial + fraction, speed, motion.progress, horizontal > 0f))
+                        select(sidebarSettlesOpen(initial + fraction, speed, motion.progress, opening = !startsOpen))
                     }
                     break
                 }

@@ -479,7 +479,6 @@ type logseq_model =
   ; pending_sign_out : bool
   ; connection_menu_open : bool
   ; settings_open : bool
-  ; settings_tabs_open : bool
   ; runtime_log_open : bool
   ; appearance : string
   ; dark_theme : string
@@ -492,7 +491,6 @@ type logseq_model =
   ; community_links : settings_community_link list
   ; spell_check : bool
   ; auto_correction : bool
-  ; sidebar_tabs : string list
   ; base_url : string
   ; base_url_draft : string
   ; version : string
@@ -731,8 +729,6 @@ type logseq_action =
   | OpenSettings
   | ResumeSettings
   | DismissSettings
-  | OpenSettingsTabs
-  | BackSettings
   | OpenSettingsAppearanceMenu
   | CloseSettingsAppearanceMenu
   | ChangeAppearance of string
@@ -745,8 +741,6 @@ type logseq_action =
   | ChooseJournalTitleFormat of string
   | ToggleSpellCheck of bool
   | ToggleAutoCorrection of bool
-  | ToggleSidebarTab of string
-  | MoveSidebarTab of string * int
   | ChangeBaseURL of string
   | ApplySettings
   | ExportGraphDatabase
@@ -916,7 +910,6 @@ let initial () =
     pending_sign_out = false;
     connection_menu_open = false;
     settings_open = false;
-    settings_tabs_open = false;
     runtime_log_open = false;
     appearance = "system";
     dark_theme = "black";
@@ -929,7 +922,6 @@ let initial () =
     community_links = settings_community_links ();
     spell_check = true;
     auto_correction = true;
-    sidebar_tabs = [ "journals"; "flashcards"; "graphs" ];
     base_url = "https://api.logseq.io";
     base_url_draft = "https://api.logseq.io";
     version = "Development";
@@ -1536,50 +1528,6 @@ let graph_local_ (current : logseq_model) graph_id =
 let remove_string values target =
   List.filter (fun value -> value <> target) values
 
-let required_sidebar_tab_ tab = tab = "journals" || tab = "graphs"
-
-let valid_sidebar_tab_ tab =
-  tab = "journals" || tab = "flashcards" || tab = "graphs"
-
-let normalize_sidebar_tabs tabs =
-  match tabs with
-  | [] -> [ "journals"; "flashcards"; "graphs" ]
-  | _ ->
-    let normalized =
-      List.fold_left
-        (fun result tab ->
-          if
-            valid_sidebar_tab_ tab
-            && tab <> "journals"
-            && not (string_vector_contains_ result tab)
-          then result @ [ tab ]
-          else result)
-        [ "journals" ] tabs
-    in
-    if string_vector_contains_ normalized "graphs" then normalized
-    else normalized @ [ "graphs" ]
-
-let toggle_sidebar_tab tabs tab =
-  if tab <> "flashcards" then tabs
-  else if string_vector_contains_ tabs tab then remove_string tabs tab
-  else tabs @ [ tab ]
-
-let move_sidebar_tab tabs tab offset =
-  if tab = "journals" then tabs
-  else begin
-    let without = remove_string tabs tab in
-    let rec loop index =
-      if index = List.length tabs then tabs
-      else if List.nth tabs index = tab then
-        let target =
-          min (max (index + offset) 0) (List.length without)
-        in
-        sub_list 0 target without @ (tab :: sub_list target (List.length without) without)
-      else loop (index + 1)
-    in
-    loop 0
-  end
-
 let bounded_url_delimiter index fallback = if index < 0 then fallback else index
 
 let string_index_of_opt s sub =
@@ -1665,7 +1613,8 @@ let current_settings (current : logseq_model) =
     system_language = Some current.system_language;
     spell_check = current.spell_check;
     auto_correction = current.auto_correction;
-    sidebar_tabs = current.sidebar_tabs;
+    (* Preserve the legacy preference field for native settings round trips. *)
+    sidebar_tabs = [ "journals"; "graphs"; "flashcards" ];
     base_url = String.trim current.base_url;
     version = current.version;
     revision = current.revision;
@@ -2052,7 +2001,6 @@ let resolve_successful_effect (current : logseq_model) eff message =
       authentication_state = "signedOut";
       authentication_error = None;
       settings_open = false;
-      settings_tabs_open = false;
       runtime_log_open = false;
       graphs =
         List.filter
@@ -3271,7 +3219,6 @@ let rec update (current : logseq_model) action =
           app_navigation_path = [];
           app_navigation_previews = [];
           settings_open = false;
-          settings_tabs_open = false;
           runtime_log_open = false;
           sidebar_open = false;
           graph_menu_open = false;
@@ -3412,7 +3359,6 @@ let rec update (current : logseq_model) action =
     else update updated SaveUISession
   | SelectTasks ->
     { (cancel_outliner_editing current) with tasks_selection_mode = true }
-  | ShowFlashcards when not (List.mem "flashcards" current.sidebar_tabs) -> current
   | ShowFlashcards ->
     let updated =
       {
@@ -3545,7 +3491,6 @@ let rec update (current : logseq_model) action =
     (match request with None -> updated
      | Some payload -> enqueue_effect updated (SignInEffect (updated.next_effect_id, payload)))
   | ApplySettingsSnapshot settings ->
-    let sidebar_tabs = normalize_sidebar_tabs settings.sidebar_tabs in
     {
       current with
       appearance = settings.appearance;
@@ -3554,9 +3499,6 @@ let rec update (current : logseq_model) action =
       system_language = Option.value ~default:current.system_language settings.system_language;
       spell_check = settings.spell_check;
       auto_correction = settings.auto_correction;
-      sidebar_tabs;
-      destination = (if current.destination = FlashcardsDestination && not (List.mem "flashcards" sidebar_tabs)
-        then JournalsDestination else current.destination);
       base_url = settings.base_url;
       base_url_draft = settings.base_url;
       version = settings.version;
@@ -3652,7 +3594,6 @@ let rec update (current : logseq_model) action =
       graph_menu_open = false;
       connection_menu_open = false;
       settings_open = true;
-      settings_tabs_open = false;
       settings_appearance_menu_open = false;
       settings_dark_theme_menu_open = false;
       settings_language_menu_open = false;
@@ -3664,16 +3605,12 @@ let rec update (current : logseq_model) action =
     {
       current with
       settings_open = false;
-      settings_tabs_open = false;
       settings_appearance_menu_open = false;
       settings_dark_theme_menu_open = false;
       settings_language_menu_open = false;
       runtime_log_open = false;
       base_url_draft = current.base_url;
     }
-  | OpenSettingsTabs -> { current with settings_tabs_open = true }
-  | BackSettings ->
-    { current with settings_tabs_open = false; runtime_log_open = false }
   | OpenSettingsAppearanceMenu ->
     { current with settings_appearance_menu_open = true }
   | CloseSettingsAppearanceMenu ->
@@ -3721,21 +3658,6 @@ let rec update (current : logseq_model) action =
   | ToggleAutoCorrection enabled ->
     persist_settings_change current
       { current with auto_correction = enabled }
-  | ToggleSidebarTab tab ->
-    let sidebar_tabs = toggle_sidebar_tab current.sidebar_tabs tab in
-    persist_settings_change current
-      {
-        current with
-        sidebar_tabs;
-        destination = (if current.destination = FlashcardsDestination && not (List.mem "flashcards" sidebar_tabs)
-          then JournalsDestination else current.destination);
-      }
-  | MoveSidebarTab (tab, offset) ->
-    persist_settings_change current
-      {
-        current with
-        sidebar_tabs = move_sidebar_tab current.sidebar_tabs tab offset;
-      }
   | ChangeBaseURL value -> { current with base_url_draft = value }
   | ApplySettings ->
     if valid_base_url_ current.base_url_draft then begin
@@ -3751,7 +3673,6 @@ let rec update (current : logseq_model) action =
         {
           applied with
           settings_open = false;
-          settings_tabs_open = false;
           settings_language_menu_open = false;
           runtime_log_open = false;
         }

@@ -69,37 +69,6 @@ appId: com.logseq.logseq
     id: "field.base-url"
 - scrollUntilVisible:
     element:
-      id: "link.settings.tabs"
-    direction: UP
-    timeout: 10000
-- assertVisible:
-    id: "link.settings.tabs"
-- tapOn:
-    id: "link.settings.tabs"
-- extendedWaitUntil:
-    visible:
-      id: "screen.settings.tabs"
-    timeout: 5000
-- assertVisible:
-    id: "toggle.settings.tab.journals"
-- assertVisible:
-    id: "toggle.settings.tab.flashcards"
-- assertVisible:
-    id: "toggle.settings.tab.graphs"
-- assertVisible: "Graphs, on"
-- tapOn:
-    id: "toggle.settings.tab.flashcards"
-- assertVisible: "Flashcards, off"
-- tapOn:
-    id: "toggle.settings.tab.flashcards"
-- assertVisible: "Flashcards, on"
-- takeScreenshot: "android-settings-material-icons"
-- tapOn:
-    id: "button.connection.cancel"
-- assertVisible:
-    id: "screen.settings"
-- scrollUntilVisible:
-    element:
       id: "label.settings.about"
     direction: DOWN
     timeout: 10000

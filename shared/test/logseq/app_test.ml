@@ -165,17 +165,6 @@ let child_with_identifier runtime parent identifier =
   in
   loop 0
 
-let child_index_with_identifier runtime parent identifier =
-  let children = children runtime parent in
-  let rec loop index =
-    if index = List.length children then -1
-    else if
-      has_accessibility_identifier runtime (List.nth children index) identifier
-    then index
-    else loop (index + 1)
-  in
-  loop 0
-
 let rec descendant_with_identifier runtime parent identifier =
   let direct = child_with_identifier runtime parent identifier in
   if direct <> -1 then direct
@@ -874,7 +863,7 @@ let sync_indicator_is_neutral_without_authentication () =
       [OfflineState; FailedState "Connection failed"; SyncingState; SyncedState])
     ["restoring"; "signedOut"; "signingIn"; "signingOut"]
 
-let settings_navigation_tabs_and_diagnostics_are_lg_owned () =
+let settings_navigation_and_diagnostics_are_lg_owned () =
   let initial =
     Model.update (Model.initial ())
       (Model.ApplySettingsSnapshot
@@ -882,30 +871,21 @@ let settings_navigation_tabs_and_diagnostics_are_lg_owned () =
   in
   let menu = Model.update initial Model.OpenConnectionMenu in
   let opened = Model.update menu Model.OpenSettings in
-  let tabs = Model.update opened Model.OpenSettingsTabs in
-  let hidden = Model.update tabs (Model.ToggleSidebarTab "flashcards") in
-  let logs =
-    Model.update (Model.update hidden Model.BackSettings)
-      Model.OpenRuntimeLog
-  in
+  let logs = Model.update opened Model.OpenRuntimeLog in
   let filtered = Model.update logs Model.ToggleRuntimeLogErrors in
   let refreshed = filtered in
   check ~msg:"the connection menu is model-owned" menu.connection_menu_open;
   check ~msg:"settings presentation is model-owned" opened.settings_open;
   check ~msg:"opening settings dismisses its source menu"
     (not opened.connection_menu_open);
-  check ~msg:"tabs navigation is model-owned" tabs.settings_tabs_open;
-  check_eq ~msg:"optional sidebar tabs can be hidden" hidden.sidebar_tabs
-    [ "journals"; "graphs" ];
   check ~msg:"runtime diagnostics are model-owned" logs.runtime_log_open;
   check ~msg:"log filtering is model-owned" filtered.runtime_log_errors_only;
   check_eq
     ~msg:"opening diagnostics loads records before later filter changes"
     refreshed.pending_effects
     [
-      Model.SaveSettingsEffect (1, Model.current_settings hidden);
-      Model.RefreshRuntimeLogEffect (2, "ui", false, false);
-      Model.RefreshRuntimeLogEffect (3, "ui", true, false);
+      Model.RefreshRuntimeLogEffect (1, "ui", false, false);
+      Model.RefreshRuntimeLogEffect (2, "ui", true, false);
     ]
 
 let settings_preferences_persist_without_dismissing_the_sheet () =
@@ -987,7 +967,7 @@ let settings_dark_theme_persists_independently_of_appearance () =
     (Model.ApplySettingsSnapshot { saved with dark_theme = "unknown" }) in
   check_eq fallback.dark_theme "black"
 
-let settings_reject_invalid_connections_and_preserve_required_tabs () =
+let settings_reject_invalid_connections () =
   let opened =
     {
       (Model.initial ()) with
@@ -996,12 +976,6 @@ let settings_reject_invalid_connections_and_preserve_required_tabs () =
     }
   in
   let invalid = Model.update opened Model.ApplySettings in
-  let required_toggled =
-    Model.update opened (Model.ToggleSidebarTab "journals")
-  in
-  let required_moved =
-    Model.update opened (Model.MoveSidebarTab ("journals", 2))
-  in
   check_eq ~msg:"invalid connection URLs do not leave LG"
     invalid.pending_effects [];
   check ~msg:"invalid connection URLs keep settings open for correction"
@@ -1013,40 +987,20 @@ let settings_reject_invalid_connections_and_preserve_required_tabs () =
   check ~msg:"connection hosts cannot contain whitespace"
     (not (Model.valid_base_url_ "https://bad host.example"));
   check ~msg:"local development servers remain valid after trimming"
-    (Model.valid_base_url_ " http://127.0.0.1:8787/path ");
-  check_eq ~msg:"journals cannot be hidden" required_toggled.sidebar_tabs
-    [ "journals"; "flashcards"; "graphs" ];
-  check_eq ~msg:"journals remains the first required tab"
-    required_moved.sidebar_tabs
-    [ "journals"; "flashcards"; "graphs" ];
-  check_eq ~msg:"required tab no-ops do not persist settings"
-    required_toggled.pending_effects [];
-  check_eq ~msg:"required tab moves do not persist settings"
-    required_moved.pending_effects []
+    (Model.valid_base_url_ " http://127.0.0.1:8787/path ")
 
-let settings_snapshot_normalizes_sidebar_tabs_at_the_lg_boundary () =
-  let defaulted =
-    Model.update (Model.initial ())
-      (Model.ApplySettingsSnapshot (settings []))
-  in
-  let sanitized =
-    Model.update (Model.initial ())
-      (Model.ApplySettingsSnapshot
-         (settings [ "graphs"; "graphs"; "unknown"; "flashcards" ]))
-  in
-  let required =
-    Model.update (Model.initial ())
-      (Model.ApplySettingsSnapshot (settings [ "journals" ]))
-  in
-  check_eq ~msg:"missing persisted tabs use the complete default"
-    defaulted.sidebar_tabs
-    [ "journals"; "flashcards"; "graphs" ];
-  check_eq ~msg:"LG discards unknown and duplicate persisted tabs"
-    sanitized.sidebar_tabs
-    [ "journals"; "graphs"; "flashcards" ];
-  check_eq
-    ~msg:"LG restores the required graphs tab without re-enabling flashcards"
-    required.sidebar_tabs [ "journals"; "graphs" ]
+let settings_ignore_legacy_sidebar_preferences () =
+  let legacy = Model.ApplySettingsSnapshot (settings [ "journals"; "graphs" ]) in
+  let current = Model.update (Model.initial ()) legacy in
+  let flashcards = Model.update current Model.ShowFlashcards in
+  check_eq ~msg:"previously hidden Flashcards remains reachable"
+    flashcards.destination Model.FlashcardsDestination;
+  let reloaded = Model.update flashcards legacy in
+  check_eq ~msg:"a settings reload keeps the current destination"
+    reloaded.destination Model.FlashcardsDestination;
+  check_eq ~msg:"older hosts save the fixed sidebar destinations"
+    (Model.current_settings reloaded).sidebar_tabs
+    [ "journals"; "graphs"; "flashcards" ]
 
 let runtime_log_filters_refresh_and_successful_results_enter_lg_state () =
   let filtered =
@@ -1378,20 +1332,8 @@ let settings_render_the_main_branch_navigation_contract () =
   check_eq ~msg:"the settings content uses the native form layout"
     (property_string renderer settings_screen Lui_protocol.StyleClass)
     "form";
-  let tabs_link =
-    descendant_with_identifier renderer root "link.settings.tabs"
-  in
-  let tabs_selection =
-    descendant_with_identifier renderer tabs_link
-      "text.settings.tabs.selection"
-  in
-  check ~msg:"settings expose tabs navigation" (tabs_link <> -1);
-  check_eq ~msg:"tabs show the same selected-items summary as main"
-    (property_string renderer tabs_selection Lui_protocol.TextValue)
-    "Journals · Flashcards · Graphs";
-  check_eq ~msg:"tabs keep the selected-items summary on one line like main"
-    (property_string renderer tabs_selection Lui_protocol.StyleClass)
-    "single-line";
+  check_eq ~msg:"Settings omits sidebar customization"
+    (descendant_with_identifier renderer root "link.settings.tabs") (-1);
   check ~msg:"settings use the native navigation-form toolbar contract"
     (descendant_with_identifier renderer root "toolbar.settings.actions"
     <> -1);
@@ -1428,45 +1370,6 @@ let settings_render_the_main_branch_navigation_contract () =
   check_eq ~msg:"database export stays on the typed platform boundary"
     (App.model application).pending_effects
     [ Model.ExportGraphDatabaseEffect 1 ];
-  send application Model.OpenSettingsTabs;
-  flush application;
-  let tabs_sheet =
-    descendant_with_identifier renderer root "sheet.settings.tabs"
-  in
-  let tabs_screen =
-    descendant_with_identifier renderer root "screen.settings.tabs"
-  in
-  let flashcards_row =
-    descendant_with_identifier renderer root "row.settings.tab.flashcards"
-  in
-  let back =
-    descendant_with_identifier renderer tabs_sheet "button.connection.cancel"
-  in
-  let confirmation =
-    descendant_with_identifier renderer tabs_sheet "button.connection.apply"
-  in
-  check_eq ~msg:"opening Tabs retains the original Settings sheet"
-    (descendant_with_identifier renderer root "sheet.settings")
-    settings_sheet;
-  check ~msg:"tabs retain their baseline screen identifier"
-    (tabs_screen <> -1);
-  check_eq ~msg:"tab controls render as full-width native list rows"
-    (node renderer flashcards_row)
-    (Some Lui_protocol.ListItem);
-  check_eq ~msg:"tabs present their own sheet title"
-    (property_string renderer tabs_sheet Lui_protocol.TextValue)
-    "Tabs";
-  check_eq ~msg:"tabs use the native list surface"
-    (property_string renderer tabs_sheet Lui_protocol.StyleClass)
-    "navigation-list";
-  check_eq ~msg:"tabs expose a settings back action"
-    (property_string renderer back Lui_protocol.TextValue)
-    "Settings";
-  check_eq ~msg:"tabs do not retain the root Apply action" confirmation (-1);
-  check ~msg:"configurable tabs retain their stable identifiers"
-    (descendant_with_identifier renderer root "toggle.settings.tab.flashcards"
-    <> -1);
-  send application Model.BackSettings;
   send application Model.OpenRuntimeLog;
   send application
     (Model.ApplyRuntimeLog ([ runtime_record "1" "INFO" "ui" "Started" ], None));
@@ -1511,79 +1414,6 @@ let kotlin_settings_sheet_uses_one_bounded_scroll_layout () =
       (descendant_with_identifier renderer layout "toolbar.settings.actions"
       <> -1)
   end
-
-let kotlin_settings_tabs_open_through_the_rendered_press_handler () =
-  let application = App.create (kotlin_backend ()) in
-  start application;
-  send application
-    (Model.ApplySettingsSnapshot
-       (settings [ "journals"; "flashcards"; "graphs" ]));
-  send application Model.OpenSettings;
-  flush application;
-  let renderer = Lui_app.runtime application in
-  let root = main_root renderer application in
-  let tabs_link =
-    descendant_with_identifier renderer root "link.settings.tabs"
-  in
-  check ~msg:"Kotlin renders the Settings tabs navigation row"
-    (tabs_link <> -1);
-  dispatch application (Lui_protocol.Press tabs_link);
-  flush application;
-  let updated_root = main_root renderer application in
-  let sheet =
-    descendant_with_identifier renderer updated_root "sheet.settings"
-  in
-  let layout =
-    descendant_with_identifier renderer updated_root
-      "layout.settings.tabs-sheet"
-  in
-  let tabs_screen =
-    descendant_with_identifier renderer updated_root "screen.settings.tabs"
-  in
-  let actions =
-    descendant_with_identifier renderer updated_root
-      "toolbar.settings.actions"
-  in
-  let back =
-    descendant_with_identifier renderer updated_root
-      "button.connection.cancel"
-  in
-  let flashcards_toggle =
-    descendant_with_identifier renderer updated_root
-      "toggle.settings.tab.flashcards"
-  in
-  check ~msg:"pressing the rendered row opens the Tabs screen"
-    (descendant_with_identifier renderer updated_root "screen.settings.tabs"
-    <> -1);
-  check_eq ~msg:"the Tabs screen replaces the Settings main screen"
-    (descendant_with_identifier renderer updated_root "screen.settings")
-    (-1);
-  check_eq ~msg:"Kotlin gives the Tabs sheet one bounded child"
-    (List.length (children renderer sheet))
-    1;
-  check ~msg:"Kotlin owns one vertical Tabs layout" (layout <> -1);
-  if layout <> -1 then begin
-    check_eq ~msg:"Tabs uses one vertical Material layout"
-      (node renderer layout)
-      (Some Lui_protocol.Column);
-    check_eq ~msg:"the tab list and back action occupy separate rows"
-      (children renderer layout)
-      [ tabs_screen; actions ]
-  end;
-  check_eq ~msg:"the tab list consumes only the space above the action"
-    (property_float renderer tabs_screen Lui_protocol.GrowValue)
-    1.0;
-  check_eq ~msg:"the back action uses an anchored Material row"
-    (node renderer actions)
-    (Some Lui_protocol.Row);
-  check_eq ~msg:"the back action fills the available phone width"
-    (property_float renderer back Lui_protocol.GrowValue)
-    1.0;
-  check_eq
-    ~msg:
-      "tab state stays leading while spare width separates reorder actions"
-    (property_float renderer flashcards_toggle Lui_protocol.GrowValue)
-    (-1.0)
 
 let kotlin_runtime_log_actions_fit_phone_width () =
   let application = App.create (kotlin_backend ()) in
@@ -1696,15 +1526,6 @@ let kotlin_settings_use_full_width_material_controls () =
   let apply =
     descendant_with_identifier renderer root "button.connection.apply"
   in
-  let tabs_copy =
-    descendant_with_identifier renderer root "layout.settings.tabs-copy"
-  in
-  let tabs_selection =
-    descendant_with_identifier renderer root "text.settings.tabs.selection"
-  in
-  let tabs_icon =
-    descendant_with_identifier renderer root "icon.settings.tabs"
-  in
   let spell_check =
     descendant_with_identifier renderer root "switch.settings.spell-check"
   in
@@ -1758,12 +1579,8 @@ let kotlin_settings_use_full_width_material_controls () =
       "label.settings.about";
       "label.settings.community";
     ];
-  let tabs = descendant_with_identifier renderer root "link.settings.tabs" in
-  List.iter
-    (fun padding ->
-      check_eq ~msg:"Tabs keeps native list padding like Theme and Language"
-        (property renderer tabs padding) None)
-    [Lui_protocol.PaddingValue; Lui_protocol.PaddingHorizontal];
+  check_eq ~msg:"Android Settings omits sidebar customization"
+    (descendant_with_identifier renderer root "link.settings.tabs") (-1);
   check_eq ~msg:"Settings actions share the sheet background"
     (property_string renderer actions Lui_protocol.BackgroundValue)
     "background";
@@ -1774,18 +1591,6 @@ let kotlin_settings_use_full_width_material_controls () =
   check_eq ~msg:"the language select keeps a persistent Material field label"
     (property_string renderer picker Lui_protocol.AccessibilityLabel)
     "Language";
-  check_eq ~msg:"the tabs label and summary own the flexible row width"
-    (property_float renderer tabs_copy Lui_protocol.GrowValue)
-    1.0;
-  check_eq ~msg:"the tabs summary is secondary supporting text"
-    (property_string renderer tabs_selection Lui_protocol.StyleClass)
-    "footnote";
-  check_eq ~msg:"the tabs summary uses readable Material supporting text"
-    (property_string renderer tabs_selection Lui_protocol.ForegroundValue)
-    "muted-foreground";
-  check_eq ~msg:"Tabs uses a Material navigation affordance"
-    (property_string renderer tabs_icon Lui_protocol.IconName)
-    "app:chevron-right";
   check_eq ~msg:"spell check uses a native Material switch row"
     (node renderer spell_check)
     (Some Lui_protocol.SwitchControl);
@@ -1855,131 +1660,13 @@ let kotlin_settings_use_full_width_material_controls () =
       (App.model application).language "system"
   end
 
-let settings_tabs_match_main_visibility_and_movement_boundaries () =
-  let application = App.create (ios_backend ()) in
-  start application;
-  send application
-    (Model.ApplySettingsSnapshot
-       (settings [ "journals"; "flashcards"; "graphs" ]));
-  send application Model.OpenSettings;
-  send application Model.OpenSettingsTabs;
-  flush application;
-  let renderer = Lui_app.runtime application in
-  let root = application_shell_root renderer application in
-  check_eq ~msg:"the drawer leaves the same visible main edge as main"
-    (property_int renderer root Lui_protocol.WidthValue)
-    360;
-  check_eq ~msg:"journals remains visibly required"
-    (descendant_enabled renderer root "toggle.settings.tab.journals")
-    (Some false);
-  check_eq ~msg:"journals does not render movement controls"
-    (descendant_with_identifier renderer root
-       "button.settings.tab.journals.up")
-    (-1);
-  check_eq ~msg:"flashcards remains configurable"
-    (descendant_enabled renderer root "toggle.settings.tab.flashcards")
-    (Some true);
-  check_eq ~msg:"the first configurable tab cannot move above journals"
-    (descendant_enabled renderer root "button.settings.tab.flashcards.up")
-    (Some false);
-  check_eq ~msg:"the first configurable tab can move down"
-    (descendant_enabled renderer root "button.settings.tab.flashcards.down")
-    (Some true);
-  check_eq ~msg:"graphs remains visibly required"
-    (descendant_enabled renderer root "toggle.settings.tab.graphs")
-    (Some false);
-  check_eq ~msg:"the last required tab can move within visible tabs"
-    (descendant_enabled renderer root "button.settings.tab.graphs.up")
-    (Some true);
-  check_eq ~msg:"the last tab cannot move beyond the visible list"
-    (descendant_enabled renderer root "button.settings.tab.graphs.down")
-    (Some false);
-  dispatch application
-    (Lui_protocol.Press
-       (descendant_with_identifier renderer root
-          "toggle.settings.tab.flashcards"));
-  flush application;
-  let updated_root = Lui_app.root_node application in
-  check_eq ~msg:"hidden tabs do not retain movement controls"
-    (descendant_with_identifier renderer updated_root
-       "button.settings.tab.flashcards.up")
-    (-1);
-  check_eq ~msg:"hidden tabs do not expose invalid downward movement"
-    (descendant_with_identifier renderer updated_root
-       "button.settings.tab.flashcards.down")
-    (-1);
-  check_eq ~msg:"a lone configurable position cannot move up"
-    (descendant_enabled renderer updated_root "button.settings.tab.graphs.up")
-    (Some false);
-  check_eq ~msg:"a lone configurable position cannot move down"
-    (descendant_enabled renderer updated_root
-       "button.settings.tab.graphs.down")
-    (Some false)
-
-let android_disclosure_and_selection_icons_use_material_semantics () =
-  let current =
-    {
-      (Model.initial ()) with
-      Model.sidebar_tabs = [ "journals"; "graphs" ];
-    }
-  in
+let android_disclosure_icons_use_material_semantics () =
   check_eq ~msg:"collapsed rows use a Material forward disclosure icon"
     (View_base.outliner_collapse_icon_name true)
     "app:chevron-right";
   check_eq ~msg:"expanded rows use a Material downward disclosure icon"
     (View_base.outliner_collapse_icon_name false)
-    "app:chevron-down";
-  check_eq ~msg:"visible settings tabs use the selected Material state"
-    (View_base.tab_selection_icon_name current "journals")
-    "app:selected";
-  check_eq ~msg:"hidden settings tabs use the unselected Material state"
-    (View_base.tab_selection_icon_name current "flashcards")
-    "app:unselected"
-
-let settings_tabs_render_saved_order_and_separate_available_tabs () =
-  let application = App.create (ios_backend ()) in
-  start application;
-  send application
-    (Model.ApplySettingsSnapshot
-       (settings [ "journals"; "graphs"; "flashcards" ]));
-  send application Model.OpenSettings;
-  send application Model.OpenSettingsTabs;
-  flush application;
-  let renderer = Lui_app.runtime application in
-  let screen =
-    descendant_with_identifier renderer (Lui_app.root_node application)
-      "screen.settings.tabs"
-  in
-  let journals =
-    child_index_with_identifier renderer screen "row.settings.tab.journals"
-  in
-  let graphs =
-    child_index_with_identifier renderer screen "row.settings.tab.graphs"
-  in
-  let flashcards =
-    child_index_with_identifier renderer screen "row.settings.tab.flashcards"
-  in
-  check ~msg:"visible tab rows follow the persisted order"
-    (journals < graphs && graphs < flashcards);
-  check_eq ~msg:"the available section is absent while every tab is visible"
-    (child_index_with_identifier renderer screen
-       "text.settings.tabs.available")
-    (-1);
-  dispatch application
-    (Lui_protocol.Press
-       (descendant_with_identifier renderer screen
-          "toggle.settings.tab.flashcards"));
-  flush application;
-  let available =
-    child_index_with_identifier renderer screen "text.settings.tabs.available"
-  in
-  let available_flashcards =
-    child_index_with_identifier renderer screen "row.settings.tab.flashcards"
-  in
-  check ~msg:"hiding a configurable tab creates the available section"
-    (available <> -1);
-  check ~msg:"hidden tabs render under the available section"
-    (available < available_flashcards)
+    "app:chevron-down"
 
 let settings_language_picker_exposes_and_validates_all_main_choices () =
   let application = App.create (ios_backend ()) in
@@ -3221,8 +2908,8 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   let graph_switch =
     descendant_with_identifier renderer header_title "button.graph-switch"
   in
-  let journals =
-    descendant_with_identifier renderer sidebar_view "link.sidebar.journals"
+  let home =
+    descendant_with_identifier renderer sidebar_view "link.sidebar.home"
   in
   let flashcards =
     descendant_with_identifier renderer sidebar_view "link.sidebar.flashcards"
@@ -3267,15 +2954,18 @@ let sidebar_renders_main_branch_navigation_identifiers () =
   check_eq ~msg:"the sidebar has no duplicate graph switch"
     (descendant_with_identifier renderer native_sidebar "button.graph-switch")
     (-1);
-  check_eq ~msg:"Home is available from the bottom tab bar" journals (-1);
   let shortcuts = children renderer sidebar_content in
-  let graphs_tweak = List.hd shortcuts in
-  check_eq ~msg:"the sidebar starts with Graphs"
+  let home_tweak = List.nth shortcuts 0 in
+  let graphs_tweak = List.nth shortcuts 1 in
+  check ~msg:"all fixed sidebar destinations exist" (home <> -1 && graphs <> -1 && flashcards <> -1);
+  check_eq ~msg:"the sidebar starts with Home"
+    (child_with_identifier renderer home_tweak "link.sidebar.home") home;
+  check_eq ~msg:"Graphs follows Home in the sidebar"
     (child_with_identifier renderer graphs_tweak "link.sidebar.graphs") graphs;
-  check (graphs <> -1);
   check_eq ~msg:"Flashcards follows Graphs in the sidebar"
-    (child_with_identifier renderer (List.nth shortcuts 1) "link.sidebar.flashcards") flashcards;
-  check (flashcards <> -1);
+    (child_with_identifier renderer (List.nth shortcuts 2) "link.sidebar.flashcards") flashcards;
+  check_eq ~msg:"VoiceOver can identify Home as the current destination"
+    (extension_property application home_tweak "current") (Some (Lui_protocol.BoolValue true));
   check_eq ~msg:"VoiceOver can identify whether Graphs is the current destination"
     (extension_property application graphs_tweak "current") (Some (Lui_protocol.BoolValue false));
   check_eq ~msg:"the sidebar keeps a consistent gap between navigation rows"
@@ -3316,7 +3006,7 @@ let sidebar_renders_main_branch_navigation_identifiers () =
       (property_int renderer label Lui_protocol.FontWeight) 500;
     check ~msg:"sidebar destinations have no selected background"
       (not (property_bool renderer row Lui_protocol.Selected)))
-    [flashcards, "app:flashcards", 30; graphs, "app:folder", 22];
+    [home, "app:tab-home", 22; graphs, "app:folder", 22; flashcards, "app:flashcards", 30];
   check ~msg:"sidebar keeps the recent section identifier" (recent <> -1);
   check_eq ~msg:"sidebar pages keep their document icon"
     (property_string renderer favorite_link Lui_protocol.InlineIconName)
@@ -3350,7 +3040,14 @@ let sidebar_renders_main_branch_navigation_identifiers () =
     (extension_property application favorite_tweak "current") (Some (Lui_protocol.BoolValue true));
   check_eq ~msg:"a selected page has no graph switch in its header"
     (descendant_with_identifier renderer navigation "button.graph-switch") (-1);
-  send application Model.ShowJournals;
+  send application Model.OpenSidebar;
+  flush application;
+  dispatch application (Lui_protocol.Press home);
+  flush application;
+  check ~msg:"the sidebar Home row closes the drawer and returns to the journal root"
+    (not (property_bool renderer root Lui_protocol.Selected)
+     && (App.model application).destination = Model.JournalsDestination
+     && (App.model application).app_navigation_path = []);
   send application (Model.ApplyCoreSnapshot projection);
   flush application;
   let graph_switch = descendant_with_identifier renderer navigation "button.graph-switch" in
@@ -12011,12 +11708,12 @@ let cases =
     case "capture-and-offline-transport-show-pending-sync" capture_and_offline_transport_show_pending_sync;
     case "authenticated-sync-indicator-uses-only-yellow-or-green" authenticated_sync_indicator_uses_only_yellow_or_green;
     case "sync-indicator-is-neutral-without-authentication" sync_indicator_is_neutral_without_authentication;
-    case "settings-navigation-tabs-and-diagnostics-are-lg-owned" settings_navigation_tabs_and_diagnostics_are_lg_owned;
+    case "settings-navigation-and-diagnostics-are-lg-owned" settings_navigation_and_diagnostics_are_lg_owned;
     case "settings-preferences-persist-without-dismissing-the-sheet" settings_preferences_persist_without_dismissing_the_sheet;
     case "settings dark theme persists independently of appearance"
       settings_dark_theme_persists_independently_of_appearance;
-    case "settings-reject-invalid-connections-and-preserve-required-tabs" settings_reject_invalid_connections_and_preserve_required_tabs;
-    case "settings-snapshot-normalizes-sidebar-tabs-at-the-lg-boundary" settings_snapshot_normalizes_sidebar_tabs_at_the_lg_boundary;
+    case "settings-reject-invalid-connections" settings_reject_invalid_connections;
+    case "settings-ignore-legacy-sidebar-preferences" settings_ignore_legacy_sidebar_preferences;
     case "runtime-log-filters-refresh-and-successful-results-enter-lg-state" runtime_log_filters_refresh_and_successful_results_enter_lg_state;
     case "graph-effect-success-owns-selection-and-selected-deletion-cleanup" graph_effect_success_owns_selection_and_selected_deletion_cleanup;
     case "graph-refresh-failure-enters-the-picker-error-state" graph_refresh_failure_enters_the_picker_error_state;
@@ -12029,12 +11726,9 @@ let cases =
     case "returning from profile preserves the sync server draft" returning_from_profile_preserves_the_sync_server_draft;
     case "settings-render-the-main-branch-navigation-contract" settings_render_the_main_branch_navigation_contract;
     case "kotlin-settings-sheet-uses-one-bounded-scroll-layout" kotlin_settings_sheet_uses_one_bounded_scroll_layout;
-    case "kotlin-settings-tabs-open-through-the-rendered-press-handler" kotlin_settings_tabs_open_through_the_rendered_press_handler;
     case "kotlin-runtime-log-actions-fit-phone-width" kotlin_runtime_log_actions_fit_phone_width;
     case "kotlin-settings-use-full-width-material-controls" kotlin_settings_use_full_width_material_controls;
-    case "settings-tabs-match-main-visibility-and-movement-boundaries" settings_tabs_match_main_visibility_and_movement_boundaries;
-    case "android-disclosure-and-selection-icons-use-material-semantics" android_disclosure_and_selection_icons_use_material_semantics;
-    case "settings-tabs-render-saved-order-and-separate-available-tabs" settings_tabs_render_saved_order_and_separate_available_tabs;
+    case "android-disclosure-icons-use-material-semantics" android_disclosure_icons_use_material_semantics;
     case "settings-language-picker-exposes-and-validates-all-main-choices" settings_language_picker_exposes_and_validates_all_main_choices;
     case "settings-community-links-use-a-typed-platform-boundary" settings_community_links_use_a_typed_platform_boundary;
     case "local-graphs-remain-accessible-without-authentication" local_graphs_remain_accessible_without_authentication;

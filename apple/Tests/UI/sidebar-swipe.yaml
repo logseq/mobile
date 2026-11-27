@@ -5,8 +5,8 @@ appId: com.logseq.logseq
     stopApp: false
 - tapOn:
     id: "button.sidebar"
-- assertNotVisible:
-    id: "link.sidebar.journals"
+- assertVisible:
+    id: "link.sidebar.home"
 - assertVisible:
     id: "link.sidebar.flashcards"
 - swipe:

@@ -134,22 +134,27 @@ import Vision
             throw failure("Hidden date format controls must not retain interactive nodes or emit mutations")
         }
         let settingsID = try find("sheet.settings")
-        try backend.performPress(node: find("link.settings.tabs"))
+        guard backend.rootIDs.flatMap(ids).allSatisfy({
+            backend.model(id: $0)?.property(.accessibilityIdentifier)?.stringValue != "link.settings.tabs"
+        }) else {
+            throw failure("Settings must omit sidebar customization")
+        }
+        try backend.performPress(node: find("button.runtime-log"))
         for _ in 0..<25 {
             if backend.modalPresentation.nestedSheets[settingsID] != nil { break }
             try await Task.sleep(for: .milliseconds(20))
         }
-        let tabsID = try find("sheet.settings.tabs")
-        guard backend.modalPresentation.nestedSheets[settingsID]?.id == tabsID else {
-            throw failure("Tabs must present above Settings")
+        let logID = try find("sheet.settings.log")
+        guard backend.modalPresentation.nestedSheets[settingsID]?.id == logID else {
+            throw failure("Diagnostics must present above Settings")
         }
-        try backend.performDismiss(node: tabsID)
+        try backend.performDismiss(node: logID)
         for _ in 0..<25 {
             if backend.modalPresentation.nestedSheets.isEmpty { break }
             try await Task.sleep(for: .milliseconds(20))
         }
         guard backend.modalPresentation.item?.id == settingsID, backend.modalPresentation.nestedSheets.isEmpty else {
-            throw failure("Dismissing Tabs must retain Settings")
+            throw failure("Dismissing Diagnostics must retain Settings")
         }
         print("PASS: Settings uses the graph background, one accent, and retains nested presentation")
     }

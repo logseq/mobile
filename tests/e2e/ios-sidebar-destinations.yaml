@@ -1,0 +1,31 @@
+appId: com.logseq.logseq
+---
+- runFlow:
+    file: "__LOGSEQ_E2E_SETUP_FLOW__"
+- launchApp
+- tapOn:
+    id: "button.sidebar"
+- assertVisible:
+    id: "link.sidebar.home"
+- assertVisible:
+    id: "link.sidebar.graphs"
+- assertVisible:
+    id: "link.sidebar.flashcards"
+- tapOn:
+    id: "link.sidebar.graphs"
+- assertVisible:
+    id: "screen.graphs"
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.home"
+- assertVisible:
+    id: "pane.journals"
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "button.sidebar.settings"
+- assertVisible:
+    id: "screen.settings"
+- assertNotVisible:
+    id: "link.settings.tabs"

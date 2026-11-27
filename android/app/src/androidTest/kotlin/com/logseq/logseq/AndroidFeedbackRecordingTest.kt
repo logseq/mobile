@@ -284,7 +284,7 @@ class AndroidFeedbackRecordingTest(private val scenario: String) {
                 } else {
                     mount(2)
                     ui.onNodeWithTag("button.sidebar").performClick()
-                    ui.onNodeWithTag("link.sidebar.journals").performClick()
+                    ui.onNodeWithTag("link.sidebar.home").performClick()
                     pause()
                 }
             }

@@ -190,6 +190,10 @@ let sidebar_destination_row ?(icon_size = 22) context model_source send ~title ~
           ~style_class:"single-line" [];
       ]] else [])))
 
+let sidebar_home_row context model_source send =
+  sidebar_destination_row context model_source send ~title:"Home" ~id:"home"
+    ~icon:(`app "tab-home") ~selected:View_base.journals_sidebar_selected_ ~action:Model.ShowJournals
+
 let sidebar_flashcards_row context model_source send =
   let icon = `app (if Lui_ui.host context = KotlinHost then "sidebar-flashcards" else "flashcards") in
   sidebar_destination_row ~icon_size:30 context model_source send ~title:"Flashcards" ~id:"flashcards"
@@ -278,10 +282,9 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send ~settings : t =
     else scroll ~grow:1.0 ~accessibility_identifier:"scroll.sidebar.pages" [pages] in
   let content =
     let shortcuts = [
-        if_ ~test:(Signal.map View_base.graphs_tab_visible_ model_source)
-          (sidebar_graphs_row context model_source send);
-        if_ ~test:(Signal.map View_base.flashcards_tab_visible_ model_source)
-          (sidebar_flashcards_row context model_source send);
+        sidebar_home_row context model_source send;
+        sidebar_graphs_row context model_source send;
+        sidebar_flashcards_row context model_source send;
       ] in
     column ~accessibility_identifier:(if native_sidebar then "sidebar.content" else "sidebar.navigation")
       ~grow:1.0 ~gap:(if native_sidebar then 2 else 4) ~padding:(if native_sidebar then 16 else 12)

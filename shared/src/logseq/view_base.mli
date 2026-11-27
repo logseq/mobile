@@ -100,9 +100,6 @@ val journals_sidebar_selected_ : Model.logseq_model -> bool
 val flashcards_sidebar_selected_ : Model.logseq_model -> bool
 val graphs_sidebar_selected_ : Model.logseq_model -> bool
 val sidebar_page_selected_ : Model.logseq_model -> Model.sidebar_page -> bool
-val sidebar_tab_visible_ : Model.logseq_model -> string -> bool
-val flashcards_tab_visible_ : Model.logseq_model -> bool
-val graphs_tab_visible_ : Model.logseq_model -> bool
 val composer_collapsed_ : Model.logseq_model -> bool
 val composer_send_disabled_ : Model.logseq_model -> bool
 val task_status_identifier : Model.task_status -> string
@@ -344,26 +341,7 @@ val settings_community_link_identifier :
   Model.settings_community_link -> string
 val settings_community_link_needs_separator_ :
   Model.logseq_model -> Model.settings_community_link -> bool
-val settings_tabs_visible_ : Model.logseq_model -> bool
-val settings_tab_title : string -> string
-val settings_tabs_summary : Model.logseq_model -> string
 val runtime_log_visible_ : Model.logseq_model -> bool
-val tab_enabled_ : Model.logseq_model -> string -> bool
-val tab_toggle_label : Model.logseq_model -> string -> string
-val tab_selection_glyph : Model.logseq_model -> string -> string
-val tab_selection_icon_name : Model.logseq_model -> string -> string
-val tab_selection_foreground : Model.logseq_model -> string -> string
-val tab_disabled_ : Model.logseq_model -> string -> bool
-val tab_index : Model.logseq_model -> string -> int
-val tab_movement_visible_ : Model.logseq_model -> string -> bool
-val settings_flashcards_before_graphs_ : Model.logseq_model -> bool
-val settings_flashcards_after_graphs_ : Model.logseq_model -> bool
-val settings_available_tabs_present_ : Model.logseq_model -> bool
-val tab_move_up_disabled_ : Model.logseq_model -> string -> bool
-val tab_move_down_disabled_ : Model.logseq_model -> string -> bool
-val tab_toggle_identifier : string -> string
-val tab_up_identifier : string -> string
-val tab_down_identifier : string -> string
 val runtime_log_level : Model.runtime_log_record -> string
 val runtime_log_timestamp : Model.runtime_log_record -> string
 val runtime_log_message : Model.runtime_log_record -> string

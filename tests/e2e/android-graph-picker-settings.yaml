@@ -16,28 +16,12 @@ appId: com.logseq.logseq
     id: "layout.settings.appearance-control"
 - assertVisible:
     id: "picker.settings.language"
-- assertVisible:
+- assertNotVisible:
     id: "link.settings.tabs"
 - tapOn:
     id: "picker.settings.language"
 - assertVisible: "简体中文"
 - tapOn: "System"
-- tapOn:
-    id: "link.settings.tabs"
-- extendedWaitUntil:
-    visible:
-      id: "screen.settings.tabs"
-    timeout: 5000
-- assertVisible:
-    id: "toggle.settings.tab.journals"
-- assertVisible:
-    id: "toggle.settings.tab.flashcards"
-- assertVisible:
-    id: "toggle.settings.tab.graphs"
-- tapOn:
-    id: "button.connection.cancel"
-- assertVisible:
-    id: "screen.settings"
 - scrollUntilVisible:
     element:
       text: "Check log"
