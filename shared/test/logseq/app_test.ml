@@ -9944,11 +9944,17 @@ let kotlin_rich_rows_own_their_primary_tap () =
        Lui_protocol.KotlinHost row)
     false;
   check_eq
-    ~msg:"Kotlin asset rows retain their whole-row presentation action"
+    ~msg:"Kotlin non-PDF asset rows retain their whole-row presentation action"
     (View_base.outliner_row_list_item_press_enabled_
        Lui_protocol.KotlinHost
        { row with Model.is_asset = true })
     true;
+  check_eq
+    ~msg:"Kotlin PDF titles own their tap without the vertically centered list item"
+    (View_base.outliner_row_list_item_press_enabled_
+       Lui_protocol.KotlinHost
+       { row with Model.is_asset = true; asset_type = Some "application/pdf" })
+    false;
   check_eq
     ~msg:"Kotlin page rows retain their whole-row navigation action"
     (View_base.outliner_row_list_item_press_enabled_

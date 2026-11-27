@@ -1042,7 +1042,11 @@ let outliner_row_sync_failed_ (row : Model.outline_row) =
   row.sync_status = Some "failed"
 
 let outliner_row_list_item_press_enabled_ host (row : Model.outline_row) =
-  host <> KotlinHost || row.is_asset || row.opens_as_page
+  let uses_inline_pdf_button =
+    row.is_asset
+    && (List.mem (String.lowercase_ascii (outliner_row_asset_type row)) ["pdf"; "application/pdf"]
+        || String.ends_with ~suffix:".pdf" (String.lowercase_ascii (outliner_row_local_path row))) in
+  host <> KotlinHost || (not uses_inline_pdf_button && (row.is_asset || row.opens_as_page))
 
 let outliner_tag_identifier (tag : Model.sidebar_page) =
   "button.block-tag." ^ tag.uuid
