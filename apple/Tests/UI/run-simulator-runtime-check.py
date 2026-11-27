@@ -36,12 +36,20 @@ def terminate_app(simulator, bundle):
 
 
 def launch_with_result_file(simulator, bundle, environment, timeout):
-    container = Path(run(["xcrun", "simctl", "get_app_container", simulator, bundle, "data"],
-                         capture_output=True, text=True, timeout=30).stdout.strip())
+    # CoreSimulator can still be busy registering apps after the first install.
+    command_timeout = max(60, timeout)
+    try:
+        container = Path(run(["xcrun", "simctl", "get_app_container", simulator, bundle, "data"],
+                             capture_output=True, text=True, timeout=command_timeout).stdout.strip())
+    except subprocess.TimeoutExpired:
+        raise SystemExit(f"Simulator app container lookup timed out after {command_timeout} seconds") from None
     result_file = container / "Library/Caches/runtime-check-result.txt"
     result_file.unlink(missing_ok=True)
-    run(["xcrun", "simctl", "launch", "--terminate-running-process", simulator, bundle],
-        env=environment, timeout=60)
+    try:
+        run(["xcrun", "simctl", "launch", "--terminate-running-process", simulator, bundle],
+            env=environment, timeout=command_timeout)
+    except subprocess.TimeoutExpired:
+        raise SystemExit(f"Simulator app launch timed out after {command_timeout} seconds") from None
     deadline = time.monotonic() + timeout
     result = ""
     while time.monotonic() < deadline:
