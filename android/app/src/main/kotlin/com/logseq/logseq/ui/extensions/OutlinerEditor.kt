@@ -199,7 +199,10 @@ internal fun OutlinerEditor(
     // Show an acknowledged block immediately. An active IME must keep its
     // original buffer until it finishes replacing the composing range.
     val handoffAcknowledged = handoffRevision != null && selectionRevision != handoffRevision
-    val canReconcileHandoff = awaitingHandoff && (blockId != rememberedBlockId || handoffAcknowledged)
+    // A sync snapshot can carry the new block before the Return effect completes.
+    // Keep queued Return input until the effect publishes its selection revision.
+    val canReconcileHandoff = awaitingHandoff &&
+        (handoffAcknowledged || (retainedReturn == null && blockId != rememberedBlockId))
     val composingAcrossHandoff = canReconcileHandoff && value.composition != null
     if (canReconcileHandoff && !composingAcrossHandoff) {
         val buffered = value

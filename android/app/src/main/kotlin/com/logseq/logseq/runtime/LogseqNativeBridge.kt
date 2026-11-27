@@ -4,7 +4,9 @@ import android.os.Build
 import android.os.Trace
 import android.util.Log
 import com.logseq.logseq.NativeCore
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 // JNI bridge into liblogseq_core.so — the Kotlin port of
 // the former logseq_native_bridge.dart.
@@ -153,10 +155,14 @@ internal class LogseqNativeBridge(
 
     // Core RPC ({apiVersion:1, method:open|dispatch, params:{...}}) —
     // blocking JNI call on a background thread, serialized on the core lane.
-    suspend fun callCore(request: String): String =
-        withContext(NativeCoreThread.dispatcher) {
+    suspend fun callCore(request: String): String = callCore(request, NativeCoreThread.dispatcher)
+
+    suspend fun callMaintenance(request: String): String = callCore(request, NativeCoreThread.maintenanceDispatcher)
+
+    private suspend fun callCore(request: String, dispatcher: CoroutineDispatcher): String =
+        withContext(dispatcher) {
             runtimeScheduler.runCore {
-                decode(traced("core.logseqCall:" + rpcMethod(request)) { NativeCore.logseqCall(encode(request)) })
+                decode(traced("core.logseqCall:" + rpcAction(request)) { NativeCore.logseqCall(encode(request)) })
             }
         }
 
@@ -168,12 +174,21 @@ internal class LogseqNativeBridge(
         false
     }
 
-    private fun rpcMethod(request: String): String =
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || !Trace.isEnabled()) ""
-        else RPC_METHOD.find(request)?.groupValues?.get(1) ?: "unknown"
+    private fun rpcAction(request: String): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || !Trace.isEnabled()) return ""
+        val method = RPC_METHOD.find(request)?.groupValues?.get(1) ?: return "unknown"
+        if (method != "dispatch") return method
+        val action = RPC_ACTION.find(request)?.groupValues?.get(1) ?: return method
+        if (action != "executeEffect") return action
+        val kind = runCatching {
+            JSONObject(JSONObject(request).getJSONObject("params").getString("payload")).getString("kind")
+        }.getOrNull()?.takeIf { it.length <= 50 } ?: return action
+        return "$action/$kind"
+    }
 
     private companion object {
         const val TAG = "LogseqBridge"
         val RPC_METHOD = Regex("\"method\"\\s*:\\s*\"([^\"]+)\"")
+        val RPC_ACTION = Regex("\"action\"\\s*:\\s*\"([A-Za-z0-9_.-]+)\"")
     }
 }

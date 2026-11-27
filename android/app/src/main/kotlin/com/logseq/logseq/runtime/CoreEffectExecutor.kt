@@ -14,6 +14,7 @@ internal class CoreEffectExecutor(
     private val callCore: suspend (String) -> String,
     private val executePlatformEffect: NativeEffectExecutor,
     private val executeGraphEffect: NativeEffectExecutor,
+    private val callMaintenance: suspend (String) -> String = callCore,
 ) {
     suspend fun execute(effect: NativeEffect): NativeEffectResolution {
         if (effect.kind in platformEffectKinds) {
@@ -25,7 +26,8 @@ internal class CoreEffectExecutor(
         return try {
             if (effect.kind == "refresh-graphs") return resolution(GraphCatalogClient(callCore).refresh())
             val request = request(effect)
-            val response = callCore(request.toString())
+            val response = if (effect.kind == "maintain-search-index") callMaintenance(request.toString())
+                else callCore(request.toString())
             val resolved = resolution(response)
             if (effect.kind == "maintain-search-index" && resolved is NativeEffectResolution.CoreResponse) {
                 NativeEffectResolution.Discard(succeeded = true, message = response)

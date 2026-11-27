@@ -287,6 +287,14 @@ let enter_publishes_the_new_editor_with_its_acknowledgement () =
           List.mem (SetExtensionProp (node, "selection-revision", IntValue 1)) patch.ops
         | _ -> false) patch.ops))
 
+let enter_supersedes_a_queued_standalone_caret () =
+  let current = Model.update (Model.initial ()) (Model.MoveOutlinerCaret ("block", 2)) in
+  let enter = Model.update current (Model.ReturnOutlinerEditor ("block", "word", 3)) in
+  Test_util.check ~msg:"the return carries the latest caret"
+    (match enter.Model.pending_effects with
+     | [Model.ReturnOutlinerEditorEffect (_, "block", "word", 3)] -> true
+     | _ -> false)
+
 let viewport_hydration_does_not_bypass_the_query_debounce () =
   ignore (Native_bridge.initialize 2 2 3);
   Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
@@ -298,6 +306,50 @@ let viewport_hydration_does_not_bypass_the_query_debounce () =
     let waiting = Json.from_string (Native_bridge.take_effect ()) in
     Test_util.check ~msg:"hydrating rows does not dispatch the search query early"
       (int_member "waitMs" waiting <> None))
+
+let background_sync_does_not_bypass_the_query_debounce () =
+  ignore (Native_bridge.initialize 3 4 3);
+  Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
+    ignore (Native_bridge.flush_action (Model.ChangeSearchQuery "pending"));
+    ignore (Native_bridge.apply_response
+      {|{"ok":true,"result":{"isOutlinerPatch":true,"hasPendingSemanticOperations":true}}|});
+    let first = take_effect () in
+    Test_util.check_eq (string_member "kind" first) (Some "sync-pending");
+    let waiting = Json.from_string (Native_bridge.take_effect ()) in
+    Test_util.check ~msg:"background sync does not dispatch the search query early"
+      (int_member "waitMs" waiting <> None))
+
+let enter_takes_priority_over_queued_maintenance () =
+  ignore (Native_bridge.initialize 3 4 3);
+  Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
+    ignore (Native_bridge.flush_action (Model.EnsureOutlinerRows ["row"]));
+    ignore (Native_bridge.apply_response
+      {|{"ok":true,"result":{"isOutlinerPatch":true,"hasPendingSemanticOperations":true}}|});
+    ignore (Native_bridge.flush_action (Model.ReturnOutlinerEditor ("row", "word", 2)));
+    Test_util.check_eq (string_member "kind" (take_effect ())) (Some "return-outliner-editor");
+    Test_util.check_eq (string_member "kind" (take_effect ())) (Some "hydrate-outliner-rows");
+    Test_util.check_eq (string_member "kind" (take_effect ())) (Some "sync-pending"))
+
+let repeated_sync_status_keeps_updates_to_visible_content () =
+  ignore (Native_bridge.initialize 3 4 3);
+  Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
+    ignore (Native_bridge.apply_response graph_response);
+    let response discussion error = Printf.sprintf
+      {|{"ok":true,"result":{"isPendingSyncPatch":true,"hasPendingSemanticOperations":true,"pendingSyncError":%s,"collaboration":{"graphId":"local","account":"actor","discussion":{"target":"block","title":%s}}}}|}
+      error (Json.to_string (`String discussion)) in
+    let initial = response "First message" "null" in
+    ignore (Native_bridge.apply_response initial);
+    let current () = App.model (Native_bridge.app ()) in
+    Test_util.check (current ()).Model.has_pending_semantic_operations;
+    let before = current () in
+    Test_util.check_eq (Native_bridge.apply_response initial) "";
+    Test_util.check ~msg:"identical sync status keeps the current model" (before == current ());
+    ignore (Native_bridge.apply_response (response "New message" {|"upload failed"|}));
+    let updated = current () in
+    Test_util.check_eq updated.Model.pending_sync_error (Some "upload failed");
+    Test_util.check_eq
+      (string_member "title" (object_member "discussion" updated.Model.collaboration))
+      (Some "New message"))
 
 let pending_references_schedule_a_separate_query () =
   ignore (Native_bridge.initialize 2 2 3);
@@ -351,5 +403,13 @@ let cases =
       autocomplete_debounces_queries_but_flushes_before_structural_actions;
     Test_util.case "enter publishes the new editor with its acknowledgement"
       enter_publishes_the_new_editor_with_its_acknowledgement;
+    Test_util.case "enter supersedes a queued standalone caret"
+      enter_supersedes_a_queued_standalone_caret;
+    Test_util.case "repeated sync status keeps updates to visible content"
+      repeated_sync_status_keeps_updates_to_visible_content;
     Test_util.case "viewport hydration does not bypass the query debounce"
-      viewport_hydration_does_not_bypass_the_query_debounce ]
+      viewport_hydration_does_not_bypass_the_query_debounce;
+    Test_util.case "background sync does not bypass the query debounce"
+      background_sync_does_not_bypass_the_query_debounce;
+    Test_util.case "enter takes priority over queued maintenance"
+      enter_takes_priority_over_queued_maintenance ]

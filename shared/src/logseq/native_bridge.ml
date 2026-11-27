@@ -112,7 +112,15 @@ let core_response_action encoded =
       | Error message -> Model.SyncFailed message)
   with Yojson.Json_error message -> Model.SyncFailed ("Invalid core response: " ^ message)
 
-let apply_response encoded = flush_action (core_response_action encoded)
+let apply_response encoded =
+  let action = core_response_action encoded in
+  match action with
+  | Model.ApplyCoreSnapshot { is_pending_sync_patch = true; _ } ->
+    let current = App.model (app ()) in
+    (* Most transport frames repeat the same status. Compare the resulting
+       model so a changed discussion, PDF view or sync error still gets through. *)
+    if Model.update current action = current then "" else flush_action action
+  | _ -> flush_action action
 
 let complete_effect_with_response id encoded =
   patch_batches := [];
@@ -590,8 +598,12 @@ let take_effect () =
       | _ -> () in
   let effects = (App.model (app ())).pending_effects in
   let independent = function
-    | Model.HydrateOutlinerRowsEffect _ | Model.PersistUISessionEffect _ -> true
+    | Model.HydrateOutlinerRowsEffect _ | Model.PersistUISessionEffect _ | Model.SyncPendingEffect _ -> true
     | _ -> false in
+  let rec queued_return = function
+    | (Model.ReturnOutlinerEditorEffect _ as eff) :: _ -> Some eff
+    | eff :: rest when independent eff -> queued_return rest
+    | _ -> None in
   let urgent = List.exists (fun eff ->
     not (independent eff) && not (debounced_query eff)
     && (match eff with Model.SaveOutlinerEditingEffect _ -> false | _ -> true)) effects in
@@ -604,7 +616,11 @@ let take_effect () =
   match effects with
   | [] -> ""
   | _ ->
-    match List.find_opt (fun eff -> remaining eff <= 0.) effects with
+    (* Let the editor hand off before maintenance, preserving earlier input. *)
+    let next = match queued_return effects with
+      | Some _ as return -> return
+      | None -> List.find_opt (fun eff -> remaining eff <= 0.) effects in
+    match next with
     | Some eff ->
       let patch = flush_action (Model.DequeueEffect (Model.effect_id eff)) in
       encode_effect_dispatch ~model:current eff patch

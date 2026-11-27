@@ -140,7 +140,7 @@ class AndroidEditorKeyboardTest {
         acknowledge("keyboard-block", "Hello ", 6)
         editor.assertTextEquals("Hello 中文 📝")
         editor.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(6)))
-        acknowledge("next-block", "中文 📝", 0)
+        acknowledge("next-block", "中文 📝", 0, selectionRevision = 1)
         ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("中文 📝")
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(0)))
     }
@@ -168,21 +168,23 @@ class AndroidEditorKeyboardTest {
         pressHardwareEnterWithoutComposition()
         editor.performTextInput("后📝")
         acknowledge("next-one", "Tail", 0)
+        ui.runOnIdle { assertEquals(1, events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" }) }
+        acknowledge("next-one", "Tail", 0, selectionRevision = 1)
         ui.waitUntil(5_000) { events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" } >= 2 }
         ui.runOnIdle {
             val returns = events.filterIsInstance<LuiEvent.Extension>().filter { it.name == "return" }
             assertEquals("firstTail", returns.last().values["title"])
             assertEquals(5, returns.last().values["caret-utf16-offset"])
         }
-        acknowledge("next-two", "Tail", 0)
+        acknowledge("next-two", "Tail", 0, selectionRevision = 2)
         ui.onNodeWithTag("field.outliner.block.next-two").assertIsFocused().assertTextEquals("后📝Tail")
     }
 
     @Test fun repeatedEnterDuringHandoffIsNeverDebouncedIntoATextChange() {
         render("Draft")
         repeat(3) { pressHardwareEnterWithoutComposition() }
-        acknowledge("second", "", 0)
-        acknowledge("third", "", 0)
+        acknowledge("second", "", 0, selectionRevision = 1)
+        acknowledge("third", "", 0, selectionRevision = 2)
         ui.runOnIdle { assertEquals(3, events.filterIsInstance<LuiEvent.Extension>().count { it.name == "return" }) }
     }
 
@@ -194,7 +196,8 @@ class AndroidEditorKeyboardTest {
         try {
             ui.runOnUiThread {
                 val ops = JSONArray()
-                mapOf("block-id" to "next-block", "title" to "Retained text", "caret-utf16-offset" to 0).forEach { (name, value) ->
+                mapOf("block-id" to "next-block", "title" to "Retained text", "caret-utf16-offset" to 0,
+                    "selection-revision" to 1).forEach { (name, value) ->
                     ops.put(JSONObject().put("op", "set-extension-prop").put("id", 2).put("property", name).put("value", value))
                 }
                 assertTrue(backend.applyJson(JSONObject().put("generation", ++generation).put("ops", ops).toString()))
@@ -286,7 +289,7 @@ class AndroidEditorKeyboardTest {
             assertTrue(typingConnection.setComposingRegion(0, "Hello".length))
             assertTrue(typingConnection.setComposingText("ni", 1))
         }
-        acknowledge("next-block", "", 0)
+        acknowledge("next-block", "", 0, selectionRevision = 1)
         val next = ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("ni")
         return next to typingConnection
     }
@@ -335,7 +338,7 @@ class AndroidEditorKeyboardTest {
             assertTrue(connection.setComposingRegion(0, "Hello".length))
         }
         assertSplit("Hello")
-        acknowledge("next-block", "", 0)
+        acknowledge("next-block", "", 0, selectionRevision = 1)
         val next = ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("")
         next.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextCompositionRange, null))
         val nextConnection = inputConnection()
@@ -554,7 +557,7 @@ class AndroidEditorKeyboardTest {
             assertEquals(6, split.values["caret-utf16-offset"])
         }
         editor.performTextInput("Next")
-        acknowledge("next-block", " world", 0)
+        acknowledge("next-block", " world", 0, selectionRevision = 1)
         ui.onNodeWithTag("field.outliner.block.next-block").assertIsFocused().assertTextEquals("Next world")
     }
 

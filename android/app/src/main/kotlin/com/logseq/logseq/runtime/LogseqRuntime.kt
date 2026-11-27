@@ -256,6 +256,7 @@ internal class LogseqRuntime(
                     callCore = bridge::callCore,
                     executePlatformEffect = NativeEffectExecutor(platformEffects::execute),
                     executeGraphEffect = NativeEffectExecutor(lifecycle::execute),
+                    callMaintenance = bridge::callMaintenance,
                 )
                 coreEffects = executor
                 graphCatalogAutoRefresh = GraphCatalogAutoRefresh(
@@ -294,7 +295,7 @@ internal class LogseqRuntime(
                 NativeCoreSession.syncActive = ::syncInBackground
                 NativeCoreSession.updateActiveWidgetTask = ::setWidgetTaskStatus
                 NativeCoreSession.refreshActiveRandomWidget = {
-                    AndroidWidgetContent.refresh(activity.applicationContext, bridge::callCore, resampleRandom = true)
+                    AndroidWidgetContent.refresh(activity.applicationContext, bridge::callMaintenance, resampleRandom = true)
                 }
                 scope.launch { drain.drain(scope) }
                 restoreCore(hasStoredSession, storage)
@@ -486,7 +487,7 @@ internal class LogseqRuntime(
         widgetRefreshJob = scope.launch {
             while (activityStopped && widgetRefreshPending) {
                 widgetRefreshPending = false
-                AndroidWidgetContent.refresh(activity.applicationContext, bridge::callCore)
+                AndroidWidgetContent.refresh(activity.applicationContext, bridge::callMaintenance)
             }
         }
     }
@@ -494,7 +495,7 @@ internal class LogseqRuntime(
     private suspend fun setWidgetTaskStatus(change: WidgetTaskStatusChange): Boolean {
         val response = bridge.callCore(change.request())
         val saved = JSONObject(response).optBoolean("ok")
-        AndroidWidgetContent.refresh(activity.applicationContext, bridge::callCore)
+        AndroidWidgetContent.refresh(activity.applicationContext, bridge::callMaintenance)
         if (saved) {
             applyCoreResponse(response)
             requestSyncNow()
@@ -554,7 +555,7 @@ internal class LogseqRuntime(
                 }
                 if (token.isNullOrBlank() || !isActive) break
                 val sync = AndroidGraphEventsSync(
-                    callCore = bridge::callCore,
+                    callCore = bridge::callMaintenance,
                     applyResponse = ::applyCoreResponse,
                     onChangesApplied = { requestSyncNow() },
                     isCancelled = { !isActive },
@@ -623,7 +624,7 @@ internal class LogseqRuntime(
             pendingSyncRequested = false
             if (restoreCoreAccessToken().isNullOrBlank()) return
             AndroidPendingSyncPump(
-                callCore = bridge::callCore,
+                callCore = bridge::callMaintenance,
                 applyResponse = ::applyCoreResponse,
                 isCancelled = { !job.isActive },
                 log = { level, message -> logRuntime(level, "core", message) },

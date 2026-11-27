@@ -465,7 +465,8 @@ let route snapshot dispatch (input : Json.t) =
                            | _ -> response)
                         | _ -> response)
                      else response in
-                   if List.mem action ["beginPendingSync"; "completePendingSync"; "cancelPendingSync"]
+                   if List.mem action ["beginPendingSync"; "completePendingSync"; "cancelPendingSync";
+                       "beginSyncTransport"; "syncTransportEvent"]
                    then mark_pending_sync_projection projected else projected
                  | Error message -> failure "invalid_params" message)
               | _ -> failure "unknown_method" ("unknown method: " ^ method_))

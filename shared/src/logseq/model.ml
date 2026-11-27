@@ -2688,6 +2688,13 @@ let rec update (current : logseq_model) action =
        | _ -> ChangeOutlinerTextEffect (id, uuid, title, caret))
   | ReturnOutlinerEditor (uuid, title, caret) ->
     let updated = update_editing current uuid title caret in
+    let updated =
+      match current.outliner_autocomplete, current.pending_effects, current.in_flight_effects with
+      | None, [MoveOutlinerCaretEffect (_, block, _)], [] when block = uuid ->
+        (* Return already sends the latest caret. Flush pending text and
+           autocomplete inputs before a structural change as usual. *)
+        { updated with pending_effects = [] }
+      | _ -> updated in
     let id = updated.next_effect_id in
     enqueue_effect updated
       (ReturnOutlinerEditorEffect (id, uuid, title, caret))
