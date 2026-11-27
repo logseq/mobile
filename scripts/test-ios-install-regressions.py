@@ -29,9 +29,12 @@ class DeviceInstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             app = pathlib.Path(directory)
             widget = app / "PlugIns/LogseqWidgets.appex"
-            shortcut_names = ("QuickAddIntent", "RecordAudioIntent", "OpenJournalIntent", "CaptureToJournalIntent")
-            actions = {name: {"openAppWhenRun": True} for name in shortcut_names}
+            foreground = ("QuickAddIntent", "RecordAudioIntent", "OpenJournalIntent", "TakePictureIntent")
+            background = ("CaptureToJournalIntent", "CaptureTaskToJournalIntent")
+            shortcut_names = foreground + background
+            actions = {name: {"openAppWhenRun": True} for name in foreground}
             actions.update({name: {"openAppWhenRun": False} for name in (
+                *background, "CapturePhotoToJournalIntent",
                 "SetWidgetTaskStatusIntent", "ShowWidgetTaskStatusesIntent", "RefreshRandomBlocksWidgetIntent",
             )})
             for bundle in (app, widget):
