@@ -10,7 +10,10 @@ let check connection operation code =
   | _ -> fail connection operation
 
 let open_db path =
-  try Db.db_open path
+  try
+    let connection = Db.db_open path in
+    Db.busy_timeout connection 5000;
+    connection
   with Db.Error message ->
     failwith ("SQLite error while opening graph database: " ^ message)
 
@@ -247,6 +250,22 @@ let write_pending connection operation_id base_t state intent =
 let store_pending path operation_id base_t state intent =
   with_app_db path (fun connection -> write_pending connection operation_id base_t state intent)
 
+let find_pending path operation_id =
+  with_app_db path (fun connection ->
+    match
+      query connection
+        "SELECT operation_id, base_t, state, intent FROM \
+         logseq_pending_ops WHERE operation_id = ? LIMIT 1"
+        [ Db.Data.TEXT operation_id ]
+        (fun statement ->
+          ( Db.column_text statement 0
+          , Db.column_int statement 1
+          , Db.column_text statement 2
+          , Db.column_text statement 3 ))
+    with
+    | row :: _ -> Some row
+    | [] -> None)
+
 let list_pending path =
   with_app_db path (fun connection ->
     query connection
@@ -428,3 +447,35 @@ let set_search_version path version =
     | Some value -> command connection
         "INSERT INTO search_metadata(key, value) VALUES ('source', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
         [Db.Data.TEXT value])
+
+let search_apply_and_set_version path ~removed ~updated ~version =
+  with_search_db path (fun connection ->
+    transaction connection (fun () ->
+      if removed <> [] then
+        with_statement connection "DELETE FROM blocks WHERE id = ?" (fun statement ->
+          List.iter
+            (fun id ->
+              bind_values connection statement [ Db.Data.TEXT id ];
+              check connection "deleting search row" (Db.step statement);
+              check connection "resetting search statement" (Db.reset statement);
+              check connection "clearing search bindings" (Db.clear_bindings statement))
+            removed);
+      if updated <> [] then
+        with_statement connection
+          "INSERT INTO blocks (id, title, page) VALUES (?, ?, ?) ON \
+           CONFLICT(id) DO UPDATE SET (title, page) = (excluded.title, \
+           excluded.page)"
+          (fun statement ->
+            List.iter
+              (fun (id, title, page) ->
+                bind_values connection statement
+                  [ Db.Data.TEXT id; Db.Data.TEXT title; Db.Data.TEXT page ];
+                check connection "upserting search row" (Db.step statement);
+                check connection "resetting search statement" (Db.reset statement);
+                check connection "clearing search bindings" (Db.clear_bindings statement))
+              updated);
+      match version with
+      | None -> command connection "DELETE FROM search_metadata WHERE key = 'source'" []
+      | Some value -> command connection
+          "INSERT INTO search_metadata(key, value) VALUES ('source', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+          [ Db.Data.TEXT value ]))

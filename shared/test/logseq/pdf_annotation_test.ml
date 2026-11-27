@@ -182,7 +182,8 @@ let shared_asset_actions_open_local_and_remote_pdfs () =
     let projection = match Response_snapshot.decode_response response with
       | Ok value -> value | Error message -> fail message in
     let model = Model.update (Model.initial ()) (Model.ApplyCoreSnapshot projection) in
-    let opened = Model.update model (Model.OpenOutlinerAsset asset) in
+    let row = List.find (fun (row : Model.outline_row) -> row.row_uuid = asset) model.outliner_rows in
+    let opened = Model.update model (Model.OpenOutlinerAsset row) in
     check ~msg:"All PDF asset entry points must open the split workspace" (opened.pdf_workspace <> None);
     check ~msg:"PDFs must not open a generic native file preview"
       (not (List.exists (function Model.PresentAssetEffect _ -> true | _ -> false) opened.pending_effects))

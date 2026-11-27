@@ -616,7 +616,7 @@ type logseq_action =
   | ConfirmOutlinerDelete
   | PerformOutlinerToolbarAction of string
   | ChooseOutlinerAutocomplete of string
-  | OpenOutlinerAsset of string
+  | OpenOutlinerAsset of outline_row
   | DismissAssetPreview
   | DismissCaptureConfirmation of int
   | CloseSearch
@@ -1230,6 +1230,13 @@ let remove_trailing_outliner_inputs effects uuid =
   let rec drop = function
     | ChangeOutlinerTextEffect (_, id, _, _) :: rest
     | ComposeOutlinerTextEffect (_, id, _, _) :: rest
+    | MoveOutlinerCaretEffect (_, id, _) :: rest when id = uuid -> drop rest
+    | rest -> rest
+  in
+  List.rev (drop (List.rev effects))
+
+let remove_trailing_outliner_caret effects uuid =
+  let rec drop = function
     | MoveOutlinerCaretEffect (_, id, _) :: rest when id = uuid -> drop rest
     | rest -> rest
   in
@@ -2267,6 +2274,7 @@ let restore_ui_session (current : logseq_model) (session : ui_session) =
       settings_open = false }
 
 let hydrate_rows content rows =
+  if content = [] then rows else
   let by_id = Hashtbl.create (List.length content) in
   List.iter (fun (row : outline_row) -> Hashtbl.replace by_id row.row_uuid row) content;
   List.map (fun (row : outline_row) ->
@@ -2621,9 +2629,30 @@ let rec update (current : logseq_model) action =
       | _ -> applied in
     let applied =
       if applied == current then current
-      else { applied with node_icons = Lui_protocol.String_map.union (fun _ _ newer -> Some newer)
-        (if applied.selected_graph_id = current.selected_graph_id then current.node_icons else Lui_protocol.String_map.empty)
-        projection.node_icons } in
+      else
+        let same_graph = applied.selected_graph_id = current.selected_graph_id in
+        let base_icons =
+          if same_graph then current.node_icons else Lui_protocol.String_map.empty
+        in
+        let unchanged =
+          same_graph
+          && Lui_protocol.String_map.for_all
+               (fun key value ->
+                 Option.value ~default:""
+                   (Lui_protocol.String_map.find_opt key base_icons)
+                 = value)
+               projection.node_icons
+        in
+        if unchanged then applied
+        else
+          let next_icons =
+            Lui_protocol.String_map.fold
+              (fun key value acc ->
+                if value = "" then Lui_protocol.String_map.remove key acc
+                else Lui_protocol.String_map.add key value acc)
+              projection.node_icons base_icons
+          in
+          { applied with node_icons = next_icons } in
     (* Uploads need the existing subscription to receive acknowledgements. *)
     let updated =
       if not projection.is_pending_sync_patch && not projection.is_pending_sync_projection
@@ -2689,7 +2718,8 @@ let rec update (current : logseq_model) action =
   | ReturnOutlinerEditor (uuid, title, caret) ->
     let updated = update_editing current uuid title caret in
     let id = updated.next_effect_id in
-    enqueue_effect updated
+    let pending = remove_trailing_outliner_caret updated.pending_effects uuid in
+    enqueue_effect { updated with pending_effects = pending }
       (ReturnOutlinerEditorEffect (id, uuid, title, caret))
   | BackspaceOutlinerEditor (uuid, title, selection_length) ->
     let id = current.next_effect_id in
@@ -2761,27 +2791,19 @@ let rec update (current : logseq_model) action =
        enqueue_effect current
          (ChooseOutlinerAutocompleteEffect (id, value))
      | None -> current)
-  | OpenOutlinerAsset uuid ->
-    (match row_index current.outliner_rows uuid with
-     | Some index ->
-       let row = List.nth current.outliner_rows index in
-       if row.is_asset then
-         let pdf = List.mem (String.lowercase_ascii (Option.value ~default:"" row.asset_type)) ["pdf"; "application/pdf"]
-           || String.ends_with ~suffix:".pdf" (String.lowercase_ascii row.row_title) in
-         if pdf then update current (OpenPdf (uuid, row.row_title, Option.value ~default:"" row.local_path))
-         else match row.local_path with
-         | Some path ->
-           let id = current.next_effect_id in
-           let asset_type =
-             match row.asset_type with
-             | Some value -> value
-             | None -> "application/octet-stream"
-           in
-           enqueue_effect current
-             (PresentAssetEffect (id, row.row_title, asset_type, path))
-         | None -> current
-       else current
-     | None -> current)
+  | OpenOutlinerAsset row ->
+    if not row.is_asset then current
+    else
+      let asset_type = Option.value ~default:"application/octet-stream" row.asset_type in
+      let pdf = List.mem (String.lowercase_ascii asset_type) ["pdf"; "application/pdf"]
+        || String.ends_with ~suffix:".pdf" (String.lowercase_ascii row.row_title) in
+      if pdf then
+        update current (OpenPdf (row.row_uuid, row.row_title, Option.value ~default:"" row.local_path))
+      else
+        (match row.local_path with
+        | Some path -> enqueue_effect current
+            (PresentAssetEffect (current.next_effect_id, row.row_title, asset_type, path))
+        | None -> current)
   | ResolveAssetPreview (title, path) ->
     {
       current with
@@ -2949,6 +2971,7 @@ let rec update (current : logseq_model) action =
     end
   | RequestSearchIndexMaintenance graph_id ->
     if current.selected_graph_id <> Some graph_id
+       || (current.outliner_editing <> None && not current.search_open)
        || current.pending_effects <> [] || current.in_flight_effects <> [] then current
     else enqueue_effect current (MaintainSearchIndexEffect (current.next_effect_id, graph_id))
   | DequeueEffect id ->
@@ -3988,6 +4011,25 @@ and apply_core_snapshot (current : logseq_model)
       then projected_rows
       else current.journal_outliner_rows
     in
+    let empty_journals =
+      if projection.empty_journals = current.empty_journals then current.empty_journals
+      else projection.empty_journals in
+    let selected_block_ids =
+      if projection.projection_outliner_selected_block_ids = current.outliner_selected_block_ids
+      then current.outliner_selected_block_ids
+      else projection.projection_outliner_selected_block_ids in
+    let selected_task_block_ids =
+      if projection.projection_outliner_selected_task_block_ids = current.outliner_selected_task_block_ids
+      then current.outliner_selected_task_block_ids
+      else projection.projection_outliner_selected_task_block_ids in
+    let autocomplete_candidates =
+      let next = snapshot_autocomplete_candidates current projection in
+      if next = current.outliner_autocomplete_candidates then current.outliner_autocomplete_candidates
+      else next in
+    let section_markers =
+      let next = journal_section_markers projected_rows in
+      if next = current.outliner_section_markers then current.outliner_section_markers
+      else next in
     {
       current with
       has_pending_semantic_operations =
@@ -3995,17 +4037,15 @@ and apply_core_snapshot (current : logseq_model)
       has_pending_sync_request = projection.has_pending_sync_request;
       pending_sync_error = projection.pending_sync_error;
       navigation_root_rows = (if current.node_routes = [] then projected_rows else current.navigation_root_rows);
-      empty_journals = projection.empty_journals;
+      empty_journals;
       journal_tasks;
       journal_outliner_rows = journal_rows;
       outliner_editing = snapshot_outliner_editing current projection;
       outliner_autocomplete = snapshot_autocomplete current projection;
-      outliner_autocomplete_candidates =
-        snapshot_autocomplete_candidates current projection;
-      outliner_selected_block_ids =
-        projection.projection_outliner_selected_block_ids;
-      outliner_selected_task_block_ids = projection.projection_outliner_selected_task_block_ids;
-      outliner_section_markers = journal_section_markers projected_rows;
+      outliner_autocomplete_candidates = autocomplete_candidates;
+      outliner_selected_block_ids = selected_block_ids;
+      outliner_selected_task_block_ids = selected_task_block_ids;
+      outliner_section_markers = section_markers;
       outliner_rows = projected_rows;
     }
   end

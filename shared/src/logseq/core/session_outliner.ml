@@ -439,10 +439,17 @@ let snapshot_related_blocks (session : Types.session) =
        | Some blocks -> blocks
        | None -> [])
     | _ -> []
-  else if deferred_references session then
-    (match active_reference_uuid session with
-     | Some uuid -> references_for_node session uuid
-     | None -> [])
+  else if deferred_references session then begin
+    synchronize_reference_cache session;
+    let has_any =
+      Hashtbl.fold (fun _ blocks acc -> acc || blocks <> []) session.Types.reference_cache false
+    in
+    if not has_any then []
+    else
+      match active_reference_uuid session with
+      | Some uuid -> references_for_node session uuid
+      | None -> []
+  end
   else (Types.state session).related_blocks
 
 let snapshot_linked_reference_blocks (session : Types.session) =
@@ -687,39 +694,61 @@ let unseen_template_copies db (context : Outliner.outliner_context) operations =
       | _ -> []) (Ops.affected_uuids db operation.intent)) operations
 
 let refresh_reference_metadata session aggregate projected operations =
-  if
-    List.exists
-      (fun (operation : Ops.pending_operation) ->
-        match operation.intent with
-        | Ops.Save_title _ -> true
-        | Ops.Add_tag _ -> true
-        | _ -> false)
-      operations
-  then
-    let live =
-      match aggregate with
-      | Some uuid ->
-        (match page_outliner_context session uuid with
-         | Some context -> context
-         | None -> outliner_context session)
-      | None -> outliner_context session
-    in
-    let by_id =
-      List.map (fun (b : Model.block) -> (b.uuid, b)) live.Outliner.blocks
-    in
-    {
-      projected with
-      Outliner.blocks =
-        List.map
-          (fun (block : Model.block) ->
-            match List.assoc_opt block.uuid by_id with
-            | Some current ->
-              {
-                block with
-                references = current.references;
-                tags = current.tags;
-              }
-            | None -> block)
-          projected.Outliner.blocks;
-    }
-  else projected
+  let updated = Hashtbl.create 4 in
+  List.iter
+    (fun (operation : Ops.pending_operation) ->
+      match operation.intent with
+      | Ops.Save_title change -> Hashtbl.replace updated change.uuid ()
+      | Ops.Add_tag change -> Hashtbl.replace updated change.uuid ()
+      | _ -> ())
+    operations;
+  if Hashtbl.length updated = 0 then projected
+  else
+    match Option.bind (Types.host session).graph_db (fun load -> load ()) with
+    | Some db ->
+      {
+        projected with
+        Outliner.blocks =
+          List.map
+            (fun (block : Model.block) ->
+              if not (Hashtbl.mem updated block.uuid) then block
+              else
+                match Datascript.entid db "block/uuid" (Datascript.Uuid block.uuid) with
+                | Some eid ->
+                  (match Graph_read.block ~with_breadcrumbs:false (fun value -> Ok value) db eid with
+                   | Some current ->
+                     {
+                       block with
+                       references = current.references;
+                       tags = current.tags;
+                     }
+                   | None -> block)
+                | None -> block)
+            projected.Outliner.blocks;
+      }
+    | None ->
+      let live =
+        match aggregate with
+        | Some uuid ->
+          (match page_outliner_context session uuid with
+           | Some context -> context
+           | None -> outliner_context session)
+        | None -> outliner_context session
+      in
+      let by_id = Hashtbl.create (List.length live.Outliner.blocks) in
+      List.iter (fun (b : Model.block) -> Hashtbl.replace by_id b.uuid b) live.Outliner.blocks;
+      {
+        projected with
+        Outliner.blocks =
+          List.map
+            (fun (block : Model.block) ->
+              match Hashtbl.find_opt by_id block.uuid with
+              | Some current ->
+                {
+                  block with
+                  references = current.references;
+                  tags = current.tags;
+                }
+              | None -> block)
+            projected.Outliner.blocks;
+      }

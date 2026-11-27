@@ -45,7 +45,9 @@ internal fun dispatchLuiEvent(event: LuiEvent, native: LogseqNativeBridge) {
             event.identifier,
             event.name,
             extensionText(event.values),
-            extensionValue(event.values),
+            if (event.identifier == "outliner-block-row" && event.name == "edit" &&
+                !event.values.containsKey("caret-utf16-offset")
+            ) -1L else extensionValue(event.values),
         )
         // Only events backed by shared/native/logseq_core_ffi.h are forwarded.
         // Backend-only events, including sparse virtual windows, remain ignored
@@ -55,7 +57,7 @@ internal fun dispatchLuiEvent(event: LuiEvent, native: LogseqNativeBridge) {
 }
 
 internal fun extensionText(values: Map<String, Any?>): String {
-    for (key in listOf("uuid", "title", "query", "value", "payload")) {
+    for (key in listOf("uuid", "title", "query", "value", "payload", "priority")) {
         (values[key] as? String)?.let { return it }
     }
     return (values["offset"] as? Number)?.toLong()?.toString() ?: ""

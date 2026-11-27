@@ -77,6 +77,7 @@ internal class OutlinerPlatformCommandDispatcher(
 
     companion object {
         fun decode(response: String): OutlinerPlatformCommandBatch? {
+            if (!response.contains("\"outlinerCommands\"")) return null
             val decoded = try {
                 JSONObject(response)
             } catch (_: Throwable) {

@@ -161,16 +161,18 @@ let refresh_search_affected runtime before intent operations =
     match runtime.search_index with
     | Some search_index ->
       (try
-         Graph_sqlite.set_search_version search_index.path None;
          let created = List.filter_map (function
            | Ds.Entity entity -> (match List.assoc_opt "block/uuid" entity.Ds.attrs with
                | Some (Ds.One_value (Ds.Uuid uuid)) -> Some uuid | _ -> None)
            | Ds.Add (_, "block/uuid", Ds.Uuid uuid) -> Some uuid
            | _ -> None) operations in
-         Index.refresh_uuids search_index before (db runtime)
-           (created @ Ops.affected_uuids before intent);
-         if (state runtime).search_index_is_fresh then
-           Graph_sqlite.set_search_version search_index.path (Graph_sqlite.search_source_version runtime.path)
+         let version =
+           if (state runtime).search_index_is_fresh then
+             Graph_sqlite.search_source_version runtime.path
+           else None
+         in
+         Index.refresh_uuids_with_version search_index before (db runtime)
+           (created @ Ops.affected_uuids before intent) ~version
        with Failure _ ->
          runtime.state :=
            { !(runtime.state) with search_index_is_fresh = false; search_rebuild = None })
@@ -632,12 +634,62 @@ let refresh_split_page_cache runtime before intent =
           runtime.state := { !(runtime.state) with read_cache = Some (database, caches) }
         end
       | _ -> ()) page
+  | Ops.Insert_block ins, Some (cached_db, cached) when cached_db == before ->
+    (match Hashtbl.find_opt cached.page_blocks ins.page_uuid with
+     | Some blocks ->
+       let database = db runtime in
+       let read uuid = Option.bind (Ds.entid database "block/uuid" (Ds.Uuid uuid))
+           (Read.block ~with_breadcrumbs:false (fun value -> Ok value) database) in
+       (match read ins.uuid with
+        | Some ({ order = Some co; _ } as created) ->
+          let valid = ref true in
+          let prev_sibling =
+            List.fold_left (fun acc (block : Model.block) ->
+              if block.parent_id = created.parent_id then
+                match block.order with
+                | Some bo when String.compare bo co < 0 -> Some block.uuid
+                | Some _ -> acc
+                | None -> valid := false; acc
+              else acc) None blocks
+          in
+          let updated =
+            if not !valid then None
+            else match prev_sibling with
+            | Some prev_uuid ->
+              let subtree = Hashtbl.create 16 in
+              Hashtbl.add subtree prev_uuid ();
+              let seen = ref false and inserted = ref false in
+              let reversed = List.fold_left (fun acc (block : Model.block) ->
+                let descendant = Option.fold ~none:false ~some:(Hashtbl.mem subtree) block.parent_id in
+                if !seen && descendant then Hashtbl.replace subtree block.uuid ();
+                let acc = if !seen && not descendant && not !inserted then
+                    (inserted := true; created :: acc) else acc in
+                if block.uuid = prev_uuid then seen := true;
+                block :: acc) [] blocks in
+              let reversed = if !inserted then reversed else created :: reversed in
+              Some (List.rev reversed)
+            | None ->
+              (match created.parent_id with
+               | None -> Some (created :: blocks)
+               | Some pid when pid = ins.page_uuid -> Some (created :: blocks)
+               | Some pid ->
+                 let inserted = ref false in
+                 let reversed = List.fold_left (fun acc (block : Model.block) ->
+                   let acc = block :: acc in
+                   if block.uuid = pid && not !inserted then (inserted := true; created :: acc)
+                   else acc) [] blocks in
+                 if !inserted then Some (List.rev reversed) else None)
+          in
+          Option.iter (fun updated ->
+            let caches = new_read_caches () in
+            Hashtbl.add caches.page_blocks ins.page_uuid updated;
+            runtime.state := { !(runtime.state) with read_cache = Some (database, caches) }) updated
+        | _ -> ())
+     | None -> ())
   | _ -> ()
 
 let stage ?journal_tasks runtime (operation : Ops.pending_operation) =
-  let existing = Ops.list runtime.path in
-  let previous = List.find_opt
-      (fun (op : Ops.pending_operation) -> op.operation_id = operation.operation_id) existing in
+  let previous = Ops.find_opt runtime.path operation.operation_id in
   match previous with
   | Some previous when (match operation.state with Ops.Conflicted _ -> true | _ -> false) ->
     Ops.save runtime.path { previous with state = operation.state };
@@ -717,13 +769,15 @@ let stage ?journal_tasks runtime (operation : Ops.pending_operation) =
          if projected == report.db_after then
            Option.iter (fun cache ->
              Journal_task_dates.refresh_local_edit cache ~before ~after:projected report.tx_data) journal_tasks);
-      (match normalized.intent with
-       | Ops.Save_title _ ->
+      (match normalized.intent, (state runtime).read_cache, (state runtime).journal_block_limit with
+       | Ops.Save_title _, Some (cached, _), Some limit
+         when cached == visible_before && limit <= initial_journal_block_limit ->
          let attributes = List.fold_left (fun attributes -> function
            | Ds.Add (_, attr, _) | Ds.Retract (_, attr, _) ->
              Option.map (fun attributes -> attr :: attributes) attributes
            | _ -> None) (Some []) operations in
-         preserve_journal_selection runtime visible_before (normalized :: existing) attributes
+         let existing = Ops.list runtime.path in
+         preserve_journal_selection runtime visible_before existing attributes
            (Ops.affected_uuids before normalized.intent)
        | _ -> ());
       refresh_search_affected runtime before normalized.intent operations;

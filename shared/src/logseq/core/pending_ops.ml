@@ -916,6 +916,17 @@ let save path operation =
     (state_string operation.state)
     (Yojson.Basic.to_string (intent_json operation.intent))
 
+let find_opt path operation_id =
+  Option.map
+    (fun (id, cursor, state, intent) ->
+      {
+        operation_id = id;
+        base_t = cursor;
+        state = state_of_string state;
+        intent = intent_of_json (Yojson.Basic.from_string intent);
+      })
+    (Graph_sqlite.find_pending path operation_id)
+
 let list path =
   List.map
     (fun (id, cursor, state, intent) ->

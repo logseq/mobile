@@ -13,6 +13,7 @@ val flush_event : Lui_protocol.event -> string
 val flush_action : Model.logseq_action -> string
 
 val apply_response : string -> string
+val complete_effect_with_response : int -> string -> string
 
 val apply_host_update : string -> string -> string
 

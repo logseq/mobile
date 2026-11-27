@@ -518,7 +518,7 @@ let referring_uuids db uuid =
       Graph.uuid_value (Graph.value db datom.e "block/uuid"))
   | None -> []
 
-let refresh_uuids ?(skip_unchanged = false) index before after uuids =
+let collect_uuid_changes ?(skip_unchanged = false) before after uuids =
   let uuids =
     if Journal.format before = Journal.format after then uuids
     else
@@ -538,16 +538,22 @@ let refresh_uuids ?(skip_unchanged = false) index before after uuids =
         true
       end)
   in
-  let removed, updated =
-    List.fold_left (fun (removed, updated) uuid ->
-      let row = row_for_uuid after uuid in
-      if skip_unchanged && row = row_for_uuid before uuid then removed, updated
-      else match row with
-        | None -> uuid :: removed, updated
-        | Some row -> removed, row :: updated)
-      ([], []) affected in
+  List.fold_left (fun (removed, updated) uuid ->
+    let row = row_for_uuid after uuid in
+    if skip_unchanged && row = row_for_uuid before uuid then removed, updated
+    else match row with
+      | None -> uuid :: removed, updated
+      | Some row -> removed, row :: updated)
+    ([], []) affected
+
+let refresh_uuids ?(skip_unchanged = false) index before after uuids =
+  let removed, updated = collect_uuid_changes ~skip_unchanged before after uuids in
   if removed <> [] then search_delete index.path removed;
   if updated <> [] then search_upsert index.path updated
+
+let refresh_uuids_with_version ?(skip_unchanged = false) index before after uuids ~version =
+  let removed, updated = collect_uuid_changes ~skip_unchanged before after uuids in
+  Sql.search_apply_and_set_version index.path ~removed ~updated ~version
 
 let refresh index db =
   let wanted = rows_of_db db in

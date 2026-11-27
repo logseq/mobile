@@ -73,14 +73,52 @@ let update current action =
   | _ -> { updated with next_effect_id = next_id;
       pending_effects = List.rev_append (List.rev updated.pending_effects) (List.rev reports) }
 
-let create backend =
+let ui_silent_resolved_effect = function
+  | Model.SyncPendingEffect _ | Model.PersistUISessionEffect _
+  | Model.HydrateOutlinerRowsEffect _ | Model.MoveOutlinerCaretEffect _
+  | Model.SaveOutlinerEditingEffect _ | Model.MaintainSearchIndexEffect _ -> true
+  | _ -> false
+
+let make_app backend initial_model =
+  let ui_version = ref 0 in
+  let seen_version = ref 0 in
+  let reducer current action =
+    let next = update current action in
+    let silent =
+      next == current
+      || match action with
+         | Model.DequeueEffect _ -> true
+         | Model.ReturnOutlinerEditor _ ->
+           Option.map (fun (e : Model.outliner_editing) -> e.editing_uuid) next.Model.outliner_editing =
+           Option.map (fun (e : Model.outliner_editing) -> e.editing_uuid) current.Model.outliner_editing
+           && next.effect_error = current.effect_error
+         | Model.ResolveEffect (id, true, _) ->
+           (match Model.effect_with_id current.in_flight_effects id with
+            | Some eff ->
+              ui_silent_resolved_effect eff
+              && next.outliner_selection_revision = current.outliner_selection_revision
+              && next.pending_effects == current.pending_effects
+              && next.effect_error = current.effect_error
+            | None -> true)
+         | _ -> false in
+    if not silent then incr ui_version;
+    next in
+  let view context model_source send =
+    let gated = Signal.own_signal context.Lui_ui.ui_scope
+      (Signal.cutoff (fun _ _ ->
+        let v = !ui_version in
+        if v = !seen_version then true
+        else (seen_version := v; false)) model_source) in
+    View.logseq_view context gated send in
   Lui_app.create_with_extensions backend (View.extension_registry ())
-    (Model.initial ()) update View.logseq_view
+    initial_model reducer view
+
+let create backend =
+  make_app backend (Model.initial ())
 
 let create_with_authentication backend authentication_state =
-  Lui_app.create_with_extensions backend (View.extension_registry ())
+  make_app backend
     (update (Model.initial ())
        (Model.ApplyAuthentication (authentication_state, None)))
-    update View.logseq_view
 
 let model application = Lui_app.model application

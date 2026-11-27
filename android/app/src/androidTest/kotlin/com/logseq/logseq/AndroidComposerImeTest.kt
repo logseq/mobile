@@ -104,7 +104,8 @@ class AndroidComposerImeTest {
 
     @Before fun prepareRealComposer() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("verifyComposerIme") == "true")
-        assertTrue("This editing fixture is emulator-only", Build.MODEL.startsWith("sdk_gphone"))
+        assertTrue("This editing fixture is emulator-only",
+            Build.HARDWARE == "ranchu" || Build.MODEL.startsWith("sdk_gphone"))
         val context = instrumentation.targetContext
         assertEquals("Only the dedicated QA graph may receive test draft edits", "uiregression",
             context.getSharedPreferences("logseq", Context.MODE_PRIVATE).getString("logseq.selectedGraphId", ""))
@@ -285,6 +286,12 @@ class AndroidComposerImeTest {
         fun cycle(expected: String) {
             tap(bounds(control("button.outliner.editor.task")))
             waitFor { it.contentDescription?.toString() == "Task: $expected" }
+            if (expected != "None") {
+                waitFor {
+                    it.viewIdResourceName == "button.block-task-status"
+                        && it.contentDescription?.toString() == expected
+                }
+            }
         }
         val original = status()
         try {
@@ -320,6 +327,11 @@ class AndroidComposerImeTest {
             } finally { before.recycle() }
             cycle("Done")
             click("button.outliner.editor.hideKeyboard")
+            waitUntil { node { it.viewIdResourceName?.startsWith("field.outliner.block.") == true } == null }
+            click("button.block-task-status")
+            waitFor { it.viewIdResourceName == "button.block-task-status-option.logseq.property/status.todo" }
+            back()
+            waitFor { it.viewIdResourceName == "button.block-task-status" && it.contentDescription?.toString() == "Done" }
             tap(bounds(waitFor { it.text?.toString() == title }))
             assertEquals("Done", status())
             cycle("None")

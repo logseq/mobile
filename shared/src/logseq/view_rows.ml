@@ -51,19 +51,53 @@ let make_retained_outline_row_with_selection ?edit_scope is_selected (current : 
 let make_retained_outline_row ?edit_scope current row =
   make_retained_outline_row_with_selection ?edit_scope (View_base.row_selected_ current row) current row
 
-let retained_outliner_rows (current : Model.logseq_model) =
-  let selected = Selection.of_list current.outliner_selected_block_ids in
-  let rec loop ancestor acc = function
-    | [] -> List.rev acc
-    | (row : Model.outline_row) :: rest ->
-      let inherited = match ancestor with
-        | Some (depth, page) -> row.depth > depth && row.page_id = page
-        | None -> false in
-      let is_selected = inherited || Selection.mem row.row_uuid selected in
-      let ancestor = if inherited then ancestor else
-        if is_selected then Some (row.depth, row.page_id) else None in
-      loop ancestor (make_retained_outline_row_with_selection is_selected current row :: acc) rest in
-  loop None [] current.outliner_rows
+let retained_rows_inputs_equal (left : Model.logseq_model) (right : Model.logseq_model) =
+  left.outliner_rows == right.outliner_rows
+  && left.outliner_selected_block_ids == right.outliner_selected_block_ids
+  && left.outliner_editing = right.outliner_editing
+  && left.outliner_edit_scope = right.outliner_edit_scope
+
+let retained_outliner_rows =
+  let prev_cache : (string, retained_row) Hashtbl.t ref = ref (Hashtbl.create 0) in
+  fun (current : Model.logseq_model) ->
+    let selected = Selection.of_list current.outliner_selected_block_ids in
+    let editing_uuid =
+      match current.outliner_editing with
+      | Some e -> Some e.editing_uuid
+      | None -> None
+    in
+    let old_cache = !prev_cache in
+    let next_cache = Hashtbl.create (max 16 (Hashtbl.length old_cache)) in
+    let rec loop ancestor acc = function
+      | [] ->
+        prev_cache := next_cache;
+        List.rev acc
+      | (row : Model.outline_row) :: rest ->
+        let inherited = match ancestor with
+          | Some (depth, page) -> row.depth > depth && row.page_id = page
+          | None -> false in
+        let is_selected = inherited || Selection.mem row.row_uuid selected in
+        let ancestor = if inherited then ancestor else
+          if is_selected then Some (row.depth, row.page_id) else None in
+        let is_editing = match editing_uuid with
+          | Some u -> u = row.row_uuid
+          | None -> false in
+        let retained =
+          if not is_editing && current.outliner_edit_scope = None then
+            match Hashtbl.find_opt old_cache row.row_uuid with
+            | Some prev
+              when prev.value == row
+                   && not prev.is_editing
+                   && prev.is_selected = is_selected
+                   && prev.edit_scope = None ->
+              prev
+            | _ -> make_retained_outline_row_with_selection is_selected current row
+          else
+            make_retained_outline_row_with_selection is_selected current row
+        in
+        Hashtbl.replace next_cache row.row_uuid retained;
+        loop ancestor (retained :: acc) rest in
+    loop None [] current.outliner_rows
 
 let first_journal_section_visible_ (current : Model.logseq_model) =
   View_base.journal_root_visible_ current
@@ -109,16 +143,19 @@ let paged_keyed ~identifier ~item_extent ~count ~offset ~on_visible_range ~sourc
 let windowed_keyed ?scroll_target ?first_section ?reset_key
     ?(window_size = 32) ?(identifier = "outliner.window") ?(item_extent = 32)
     ?(on_visible_range = fun _ _ -> ()) ?(on_window = fun _ -> ())
-    ?(on_prefetch = fun _ -> ()) ?(is_pinned = fun _ -> false) ~source ~key ~cmp ~mount () : Lui_elements.t =
+    ?(on_prefetch = fun _ -> ()) ?(is_pinned = fun _ -> false)
+    ?(item_equal = fun a b -> a == b || a = b) ~source ~key ~cmp ~mount () : Lui_elements.t =
  Lui_elements.custom (fun context parent ->
   if not (List.mem (Lui_ui.host context) [Lui_protocol.SwiftUIHost; Lui_protocol.KotlinHost]) then
     Lui_elements.mount context ?parent (Lui_elements.keyed ~source ~key ~cmp ~mount)
   else
     let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
+    let list_equal xs ys =
+      xs == ys || (List.compare_lengths xs ys = 0 && List.for_all2 item_equal xs ys) in
     let items = own (Signal.map Array.of_list source) in
     let range = Signal.state context.ui_scheduler (0, window_size) in
-    let pinned = own (Signal.map (fun items ->
-      match Array.find_index is_pinned items with Some index -> index | None -> -1) items) in
+    let pinned = own (Signal.cutoff Int.equal (own (Signal.map (fun items ->
+      match Array.find_index is_pinned items with Some index -> index | None -> -1) items))) in
     Option.iter (fun reset ->
       let previous_key = ref (Signal.sample reset) in
       ignore (Signal.own context.ui_scope
@@ -129,11 +166,11 @@ let windowed_keyed ?scroll_target ?first_section ?reset_key
           end)))) reset_key;
     let target = match scroll_target with Some source -> source
       | None -> Signal.constant context.ui_scheduler None in
-    let request = own (Signal.map2 (fun items target ->
+    let request = own (Signal.cutoff (=) (own (Signal.map2 (fun items target ->
       match target with
       | None -> None
       | Some uuid -> Option.map (fun index -> (uuid, index))
-          (Array.find_index (fun item -> key item = uuid) items)) items target) in
+          (Array.find_index (fun item -> key item = uuid) items)) items target))) in
     let applied_target = ref None in
     ignore (Signal.own context.ui_scope (Signal.observe request (function
       | Some (uuid, index) when !applied_target <> Some uuid ->
@@ -148,39 +185,39 @@ let windowed_keyed ?scroll_target ?first_section ?reset_key
     let first_section = match first_section with
       | Some source -> source | None -> Signal.constant context.ui_scheduler 0 in
     let layout = own (Signal.map2 (fun first pinned -> first, pinned) first_section pinned) in
-    let metadata_base = own (Signal.map2 (fun (items, start, length) (first_count, pinned_index) ->
+    let metadata_base = own (Signal.cutoff (=) (own (Signal.map2 (fun (items, start, length) (first_count, pinned_index) ->
       ["data-virtual-count", string_of_int (Array.length items);
        "data-virtual-start", string_of_int start;
        "data-virtual-length", string_of_int length;
        "data-item-extent", string_of_int item_extent;
        "data-first-section-count", string_of_int first_count;
        "data-first-section-inset", "136";
-       "data-pinned-index", string_of_int pinned_index]) window layout) in
+       "data-pinned-index", string_of_int pinned_index]) window layout))) in
     let request =
       match reset_key with
       | Some reset when Lui_ui.host context = Lui_protocol.KotlinHost ->
-        own (Signal.map2 (fun target key ->
-          if key = "" then target else Some (key, 0)) request reset)
+        own (Signal.cutoff (=) (own (Signal.map2 (fun target key ->
+          if key = "" then target else Some (key, 0)) request reset)))
       | _ -> request in
-    let metadata = own (Signal.map2 (fun metadata request ->
+    let metadata = own (Signal.cutoff (=) (own (Signal.map2 (fun metadata request ->
       match request with None -> metadata | Some (uuid, index) ->
         ("data-scroll-key", uuid) :: ("data-scroll-index", string_of_int index) :: metadata)
-      metadata_base request) in
-    let visible = own (Signal.map (fun (items, start, length) ->
+      metadata_base request))) in
+    let visible = own (Signal.cutoff list_equal (own (Signal.map (fun (items, start, length) ->
       let visible = Array.sub items start length |> Array.to_list in
       match Array.find_index is_pinned items with
       | Some index when index < start || index >= start + length -> visible @ [items.(index)]
-      | _ -> visible) window) in
+      | _ -> visible) window))) in
     ignore (Signal.own context.ui_scope (Signal.observe visible on_window));
-    let adjacent = own (Signal.map (fun (items, start, length) ->
+    let adjacent = own (Signal.cutoff list_equal (own (Signal.map (fun (items, start, length) ->
       let before = max 0 (start - 16) in
       let after = start + length in
       let preceding = Array.sub items before (start - before) |> Array.to_list in
       let following = Array.sub items after (min 16 (Array.length items - after)) |> Array.to_list in
-      preceding @ following) window) in
+      preceding @ following) window))) in
     ignore (Signal.own context.ui_scope (Signal.observe adjacent on_prefetch));
     let content =
-      Lui_elements.if_ ~test:(own (Signal.map (fun items -> Array.length items > 0) items))
+      Lui_elements.if_ ~test:(own (Signal.cutoff Bool.equal (own (Signal.map (fun items -> Array.length items > 0) items))))
         (Lui_elements.list ~accessibility_identifier:identifier
           ~data_attrs_signal:metadata ~track_visible_range:true
           ~on_visible_range:(function
@@ -316,7 +353,21 @@ let placeholder_button_visible (current : Model.logseq_model) rows =
     && List.exists (contains_regular uuid) row.value.row_embed_children) embedded in
   not (List.exists (fun row -> (row.is_editing && regular row.value) || embedded_edit row) rows)
 
-let outline_entries rows = List.map (fun row -> Outline_entry row) rows
+let outline_entry_prev_cache : (string, retained_row * page_entry) Hashtbl.t ref =
+  ref (Hashtbl.create 0)
+
+let outline_entries next_cache rows =
+  let old_cache = !outline_entry_prev_cache in
+  List.map
+    (fun row ->
+      let entry =
+        match Hashtbl.find_opt old_cache row.render_key with
+        | Some (prev_row, prev_entry) when prev_row == row -> prev_entry
+        | _ -> Outline_entry row
+      in
+      Hashtbl.replace next_cache row.render_key (row, entry);
+      entry)
+    rows
 
 let task_field name = function
   | `Assoc fields -> Option.value ~default:`Null (List.assoc_opt name fields)
@@ -401,7 +452,7 @@ let tasks_view_rows (current : Model.logseq_model) =
       | [] -> []) in
   (if task_field "error" agenda = `Bool true then [Journal_task_error] else []) @ entries
 
-let journal_entries rows (current : Model.logseq_model) =
+let journal_entries next_cache rows (current : Model.logseq_model) =
   let groups = Hashtbl.create 16 and sequence = ref [] in
   List.iter (fun row ->
     let page = row.value.Model.page_id in
@@ -422,7 +473,7 @@ let journal_entries rows (current : Model.logseq_model) =
     else insert_empty (page.uuid, Some page.title, Some day, []) sections) sections current.empty_journals in
   let entries = List.mapi (fun index (page, title, day, rows) ->
     let needs_button = needs_placeholder rows in
-    let outline = outline_entries rows in
+    let outline = outline_entries next_cache rows in
     match title, day with
     | Some title, Some day when needs_button ->
       outline @ [Placeholder_entry {parent_uuid = page;
@@ -432,12 +483,13 @@ let journal_entries rows (current : Model.logseq_model) =
   List.rev (List.fold_left (fun acc section -> List.rev_append section acc) [] entries)
 
 let page_entries rows current =
+  let next_cache = Hashtbl.create (max 16 (Hashtbl.length !outline_entry_prev_cache)) in
   let journal_home = View_base.journal_home_visible_ current in
   let outline =
-    if journal_home then journal_entries rows current
+    if journal_home then journal_entries next_cache rows current
     else if View_base.current_content_is_tag_ current || View_base.current_content_is_property_ current then []
     else
-      let outline = outline_entries rows in
+      let outline = outline_entries next_cache rows in
       let parent = match View_base.active_node_projection current with
         | Some route -> route.node_uuid | None -> View_base.active_node_page_uuid current in
       let allowed = View_base.current_content_active_ current
@@ -448,6 +500,7 @@ let page_entries rows current =
         outline @ [Placeholder_entry {parent_uuid = parent; journal_heading = None;
           show_button = placeholder_button_visible current rows}]
       else outline in
+  outline_entry_prev_cache := next_cache;
   let references =
     List.map (fun row -> Reference_entry row) (reference_entries current) in
   if not journal_home || references = [] then List.rev_append (List.rev outline) references
@@ -483,8 +536,29 @@ let page_entry_reference = function
   | Reference_entry row -> row
   | _ -> invalid_arg "page_entry_reference requires a reference entry"
 
-let first_journal_section_count current =
-  if not (View_base.journal_home_visible_ current) then 0 else
+let retained_row_fast_equal (left : retained_row) (right : retained_row) =
+  left == right
+  || (left.value == right.value
+      && left.render_key = right.render_key
+      && left.edit_scope = right.edit_scope
+      && left.is_editing = right.is_editing
+      && left.is_selected = right.is_selected
+      && left.editing_title = right.editing_title
+      && left.editing_caret = right.editing_caret)
+
+let page_entry_fast_equal left right =
+  left == right
+  || match left, right with
+  | Outline_entry l, Outline_entry r -> retained_row_fast_equal l r
+  | Reference_entry l, Reference_entry r -> l == r || l = r
+  | Placeholder_entry l, Placeholder_entry r -> l = r
+  | Tasks_page_heading (k1, p1, t1), Tasks_page_heading (k2, p2, t2) -> k1 = k2 && p1 = p2 && t1 = t2
+  | Journal_task_row (t1, b1), Journal_task_row (t2, b2) -> b1 = b2 && (t1 == t2 || t1 = t2)
+  | Journal_task_error, Journal_task_error -> true
+  | _ -> false
+
+let first_journal_section_count_of_entries ~journal_home entries =
+  if not journal_home then 0 else
   let section_page = function
     | Outline_entry row when row.value.journal_title <> None -> Some row.value.page_id
     | Placeholder_entry {parent_uuid; journal_heading = Some _; _} -> Some parent_uuid
@@ -496,7 +570,12 @@ let first_journal_section_count current =
       | Some first, Some page when first <> page -> index
       | None, (Some _ as page) -> count (index + 1) page rest
       | _ -> count (index + 1) first_page rest in
-  count 0 None (page_entries (retained_outliner_rows current) current)
+  count 0 None entries
+
+let first_journal_section_count current =
+  first_journal_section_count_of_entries
+    ~journal_home:(View_base.journal_home_visible_ current)
+    (page_entries (retained_outliner_rows current) current)
 
 let unloaded_entry_id = function
   | Outline_entry row when not row.value.Model.row_loaded -> Some row.value.row_uuid

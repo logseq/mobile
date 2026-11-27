@@ -11,8 +11,7 @@ import kotlinx.coroutines.withContext
 //
 // LUI event calls run through the scheduler's UI lane so patches
 // produced mid-flight cannot interleave with a busy core RPC; the effect
-// entry points (takeEffect / resolveEffect / applySnapshot /
-// applyHostUpdate) return "" and re-queue while the core is busy.
+// entry points can return an empty patch while the core is busy.
 // `callCore` runs on NativeCoreThread, the same thread the runtime uses for
 // every other core entry point.
 internal class LogseqNativeBridge(
@@ -92,25 +91,26 @@ internal class LogseqNativeBridge(
         text: String,
         value: Long,
     ) = runtimeScheduler.runUi {
-        apply(
-            decode(
-                traced("core.luiExtensionEvent") {
-                    NativeCore.luiExtensionEvent(
-                        node,
-                        encode(identifier),
-                        encode(name),
-                        encode(text),
-                        value,
-                    )
-                }
-            )
+        val patch = decode(
+            traced("core.luiExtensionEvent") {
+                NativeCore.luiExtensionEvent(
+                    node,
+                    encode(identifier),
+                    encode(name),
+                    encode(text),
+                    value,
+                )
+            }
         )
+        apply(patch)
     }
 
     // --- NativeEffectRuntime surface ---
 
-    fun takeEffect(): String =
-        if (runtimeScheduler.isCoreBusy) "" else decode(traced("core.luiTakeEffect") { NativeCore.luiTakeEffect() })
+    fun takeEffect(): String {
+        if (runtimeScheduler.isCoreBusy) return ""
+        return decode(traced("core.luiTakeEffect") { NativeCore.luiTakeEffect() })
+    }
 
     fun resolveEffect(id: Long, succeeded: Boolean, message: String): String {
         if (runtimeScheduler.isCoreBusy) {
@@ -124,12 +124,23 @@ internal class LogseqNativeBridge(
 
     fun applySnapshot(response: String): String {
         if (runtimeScheduler.isCoreBusy) {
-            runtimeScheduler.runUi {
-                apply(decode(traced("core.luiApplySnapshot") { NativeCore.luiApplySnapshot(encode(response)) }))
-            }
+            runtimeScheduler.runUi { apply(snapshotPatch(response)) }
             return ""
         }
-        return decode(traced("core.luiApplySnapshot") { NativeCore.luiApplySnapshot(encode(response)) })
+        return snapshotPatch(response)
+    }
+
+    private fun snapshotPatch(response: String): String =
+        decode(traced("core.luiApplySnapshot") { NativeCore.luiApplySnapshot(encode(response)) })
+
+    fun completeEffectWithResponse(id: Long, response: String): String {
+        if (runtimeScheduler.isCoreBusy) {
+            runtimeScheduler.runUi { apply(completeEffectWithResponse(id, response)) }
+            return ""
+        }
+        return decode(traced("core.luiCompleteEffectWithResponse") {
+            NativeCore.luiCompleteEffectWithResponse(id, encode(response))
+        })
     }
 
     fun applyHostUpdate(kind: String, payload: String): String {
@@ -148,6 +159,15 @@ internal class LogseqNativeBridge(
         withContext(NativeCoreThread.dispatcher) {
             runtimeScheduler.runCore {
                 decode(traced("core.logseqCall:" + rpcMethod(request)) { NativeCore.logseqCall(encode(request)) })
+            }
+        }
+
+    suspend fun callCoreAndApplySnapshot(request: String): String =
+        withContext(NativeCoreThread.dispatcher) {
+            runtimeScheduler.runCore {
+                val response = decode(traced("core.logseqCall:" + rpcMethod(request)) { NativeCore.logseqCall(encode(request)) })
+                apply(snapshotPatch(response))
+                response
             }
         }
 

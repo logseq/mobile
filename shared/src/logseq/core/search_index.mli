@@ -39,6 +39,10 @@ val referring_uuids : Datascript.db -> string -> string list
 val refresh_uuids :
   ?skip_unchanged:bool ->
   search_index -> Datascript.db -> Datascript.db -> string list -> unit
+val refresh_uuids_with_version :
+  ?skip_unchanged:bool ->
+  search_index -> Datascript.db -> Datascript.db -> string list ->
+  version:string option -> unit
 val refresh : search_index -> Datascript.db -> unit
 val search :
   int -> search_index -> string -> search_result list

@@ -3,6 +3,7 @@ package com.logseq.logseq
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
 import android.content.Intent
+import android.database.sqlite.SQLiteDatabase
 import android.os.Build
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -57,7 +58,8 @@ class AndroidEnterPerformanceTest {
     @Test fun repeatedEnterAtTheStartOfFiveHundredBlocksIsResponsive() {
         val arguments = InstrumentationRegistry.getArguments()
         assumeTrue(arguments.getString("verifyEnterPerformance") == "true")
-        assertTrue("The fixture must never run on a physical device", Build.MODEL.startsWith("sdk_gphone"))
+        assertTrue("The fixture must never run on a physical device",
+            Build.HARDWARE == "ranchu" || Build.MODEL.startsWith("sdk_gphone"))
         val context = instrumentation.targetContext
         assertEquals("uiregression", context.getSharedPreferences("logseq", Context.MODE_PRIVATE)
             .getString("logseq.selectedGraphId", ""))
@@ -158,13 +160,33 @@ class AndroidEnterPerformanceTest {
         }
         moveCaret(0)
         val (_, insertBeforeMs) = measureHandoff(active, "")
+        val database = File(context.filesDir, "graphs/UI_Regression-uiregression/graph.sqlite")
+        assertTrue("The offline benchmark graph must exist", database.isFile)
+        fun persistedInsertCount(): Int =
+            SQLiteDatabase.openDatabase(database.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+                db.rawQuery(
+                    "SELECT COUNT(*) FROM logseq_pending_ops WHERE json_extract(intent, '$.type') IN (?, ?)",
+                    arrayOf("insert-block", "split-block"),
+                ).use { rows ->
+                    check(rows.moveToFirst())
+                    rows.getInt(0)
+                }
+            }
+        val insertsBeforeBurst = persistedInsertCount()
         val burstCount = 20
         repeat(burstCount) {
             enter()
             SystemClock.sleep(20)
         }
-        // Persistence is checked from the backed-up SQLite file by the fixture driver.
-        SystemClock.sleep(3_000)
+        val persistenceDeadline = SystemClock.uptimeMillis() + 10_000
+        // Keep observing after the expected count so late writes are covered too.
+        while (SystemClock.uptimeMillis() < persistenceDeadline) {
+            assertTrue("An Enter burst cannot persist extra insertions",
+                persistedInsertCount() - insertsBeforeBurst <= burstCount)
+            SystemClock.sleep(100)
+        }
+        assertEquals("Each Enter in the burst must persist exactly one insertion", burstCount,
+            persistedInsertCount() - insertsBeforeBurst)
         val settled = focusedEditor() ?: run {
             val screenshot = automation.takeScreenshot()
             File(context.filesDir, "enter-failure.png").outputStream().use {

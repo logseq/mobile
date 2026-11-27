@@ -260,6 +260,7 @@ fun logseqExtensionRegistry(
     ) {
         OutlinerBlockContent(this, resolveAssetPath, youtubeStarts, onOpenImage, loadImage)
     }
+    registerOutlinerBlockRow(resolveAssetPath, youtubeStarts, onOpenImage, loadImage)
     register(
         "bottom-tab-strip",
         "lui-extension-v1|16:bottom-tab-strip|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:cell-width:int:required:none,14:selected-index:int:required:none,5:inset:int:required:none,5:items:string:required:none|events:15:home-double-tap[],6:select[5:index:int:required]",

@@ -11,6 +11,51 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativeEffectDrainTest {
+    @Test fun outlinerReturnAppliesItsProjectionAndAcknowledgementTogether() = runBlocking {
+        val pending = ArrayDeque(listOf(
+            """{"effect":{"id":1,"kind":"return-outliner-editor","text":""},"patch":""}""",
+            """{"effect":{"id":2,"kind":"return-outliner-editor","text":""},"patch":""}""",
+            """{"effect":{"id":3,"kind":"other","text":""},"patch":""}""",
+        ))
+        val calls = mutableListOf<String>()
+        val runtime = object : NativeEffectRuntime {
+            override suspend fun takeEffect() = pending.removeFirstOrNull().orEmpty()
+            override suspend fun resolveEffect(id: Long, succeeded: Boolean, message: String): String {
+                calls += "resolve $id $succeeded"
+                return ""
+            }
+            override suspend fun applySnapshot(response: String): String {
+                calls += "apply $response"
+                return ""
+            }
+            override suspend fun completeEffectWithResponse(id: Long, response: String): String {
+                calls += "commit $id $response"
+                return ""
+            }
+            override suspend fun applyHostUpdate(kind: String, payload: String) = ""
+        }
+        val drain = NativeEffectDrain(
+            runtime,
+            execute = { effect ->
+                if (effect.id == 2L) NativeEffectResolution.Failure("rejected")
+                else NativeEffectResolution.CoreResponse("response ${effect.id}")
+            },
+            applyPatch = {},
+            afterCoreResponseApplied = { calls += "deliver $it" },
+        )
+
+        drain.drain(this)
+
+        assertEquals(listOf(
+            "commit 1 response 1",
+            "deliver response 1",
+            "resolve 2 false",
+            "apply response 3",
+            "deliver response 3",
+            "resolve 3 true",
+        ), calls)
+    }
+
     @Test fun failedDrainDoesNotStrandLaterEffects() = runBlocking {
         val pending = ArrayDeque(listOf(
             """{"effect":{"id":1,"kind":"test","text":""},"patch":""}""",
@@ -20,6 +65,7 @@ class NativeEffectDrainTest {
             override suspend fun takeEffect() = pending.removeFirstOrNull().orEmpty()
             override suspend fun resolveEffect(id: Long, succeeded: Boolean, message: String) = ""
             override suspend fun applySnapshot(response: String) = ""
+            override suspend fun completeEffectWithResponse(id: Long, response: String) = ""
             override suspend fun applyHostUpdate(kind: String, payload: String) = ""
         }
         val delivered = mutableListOf<Long>()
@@ -56,6 +102,7 @@ class NativeEffectDrainTest {
             }
             override suspend fun resolveEffect(id: Long, succeeded: Boolean, message: String) = ""
             override suspend fun applySnapshot(response: String) = ""
+            override suspend fun completeEffectWithResponse(id: Long, response: String) = ""
             override suspend fun applyHostUpdate(kind: String, payload: String) = ""
         }
         val delivered = mutableListOf<Long>()

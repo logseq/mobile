@@ -257,6 +257,36 @@ let autocomplete_debounces_queries_but_flushes_before_structural_actions () =
     let enter = take_effect () in
     Test_util.check_eq (string_member "kind" enter) (Some "return-outliner-editor"))
 
+let enter_publishes_the_new_editor_with_its_acknowledgement () =
+  ignore (Native_bridge.initialize 3 4 3);
+  Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
+    let snapshot editing rows =
+      Printf.sprintf
+        {|{"ok":true,"result":{"selectedGraphId":"local","outlinerRows":%s,"outlinerState":{"editing":{"uuid":"%s","title":"","caretUTF16Offset":0}}}}|}
+        rows editing in
+    let old_row = {|{"block":{"uuid":"old","title":""},"depth":0}|} in
+    let new_row = {|{"block":{"uuid":"new","title":""},"depth":0}|} in
+    ignore (Native_bridge.apply_response (snapshot "old" ("[" ^ old_row ^ "]")));
+    ignore (Native_bridge.flush_action (Model.ReturnOutlinerEditor ("old", "", 0)));
+    let enqueued = (App.model (Native_bridge.app ())).Model.pending_effects in
+    let id = List.find_map (function Model.ReturnOutlinerEditorEffect (id, _, _, _) -> Some id | _ -> None) enqueued
+      |> Option.get in
+    ignore (Native_bridge.flush_action (Model.DequeueEffect id));
+    let patch = Native_bridge.complete_effect_with_response id
+      (snapshot "new" ("[" ^ old_row ^ "," ^ new_row ^ "]")) in
+    let current = App.model (Native_bridge.app ()) in
+    Test_util.check_eq current.Model.outliner_selection_revision 1;
+    Test_util.check_eq (Option.map (fun editing -> editing.Model.editing_uuid) current.outliner_editing) (Some "new");
+    Test_util.check ~msg:"the return is acknowledged" (not (List.exists (fun eff -> Model.effect_id eff = id) current.in_flight_effects));
+    Test_util.check ~msg:"the focus and selection revision are published" (patch <> "");
+    let open Lui_protocol in
+    let patch = Lui_wire.decode_batch patch in
+    Test_util.check ~msg:"the patch sets the editor focus and revision together"
+      (List.exists (function
+        | SetExtensionProp (node, "block-id", StringValue "new") ->
+          List.mem (SetExtensionProp (node, "selection-revision", IntValue 1)) patch.ops
+        | _ -> false) patch.ops))
+
 let viewport_hydration_does_not_bypass_the_query_debounce () =
   ignore (Native_bridge.initialize 2 2 3);
   Fun.protect ~finally:(fun () -> ignore (Native_bridge.dispose ())) (fun () ->
@@ -319,5 +349,7 @@ let cases =
       search_queries_wait_200ms_and_only_dispatch_the_latest_input;
     Test_util.case "autocomplete debounces queries and flushes before structural actions"
       autocomplete_debounces_queries_but_flushes_before_structural_actions;
+    Test_util.case "enter publishes the new editor with its acknowledgement"
+      enter_publishes_the_new_editor_with_its_acknowledgement;
     Test_util.case "viewport hydration does not bypass the query debounce"
       viewport_hydration_does_not_bypass_the_query_debounce ]

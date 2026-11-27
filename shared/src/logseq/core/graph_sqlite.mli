@@ -15,6 +15,7 @@ val delete_stored_addresses : string -> int list -> unit
 val copy_app_tables : string -> string -> unit
 
 val store_pending : string -> string -> int -> string -> string -> unit
+val find_pending : string -> string -> (string * int * string * string) option
 val list_pending : string -> (string * int * string * string) list
 val set_pending_state : string -> string -> string -> unit
 val record_sync_failure : string -> string -> string option -> unit
@@ -40,3 +41,6 @@ val query :
 val search_source_version : string -> string option
 val search_version : string -> string option
 val set_search_version : string -> string option -> unit
+val search_apply_and_set_version :
+  string -> removed:string list -> updated:(string * string * string) list ->
+  version:string option -> unit
