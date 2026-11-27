@@ -771,12 +771,16 @@ private struct LGNavigationContent: View {
     }
     private var searchVisible: Bool { search?.isVisible == true }
     private var verticalToolbar: Bool { verticalToolbarEdge != nil }
-    private var verticalTitleTopPadding: CGFloat {
+    private var usesUnfoldedDuoHeading: Bool {
         #if os(iOS)
-        // Align the title with the unfolded split view's native sidebar control.
-        if LGSidebarOverlay.isDuo && horizontalSizeClass == .regular { return -44 }
+        return verticalToolbar && LGSidebarOverlay.isDuo && horizontalSizeClass == .regular
+        #else
+        return false
         #endif
-        return 0
+    }
+
+    private var showsVerticalRootHeading: Bool {
+        verticalToolbar && toolbarStartIndex != nil && !pdfWorkspaceOpen
     }
     private var searchRoutes: [Int] {
         guard searchVisible, let search else { return [] }
@@ -1139,15 +1143,15 @@ private struct LGNavigationContent: View {
     @ViewBuilder
     private var rootNavigationSurface: some View {
         let base = AnyView(transformedRootContent.safeAreaInset(edge: .top, spacing: 0) {
-            if verticalToolbar, toolbarStartIndex != nil {
-                // A principal item would create a second, horizontal bar on Duo.
-                let hideTitle = searchVisible || pdfWorkspaceOpen
+            if showsVerticalRootHeading {
+                // Keep the heading inside the active pane so the graph menu remains tappable.
                 rootHeaderTitle
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .padding(.top, verticalTitleTopPadding)
-                .opacity(hideTitle ? 0 : 1)
-                .allowsHitTesting(!hideTitle)
-                .accessibilityHidden(hideTitle)
+                    .frame(maxWidth: .infinity, minHeight: 44,
+                           alignment: usesUnfoldedDuoHeading ? .leading : .center)
+                    .padding(.horizontal, 16)
+                    .opacity(searchVisible ? 0 : 1)
+                    .allowsHitTesting(!searchVisible)
+                    .accessibilityHidden(searchVisible)
             }
         })
         withAppTint(searchSurface(base, active: path.isEmpty))
