@@ -358,6 +358,31 @@ let with_favorite_graphs f =
         "schema-version", `String "1"; "row-count", `Int (List.length rows)]))] in
     f host call fields cache download)
 
+let shortcut_captures_without_an_open_graph () =
+  with_favorite_graphs (fun host call fields cache _ ->
+    let module Ds = Datascript in
+    let graph = host.Mobile_session.database.Mobile_database.graph in
+    cache "graph-b";
+    check_eq !(graph.current) None;
+    let graph_fields = fields "graph-b" in
+    let directory =
+      List.assoc "activePath" graph_fields |> Yojson.Basic.Util.to_string |> Filename.dirname in
+    let uuid = "00000000-0000-4000-8000-000000000311" in
+    ignore (call "captureLocalShortcutText" (graph_fields @ [
+      "catalogPath", `String (Filename.concat directory "catalog.sqlite");
+      "baseUrl", `String "https://example.com";
+      "uuid", `String uuid;
+      "text", `String "Captured from Shortcuts";
+    ]));
+    check_eq ~msg:"capture leaves the app graph closed" !(graph.current) None;
+    ignore (call "configure" ["graphId", `String "graph-b"; "baseUrl", `String "https://example.com";
+      "token", `String ""]);
+    ignore (call "openGraph" graph_fields);
+    let db = Option.get (Mobile_graph.projected_db graph) in
+    let eid = Option.get (Ds.entid db "block/uuid" (Ds.Uuid uuid)) in
+    let block = Option.get (Graph_read.block (fun value -> Ok value) db eid) in
+    check_eq block.title "Captured from Shortcuts")
+
 let favorite_ids response =
   let open Yojson.Basic.Util in
   response |> member "favorites" |> to_list |> List.map (fun page -> page |> member "uuid" |> to_string)
@@ -883,7 +908,8 @@ let cold_launch_favorite_edits_publish_the_sidebar () =
       (favorite_ids (favorite true "cold-favorite")) ["graph-a-page"])
 
 let cases =
-  [ case "local graph removal allows redownload in the same session" local_graph_removal_allows_redownload_in_the_same_session;
+  [ case "shortcut capture persists in a graph without opening it in the app" shortcut_captures_without_an_open_graph;
+    case "local graph removal allows redownload in the same session" local_graph_removal_allows_redownload_in_the_same_session;
     case "offline edits survive logout restart and sync with new credentials" offline_edits_survive_logout_restart_and_sync_with_new_credentials;
     case "configured task statuses survive snapshots edits and reopen" configured_task_statuses_survive_snapshots_edits_and_reopen;
     case "editor task status cycles in a persisted graph" editor_task_status_cycles_in_a_persisted_graph;

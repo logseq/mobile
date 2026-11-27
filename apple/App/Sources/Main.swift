@@ -116,6 +116,48 @@ private final class DiscussionNotificationDelegate: NSObject, UNUserNotification
 }
 
 @available(iOS 17.0, *)
+struct JournalCaptureGraph: AppEntity {
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Logseq Graph"
+    static let defaultQuery = JournalCaptureGraphQuery()
+    static let recentID = "logseq:last-shortcut-capture"
+
+    let id: String
+    let name: String?
+
+    var displayRepresentation: DisplayRepresentation {
+        if id == Self.recentID {
+            if let name { return DisplayRepresentation(title: "Last Used Graph", subtitle: "\(name)") }
+            return DisplayRepresentation(title: "Last Used Graph")
+        }
+        return DisplayRepresentation(title: "\(name ?? id)")
+    }
+
+    var explicitGraphID: String? { id == Self.recentID ? nil : id }
+}
+
+@available(iOS 17.0, *)
+struct JournalCaptureGraphQuery: EntityQuery {
+    @MainActor func suggestedEntities() async -> [JournalCaptureGraph] {
+        let graphs = await LogseqJournalShortcutCapture.availableGraphs()
+        return [recentGraph(in: graphs)] + graphs.map { JournalCaptureGraph(id: $0.id, name: $0.name) }
+    }
+
+    @MainActor func entities(for identifiers: [String]) async -> [JournalCaptureGraph] {
+        let graphs = await suggestedEntities()
+        return identifiers.compactMap { id in graphs.first { $0.id == id } }
+    }
+
+    @MainActor func defaultResult() async -> JournalCaptureGraph? {
+        recentGraph(in: await LogseqJournalShortcutCapture.availableGraphs())
+    }
+
+    @MainActor private func recentGraph(in graphs: [LogseqJournalShortcutCapture.Graph]) -> JournalCaptureGraph {
+        let name = LogseqJournalShortcutCapture.defaultGraph(in: graphs)?.name
+        return JournalCaptureGraph(id: JournalCaptureGraph.recentID, name: name)
+    }
+}
+
+@available(iOS 17.0, *)
 struct CaptureToJournalIntent: AppIntent {
     static let title: LocalizedStringResource = "Capture to Journal"
     static let description = IntentDescription("Add text to today's Logseq journal.")
@@ -127,12 +169,15 @@ struct CaptureToJournalIntent: AppIntent {
     )
     var text: String
 
+    @Parameter(title: "Graph")
+    var graph: JournalCaptureGraph?
+
     static var parameterSummary: some ParameterSummary {
-        Summary("Capture \(\.$text) to Logseq")
+        Summary("Capture \(\.$text) in \(\.$graph)")
     }
 
     @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
-        try await captureJournalText(text, task: false)
+        try await captureJournalText(text, task: false, graphID: graph?.explicitGraphID)
         return .result(dialog: "Added to today's journal.")
     }
 }
@@ -146,12 +191,15 @@ struct CaptureTaskToJournalIntent: AppIntent {
     @Parameter(title: "Task", requestValueDialog: IntentDialog("What task would you like to capture?"))
     var text: String
 
+    @Parameter(title: "Graph")
+    var graph: JournalCaptureGraph?
+
     static var parameterSummary: some ParameterSummary {
-        Summary("Capture task \(\.$text) to Logseq")
+        Summary("Capture task \(\.$text) in \(\.$graph)")
     }
 
     @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
-        try await captureJournalText(text, task: true)
+        try await captureJournalText(text, task: true, graphID: graph?.explicitGraphID)
         return .result(dialog: "Added a task to today's journal.")
     }
 }
@@ -165,15 +213,15 @@ private enum JournalShortcutError: LocalizedError {
         switch self {
         case .emptyText: String(localized: "Enter some text to capture.")
         case .invalidPhoto: String(localized: "Choose an image to capture.")
-        case .captureFailed: String(localized: "Could not save to the journal. Check that your graph is open and unlocked in Logseq.")
+        case .captureFailed: String(localized: "Could not save to the journal. Choose a downloaded graph that is unlocked in Logseq.")
         }
     }
 }
 
-@MainActor private func captureJournalText(_ text: String, task: Bool) async throws {
+@MainActor private func captureJournalText(_ text: String, task: Bool, graphID: String?) async throws {
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { throw JournalShortcutError.emptyText }
-    guard await LogseqLogseqRuntime.shared.captureShortcutText(text, task: task) else {
+    guard await LogseqJournalShortcutCapture.captureText(text, task: task, graphID: graphID) else {
         throw JournalShortcutError.captureFailed
     }
 }
@@ -199,8 +247,11 @@ struct CapturePhotoToJournalIntent: AppIntent {
     @Parameter(title: "Photo")
     var photo: IntentFile
 
+    @Parameter(title: "Graph")
+    var graph: JournalCaptureGraph?
+
     static var parameterSummary: some ParameterSummary {
-        Summary("Capture photo \(\.$photo) to Logseq")
+        Summary("Capture photo \(\.$photo) in \(\.$graph)")
     }
 
     @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
@@ -213,8 +264,8 @@ struct CapturePhotoToJournalIntent: AppIntent {
         guard let type, type.conforms(to: .image) else { throw JournalShortcutError.invalidPhoto }
         let data = photo.data
         guard !data.isEmpty else { throw JournalShortcutError.invalidPhoto }
-        guard await LogseqLogseqRuntime.shared.captureShortcutPhoto(
-            data, title: title, contentType: type.preferredMIMEType ?? type.identifier
+        guard await LogseqJournalShortcutCapture.capturePhoto(
+            data, title: title, contentType: type.preferredMIMEType ?? type.identifier, graphID: graph?.explicitGraphID
         ) else { throw JournalShortcutError.captureFailed }
         return .result(dialog: "Added a photo to today's journal.")
     }
