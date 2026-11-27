@@ -213,6 +213,7 @@ let sidebar_settings context model_source send : t =
 
 let sidebar_view (context : Lui_ui.ui_context) model_source send ~settings : t =
   let native_sidebar = uses_native_sidebar context in
+  let android_sidebar = Lui_ui.platform context = AndroidOS && Lui_ui.host context = KotlinHost in
   let header =
     if native_sidebar then []
     else if Lui_ui.host context = KotlinHost then [box ~height:8 []]
@@ -272,13 +273,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send ~settings : t =
           ];
       ] in
   let pages =
-    if native_sidebar then pages
-    else if Lui_ui.platform context = AndroidOS && Lui_ui.host context = KotlinHost then
-      box ~grow:1.0 [custom (fun context parent ->
-        let node = Lui_ui.extension context "sidebar-pages" in
-        attach context parent node;
-        ignore (mount context ~parent:node pages);
-        node)]
+    if native_sidebar || android_sidebar then pages
     else scroll ~grow:1.0 ~accessibility_identifier:"scroll.sidebar.pages" [pages] in
   let content =
     let shortcuts = [
@@ -286,7 +281,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send ~settings : t =
         sidebar_graphs_row context model_source send;
         sidebar_flashcards_row context model_source send;
       ] in
-    column ~accessibility_identifier:(if native_sidebar then "sidebar.content" else "sidebar.navigation")
+    column ~accessibility_identifier:(if native_sidebar || android_sidebar then "sidebar.content" else "sidebar.navigation")
       ~grow:1.0 ~gap:(if native_sidebar then 2 else 4) ~padding:(if native_sidebar then 16 else 12)
       (header @ shortcuts @ [pages]) in
   if native_sidebar then
@@ -295,5 +290,12 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send ~settings : t =
           let node = Lui_ui.extension context "native-sidebar" in
           attach context parent node;
           mount_children context node (content :: Option.to_list settings);
+          node)]
+  else if android_sidebar then
+    box ~accessibility_identifier:"sidebar.navigation" ~grow:1.0
+      [custom (fun context parent ->
+          let node = Lui_ui.extension context "sidebar-scroll" in
+          attach context parent node;
+          ignore (mount context ~parent:node content);
           node)]
   else content

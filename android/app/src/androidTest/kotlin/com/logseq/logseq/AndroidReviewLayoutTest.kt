@@ -238,13 +238,21 @@ class AndroidReviewLayoutTest {
             swipeRight(startX = width * 0.08f, endX = width * 0.78f, durationMillis = 350)
         }
         val backdrop = ui.onNodeWithTag("button.sidebar.dismiss").assertIsDisplayed()
+        val home = ui.onNodeWithTag("link.sidebar.home")
+        val settings = ui.onNodeWithTag("button.sidebar.settings")
         val row = ui.onNodeWithTag("link.sidebar.page.recent-0")
         val initialTop = row.getUnclippedBoundsInRoot().top
+        val initialHomeTop = home.getUnclippedBoundsInRoot().top
+        val initialSettings = settings.getUnclippedBoundsInRoot()
         backdrop.performTouchInput {
             swipe(Offset(centerX, height * 0.70f), Offset(centerX, height * 0.35f), durationMillis = 450)
         }
         val scrolledTop = row.getUnclippedBoundsInRoot().top
         assertTrue("Dragging on the backdrop scrolls the sidebar pages", scrolledTop < initialTop - 48.dp)
+        val homeTravel = home.getUnclippedBoundsInRoot().top - initialHomeTop
+        assertTrue("Destinations and pages scroll together",
+            (homeTravel - (scrolledTop - initialTop)) in (-1).dp..1.dp)
+        assertEquals(initialSettings, settings.getUnclippedBoundsInRoot())
         val panelRight = backdrop.fetchSemanticsNode().boundsInRoot.left
         val panelEdge = panelRight - 2f
         ui.onRoot().performTouchInput {
@@ -273,6 +281,56 @@ class AndroidReviewLayoutTest {
         backdrop.assertDoesNotExist()
         ui.onNodeWithTag("button.sidebar").assertIsDisplayed().performClick()
         backdrop.performTouchInput { click(center) }
+        backdrop.assertDoesNotExist()
+        ui.onNodeWithTag("button.sidebar").assertIsDisplayed()
+    }
+
+    @Test fun sidebarStaysClosedAfterAReleasePositionReversal() {
+        app()
+        ui.onNodeWithTag("button.sidebar").performClick()
+        val backdrop = ui.onNodeWithTag("button.sidebar.dismiss").assertIsDisplayed()
+        val panelWidth = backdrop.fetchSemanticsNode().boundsInRoot.left
+        ui.onRoot().performTouchInput {
+            val start = width * 0.96f
+            val halfway = start - panelWidth / 2
+            down(Offset(start, centerY))
+            moveTo(Offset(halfway - 3f, centerY), delayMillis = 80)
+            moveTo(Offset(halfway + 1f, centerY), delayMillis = 12)
+            up()
+        }
+        backdrop.assertDoesNotExist()
+        ui.onNodeWithTag("button.sidebar").assertIsDisplayed().performClick()
+        backdrop.assertIsDisplayed()
+        ui.onRoot().performTouchInput {
+            val start = width * 0.96f
+            down(Offset(start, centerY))
+            moveTo(Offset(start - panelWidth * 0.65f, centerY), delayMillis = 80)
+            moveTo(Offset(start - panelWidth * 0.30f, centerY), delayMillis = 140)
+            up()
+        }
+        backdrop.assertIsDisplayed()
+    }
+
+    @Test fun sidebarKeepsClosingWhenATouchInterruptsTheSwipePastHalfway() {
+        app()
+        ui.onNodeWithTag("button.sidebar").performClick()
+        val backdrop = ui.onNodeWithTag("button.sidebar.dismiss").assertIsDisplayed()
+        ui.onRoot().performTouchInput {
+            down(Offset(width * 0.96f, centerY))
+            moveTo(Offset(width * 0.48f, centerY), delayMillis = 80)
+            down(1, Offset(width * 0.75f, centerY))
+            up(1)
+            up()
+        }
+        backdrop.assertDoesNotExist()
+        ui.onNodeWithTag("button.sidebar").assertIsDisplayed().performClick()
+        backdrop.assertIsDisplayed()
+        ui.onRoot().performTouchInput {
+            down(Offset(width * 0.96f, centerY))
+            moveTo(Offset(width * 0.06f, centerY), delayMillis = 80)
+        }
+        backdrop.assertDoesNotExist()
+        ui.onRoot().performTouchInput { cancel() }
         backdrop.assertDoesNotExist()
         ui.onNodeWithTag("button.sidebar").assertIsDisplayed()
     }

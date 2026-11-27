@@ -73,7 +73,7 @@ import kotlin.math.pow
 import kotlin.math.sqrt
 
 internal val LocalSidebarBlocksMain = compositionLocalOf { false }
-private val LocalSidebarPagesScroll = compositionLocalOf<ScrollState?> { null }
+private val LocalSidebarScroll = compositionLocalOf<ScrollState?> { null }
 
 internal fun LuiExtensionRegistry.registerSidebarOverlay() {
     register(
@@ -94,11 +94,11 @@ internal fun LuiExtensionRegistry.registerSidebarOverlay() {
         events = listOf(LuiExtensionEventSchema("open"), LuiExtensionEventSchema("close")),
     ) { SidebarOverlay(this) }
     register(
-        "sidebar-pages",
-        "lui-extension-v1|13:sidebar-pages|profiles:android/kotlin|standard-children:1|children:|properties:|events:",
+        "sidebar-scroll",
+        "lui-extension-v1|14:sidebar-scroll|profiles:android/kotlin|standard-children:1|children:|properties:|events:",
         acceptsStandardChildren = true,
     ) {
-        val scroll = LocalSidebarPagesScroll.current ?: rememberScrollState()
+        val scroll = LocalSidebarScroll.current ?: rememberScrollState()
         Box(Modifier.fillMaxSize().testTag("scroll.sidebar.pages").verticalScroll(scroll)) { Children() }
     }
 }
@@ -113,15 +113,15 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
     val dismissLabel = context.string("dismiss-label").orEmpty()
     val scope = rememberCoroutineScope()
     val motion = remember { SidebarMotion(open, scope) }
-    val pagesScroll = rememberScrollState()
+    val sidebarScroll = rememberScrollState()
     val view = LocalView.current
     val latestOpen by rememberUpdatedState(open)
     val latestCanOpen by rememberUpdatedState(canOpen)
     val latestContext by rememberUpdatedState(context)
-    val select: (Boolean) -> Unit = { value ->
+    val select: (Boolean, Float) -> Unit = { value, velocity ->
         val next = value && (latestCanOpen || latestOpen)
         if (next != latestOpen) latestContext.emit(if (next) "open" else "close")
-        motion.settle(next)
+        motion.settle(next, velocity)
     }
     val latestSelect by rememberUpdatedState(select)
     LaunchedEffect(open) {
@@ -136,8 +136,9 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
     val dark = LocalLuiThemeDark.current ?: androidx.compose.foundation.isSystemInDarkTheme()
     val supportsBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val blocksMain by remember(open) { derivedStateOf { open || motion.progress > 0.001f } }
-    val panelInteractive by remember(open) { derivedStateOf { open && motion.progress > 0.95f } }
-    BackHandler(enabled = blocksMain) { select(false) }
+    // Change the input tree with the target state so it stays stable during the spring.
+    val panelInteractive = open
+    BackHandler(enabled = blocksMain) { select(false, 0f) }
 
     BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().testTag("application.shell")) {
         val width = minOf((context.int("width") ?: 320).dp, maxWidth * 0.80f)
@@ -160,10 +161,10 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
             Modifier.fillMaxSize()
                 .sidebarPan(
                     motion, widthPx, direction,
-                    { latestCanOpen }, { latestOpen }, { latestSelect(it) },
+                    { latestCanOpen }, { latestOpen }, { value, velocity -> latestSelect(value, velocity) },
                 )
-                // Drags on the backdrop and the panel's padding scroll the same list as drags on its rows.
-                .scrollable(pagesScroll, Orientation.Vertical, enabled = open, reverseDirection = true),
+                // Drags on the backdrop and Settings use the same viewport as drags on the panel.
+                .scrollable(sidebarScroll, Orientation.Vertical, enabled = open, reverseDirection = true),
         ) {
             CompositionLocalProvider(
                 LocalLuiScrollingEnabled provides !blocksMain,
@@ -189,7 +190,7 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
                 Box(Modifier.matchParentSize().padding(start = width)
                     // Cancel a pending click even when a horizontal drag stays within the backdrop.
                     .draggable(rememberDraggableState {}, Orientation.Horizontal)
-                    .clickable(interactionSource = null, indication = null, role = Role.Button) { select(false) }
+                    .clickable(interactionSource = null, indication = null, role = Role.Button) { select(false, 0f) }
                     .testTag("button.sidebar.dismiss").semantics {
                         contentDescription = dismissLabel
                         if (!open) hideFromAccessibility()
@@ -212,7 +213,7 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
                         onSecondaryContainer = colors.onSurface,
                     )) {
                         Box(Modifier.width(width).fillMaxHeight()) {
-                            CompositionLocalProvider(LocalSidebarPagesScroll provides pagesScroll) {
+                            CompositionLocalProvider(LocalSidebarScroll provides sidebarScroll) {
                                 context.child(panel)
                             }
                             if (!panelInteractive) SidebarHitShield(Modifier.matchParentSize())
@@ -233,6 +234,13 @@ private fun SidebarHitShield(modifier: Modifier) {
     // Win sibling hit testing without claiming the parent pan's pointer events.
     Box(modifier.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } })
 }
+
+// SwiftUI Spring(duration: 0.30, bounce: 0), with a unit mass.
+private const val SIDEBAR_SPRING_STIFFNESS = 438.65f
+private val sidebarSpring = spring<Float>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = SIDEBAR_SPRING_STIFFNESS,
+)
 
 private class SidebarMotion(open: Boolean, private val scope: CoroutineScope) {
     var progress by mutableFloatStateOf(if (open) 1f else 0f)
@@ -259,29 +267,36 @@ private class SidebarMotion(open: Boolean, private val scope: CoroutineScope) {
         }
     }
 
-    fun settle(open: Boolean) {
+    fun settle(open: Boolean, velocity: Float = 0f) {
         val destination = if (open) 1f else 0f
         if (target == destination) return
         animation?.cancel()
         target = destination
         if (open) hasOpened = true
-        if (progress == destination) return
+        val remaining = destination - progress
+        if (remaining == 0f) return
+        // Stay within the velocity that reaches the target monotonically at critical damping.
+        val velocityLimit = remaining * sqrt(SIDEBAR_SPRING_STIFFNESS)
+        val initialVelocity = velocity.coerceIn(minOf(0f, velocityLimit), maxOf(0f, velocityLimit))
         animation = scope.launch {
             animate(
                 initialValue = progress,
                 targetValue = destination,
-                // SwiftUI Spring(duration: 0.30, bounce: 0), with a unit mass.
-                animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 438.65f),
+                initialVelocity = initialVelocity,
+                animationSpec = sidebarSpring,
             ) { value, _ -> progress = value.coerceIn(0f, 1f) }
         }
     }
 }
 
+private const val SIDEBAR_SETTLE_POINT = 0.5f
+
 internal fun sidebarSettlesOpen(position: Float, velocity: Float, revealed: Float, opening: Boolean): Boolean {
     // A small reversal at lift-off can't reopen a panel dragged past its closing threshold.
     val projectedVelocity = if (opening) velocity else minOf(velocity, 0f)
     // A sparse touch stream can drop the fling estimate even after the panel visibly opened.
-    return position + projectedVelocity * 0.16f >= 0.5f || (opening && revealed >= 0.75f && velocity >= -0.5f)
+    return position + projectedVelocity * 0.16f >= SIDEBAR_SETTLE_POINT ||
+        (opening && revealed >= 0.75f && velocity >= -0.5f)
 }
 
 private fun Modifier.sidebarPan(
@@ -290,7 +305,7 @@ private fun Modifier.sidebarPan(
     direction: Float,
     canOpen: () -> Boolean,
     isOpen: () -> Boolean,
-    select: (Boolean) -> Unit,
+    select: (Boolean, Float) -> Unit,
 ): Modifier = pointerInput(motion, width, direction) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
@@ -303,11 +318,18 @@ private fun Modifier.sidebarPan(
         velocity.addPosition(down.uptimeMillis, down.position)
         var start: Float? = null
         var lastMoveTime = down.uptimeMillis
+        var leastRevealed = 1f
+        val reversalSlop = viewConfiguration.touchSlop / width
+        fun releasePosition(position: Float): Float {
+            if (!startsOpen || position - leastRevealed > reversalSlop) return position
+            return minOf(position, leastRevealed)
+        }
         try {
             while (true) {
                 val event = awaitPointerEvent(pass)
                 if (event.changes.count { it.pressed } > 1) break
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                if (change.isConsumed || isOpen() != startsOpen) break
                 val travel = change.position - down.position
                 val horizontal = travel.x * direction
                 val fraction = horizontal / width
@@ -319,16 +341,18 @@ private fun Modifier.sidebarPan(
                             velocity.calculateVelocity().x * direction / width
                         } else 0f
                         start = null
-                        select(sidebarSettlesOpen(initial + fraction, speed, motion.progress, opening = !startsOpen))
+                        val settleOpen = sidebarSettlesOpen(
+                            releasePosition(initial + fraction), speed, motion.progress, opening = !startsOpen,
+                        )
+                        select(settleOpen, speed)
                     }
                     break
                 }
-                if (change.isConsumed) break
                 velocity.addPosition(change.uptimeMillis, change.position)
                 lastMoveTime = change.uptimeMillis
                 if (start == null) {
                     if (travel.getDistance() < viewConfiguration.touchSlop) continue
-                    if (isOpen() != startsOpen || abs(horizontal) <= 2f * abs(travel.y)) break
+                    if (abs(horizontal) <= 2f * abs(travel.y)) break
                     val canDrag = if (startsOpen) {
                         horizontal < 0f && motion.progress > 0.01f
                     } else {
@@ -339,9 +363,23 @@ private fun Modifier.sidebarPan(
                 }
                 motion.drag(checkNotNull(start), fraction)
                 change.consume()
+                leastRevealed = minOf(leastRevealed, motion.progress)
+                if (startsOpen && motion.progress == 0f) {
+                    // The panel has cleared the viewport. Finish this swipe before the touch can be lost.
+                    start = null
+                    select(false, 0f)
+                    break
+                }
             }
         } finally {
-            if (start != null) motion.settle(isOpen())
+            if (start != null) {
+                val open = isOpen()
+                if (startsOpen && open && releasePosition(motion.progress) < SIDEBAR_SETTLE_POINT) {
+                    select(false, 0f)
+                } else {
+                    motion.settle(open)
+                }
+            }
         }
     }
 }

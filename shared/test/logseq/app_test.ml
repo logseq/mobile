@@ -5554,7 +5554,11 @@ let kotlin_sidebar_uses_compact_material_drawer_metrics () =
   let sidebar =
     descendant_with_identifier renderer drawer "sidebar.navigation"
   in
-  let top_spacer = List.nth (children renderer sidebar) 0 in
+  let viewport = extension_node application "sidebar-scroll" in
+  let content = descendant_with_identifier renderer sidebar "sidebar.content" in
+  let top_spacer = List.hd (children renderer content) in
+  check_eq ~msg:"Android places the sidebar destinations and page sections in one viewport"
+    (children renderer viewport) [content];
   check_eq ~msg:"the Android drawer leaves meaningful content visible"
     (property_int renderer drawer Lui_protocol.WidthValue)
     320;
