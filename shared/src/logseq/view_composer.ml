@@ -76,29 +76,36 @@ let composer_asset_preview (context : Lui_ui.ui_context) asset_source : t =
         text ~value:title ~style_class:"caption line-clamp-3" [] ]
 
 let composer_asset_view model_source (context : Lui_ui.ui_context) asset_source send : t =
-  let asset = Signal.sample asset_source in
+  let asset : Model.composer_asset = Signal.sample asset_source in
+  let label = View_base.tr (Signal.sample model_source) "Remove attachment" in
+  let remove () =
+    ignore (send (Model.RemoveComposerAsset (Signal.sample asset_source).uuid)) in
+  let preview = composer_asset_preview context asset_source in
+  let contents =
+    if uses_ios_composer_controls context then [
+      custom (fun context parent ->
+        let node = Lui_ui.extension context "composer-attachment-remove" in
+        Lui_ui.extension_property context node "label" (StringValue label);
+        Lui_ui.on_event context node (function
+          | ExtensionEvent (_, _, "remove", _) -> remove ()
+          | _ -> ());
+        ignore (mount context ~parent:node preview);
+        attach context parent node;
+        node);
+    ] else [
+      preview;
+      column ~width:128 ~height:128 ~padding:4 ~main:`start [
+        row ~main:`end_ ~height:24 [
+          icon_button ~icon:(`app "close") ~variant:`ghost ~size:`sm ~width:24
+            ~height:24 ~corner_radius:12 ~background:"muted-foreground" ~foreground:"white" ~label
+            ~accessibility_identifier:"composer.asset.remove" ~on_press:remove [];
+        ];
+        spacer ~grow:1.0 [];
+      ];
+    ] in
   stack ~width:128 ~height:128
     ~accessibility_identifier:(View_base.composer_asset_identifier asset)
-    [
-      composer_asset_preview context asset_source;
-      column ~width:128 ~height:128 ~padding:4 ~main:`start
-        [
-          row ~main:`end_ ~height:24
-            [
-              icon_button ~icon:(`app "close") ~variant:`ghost ~size:`sm ~width:24
-                ~height:24 ~corner_radius:12 ~background:"muted-foreground"
-                ~foreground:"white" ~label:(View_base.tr (Signal.sample model_source) "Remove attachment")
-                ~accessibility_identifier:"composer.asset.remove"
-                ~on_press:(fun _ ->
-                  ignore
-                    (send
-                       (Model.RemoveComposerAsset
-                          (Signal.sample asset_source).uuid)))
-                [];
-            ];
-          spacer ~grow:1.0 [];
-        ];
-    ]
+    contents
 
 let task_status_row model_source status_source send =
   let status = Signal.sample status_source in

@@ -1579,6 +1579,7 @@ let valid_base_url_ value =
 
 let valid_attachment_kind_ kind =
   kind = "files" || kind = "camera" || kind = "photos" || kind = "audio"
+  || kind = "quick-photos"
 
 let indexed_outliner_autocomplete_candidates candidates =
   List.mapi

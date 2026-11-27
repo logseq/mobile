@@ -2,6 +2,12 @@ appId: com.logseq.logseq
 ---
 - assertVisible:
     id: button.composer.expand
+- longPressOn:
+    id: button.composer.expand
+- assertVisible: All Photos
+- tapOn: Cancel
+- assertVisible:
+    id: button.composer.expand
 - assertVisible:
     id: button.graph-switch
 - takeScreenshot: native-graph-header

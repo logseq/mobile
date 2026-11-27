@@ -472,10 +472,14 @@ let extension_registry () =
       [property "selection-active" BoolScalar true None] []);
   Lui_extension.register_component registry (let open Lui_protocol in
     let open Lui_extension in
+    component "composer-attachment-remove" [profile IOS SwiftUIHost] true []
+      [property "label" StringScalar true None] [event "remove" []]);
+  Lui_extension.register_component registry (let open Lui_protocol in
+    let open Lui_extension in
     component "bottom-tab-strip" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost] true []
       [property "inset" IntScalar true None; property "selected-index" IntScalar true None;
        property "items" StringScalar true None; property "cell-width" IntScalar true None]
-      [event "select" [event_field "index" IntScalar true]; event "home-double-tap" []]);
+      [event "select" [event_field "index" IntScalar true]]);
   Lui_extension.register_component registry
     (Lui_extension.component "native-flashcards-toolbar"
        [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]

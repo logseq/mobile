@@ -263,7 +263,7 @@ fun logseqExtensionRegistry(
     registerOutlinerBlockRow(resolveAssetPath, youtubeStarts, onOpenImage, loadImage)
     register(
         "bottom-tab-strip",
-        "lui-extension-v1|16:bottom-tab-strip|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:cell-width:int:required:none,14:selected-index:int:required:none,5:inset:int:required:none,5:items:string:required:none|events:15:home-double-tap[],6:select[5:index:int:required]",
+        "lui-extension-v1|16:bottom-tab-strip|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:cell-width:int:required:none,14:selected-index:int:required:none,5:inset:int:required:none,5:items:string:required:none|events:6:select[5:index:int:required]",
         acceptsStandardChildren = true,
         properties = listOf(
             LuiExtensionProperty("cell-width", LuiExtensionValueKind.INTEGER, required = true),
@@ -272,7 +272,6 @@ fun logseqExtensionRegistry(
             LuiExtensionProperty("items", LuiExtensionValueKind.STRING, required = true),
         ),
         events = listOf(
-            LuiExtensionEventSchema("home-double-tap", emptyList()),
             LuiExtensionEventSchema("select", listOf(LuiExtensionProperty("index", LuiExtensionValueKind.INTEGER, required = true))),
         ),
     ) {

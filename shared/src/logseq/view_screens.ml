@@ -197,10 +197,11 @@ let bottom_tab_row ~android ~tab_width ~action_width model_source send : t =
     if name = "notifications" then View_collaboration.notification_label current else View_base.tr current title in
   let navigate destination action =
     let current : Model.logseq_model = Signal.sample model_source in
-    if android && destination = Model.JournalsDestination then
+    let home = destination = Model.JournalsDestination in
+    let at_root = current.destination = destination && current.app_navigation_path = [] in
+    if home && (android || (at_root && current.selected_page = None)) then
       ignore (send Model.ScrollHomeToTop)
-    else if current.destination <> destination || current.app_navigation_path <> []
-       || (destination = Model.JournalsDestination && current.selected_page <> None)
+    else if not at_root || (home && current.selected_page <> None)
     then ignore (send action) in
   let tab (destination, title, name, image, selected_image, action) =
     let selected = Signal.map (fun (current : Model.logseq_model) -> current.destination = destination) model_source in
@@ -224,11 +225,11 @@ let bottom_tab_row ~android ~tab_width ~action_width model_source send : t =
       ~label:(label current) ~accessibility_identifier:("tab.bottom." ^ name)
       ~on_press
       []) in
-  let action image title identifier event =
+  let action ?on_long_press image title identifier event =
     icon_button ~icon:(`app image) ~variant:`ghost ~size:`icon ~width:action_width ~height:cell
       ~foreground:"foreground"
       ~label:(View_base.tr current title) ~accessibility_identifier:identifier
-      ~on_press:(press send event) [] in
+      ~on_press:(press send event) ?on_long_press [] in
   let group name width children =
     row ~width:(List.length children * width + 2 * inset)
          ~padding:inset ~gap:0 ~cross:`center
@@ -262,15 +263,14 @@ let bottom_tab_row ~android ~tab_width ~action_width model_source send : t =
            Option.iter (fun (destination, _, _, _, _, action) -> navigate destination action)
              (List.nth_opt destinations index)
          | _ -> ())
-      | ExtensionEvent (_, _, "home-double-tap", _) ->
-        ignore (send Model.ScrollHomeToTop)
       | _ -> ());
     ignore (mount context ~parent:node (group "tabs" tab_width (List.map tab destinations)));
     attach context parent node;
     node) in
   let actions = group "actions" action_width [
     action "bottom-search" "Search" "button.search" Model.OpenSearch;
-    action "capture-circle" "Capture" "button.composer.expand" Model.ExpandComposer;
+    action "capture-circle" "Capture" "button.composer.expand" Model.ExpandComposer
+      ?on_long_press:(if android then None else Some (press send (Model.ChooseAttachment "quick-photos")));
   ] in
   let actions =
     if android then box ~background:"glass" ~border_width:1 ~border_color:"border" ~corner_radius:29 [actions]

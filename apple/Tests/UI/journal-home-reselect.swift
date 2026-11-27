@@ -1,5 +1,5 @@
 // Run with run-simulator-runtime-check.py in --interactive mode and an empty
-// fixture directory, then run journal-home-double-tap.yaml on that simulator.
+// fixture directory, then run journal-home-reselect.yaml on that simulator.
 import SwiftUI
 @testable import Logseq
 
@@ -9,7 +9,7 @@ import SwiftUI
     }
 }
 
-@main struct JournalHomeDoubleTapFixture: App {
+@main struct JournalHomeReselectFixture: App {
     private let runtime = LGRuntime(native: LGCoreNativeCaller(), effectExecutor: JournalHomeTapEffects())
 
     init() {

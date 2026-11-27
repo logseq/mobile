@@ -19,7 +19,7 @@ struct LGBottomTabStrip: View {
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(LUIAppleExtension(
             identifier: "bottom-tab-strip",
-            fingerprint: "lui-extension-v1|16:bottom-tab-strip|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:cell-width:int:required:none,14:selected-index:int:required:none,5:inset:int:required:none,5:items:string:required:none|events:15:home-double-tap[],6:select[5:index:int:required]",
+            fingerprint: "lui-extension-v1|16:bottom-tab-strip|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:cell-width:int:required:none,14:selected-index:int:required:none,5:inset:int:required:none,5:items:string:required:none|events:6:select[5:index:int:required]",
             acceptsStandardChildren: true,
             properties: [
                 .init(name: "selected-index", kind: .int, isRequired: true),
@@ -29,7 +29,6 @@ struct LGBottomTabStrip: View {
             ],
             events: [
                 .init(name: "select", fields: [.init(name: "index", kind: .int, isRequired: true)]),
-                .init(name: "home-double-tap", fields: []),
             ]
         ) { AnyView(LGBottomTabStrip(context: $0)) })
     }
@@ -42,7 +41,7 @@ struct LGBottomTabStrip: View {
             LGNativeBottomTabBar(
                 items: items, selectedIndex: selectedIndex,
                 tint: colors["link"], foreground: colors["foreground"], layoutDirection: layoutDirection,
-                horizontalMargin: horizontalMargin, context: context
+                context: context
             )
             // UITabBar reserves horizontal margins around its floating capsule.
             .frame(width: CGFloat(items.count) * tabWidth + inset * 2 + 2 * horizontalMargin, height: 58)
@@ -80,11 +79,6 @@ struct LGBottomTabStrip: View {
             .onGeometryChange(for: CGSize.self, of: \.size) { size = $0 }
             .contentShape(Capsule())
             .highPriorityGesture(tabDrag(count: count, cellWidth: cellWidth, inset: inset))
-            .simultaneousGesture(SpatialTapGesture(count: 2).onEnded { tap in
-                guard cellWidth > 0, horizontalPosition(tap.location.x) < inset + cellWidth,
-                      context.isUserInteractionEnabled else { return }
-                try? context.emit(name: "home-double-tap")
-            })
             .onChange(of: selected) { pendingSelection = nil }
             #if os(iOS)
             .background(LGSidebarPanExclusion())
@@ -206,22 +200,15 @@ private struct LGNativeBottomTabBar: UIViewRepresentable {
     let tint: Color?
     let foreground: Color?
     let layoutDirection: LayoutDirection
-    let horizontalMargin: CGFloat
     let context: LUIAppleExtensionViewContext
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(context: context, horizontalMargin: horizontalMargin)
+        Coordinator(context: context)
     }
 
     func makeUIView(context: Context) -> UITabBar {
         let bar = UITabBar()
         bar.delegate = context.coordinator
-        let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.doubleTapHome))
-        doubleTap.numberOfTapsRequired = 2
-        doubleTap.cancelsTouchesInView = false
-        doubleTap.delaysTouchesEnded = false
-        doubleTap.delegate = context.coordinator
-        bar.addGestureRecognizer(doubleTap)
         return bar
     }
 
@@ -254,16 +241,14 @@ private struct LGNativeBottomTabBar: UIViewRepresentable {
         bar.semanticContentAttribute = layoutDirection == .rightToLeft ? .forceRightToLeft : .forceLeftToRight
     }
 
-    @MainActor final class Coordinator: NSObject, UITabBarDelegate, UIGestureRecognizerDelegate {
+    @MainActor final class Coordinator: NSObject, UITabBarDelegate {
         var context: LUIAppleExtensionViewContext
         var items: [Item] = []
         var unreadColors: [UIColor] = []
         var selectedIndex: Int?
-        let horizontalMargin: CGFloat
 
-        init(context: LUIAppleExtensionViewContext, horizontalMargin: CGFloat) {
+        init(context: LUIAppleExtensionViewContext) {
             self.context = context
-            self.horizontalMargin = horizontalMargin
         }
 
         func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
@@ -272,24 +257,6 @@ private struct LGNativeBottomTabBar: UIViewRepresentable {
             } else {
                 tabBar.selectedItem = tabBar.items?.first(where: { $0.tag == selectedIndex })
             }
-        }
-
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            guard let bar = gestureRecognizer.view as? UITabBar, items.first?.name == "home" else { return false }
-            let x = touch.location(in: bar).x
-            let leadingX = bar.effectiveUserInterfaceLayoutDirection == .rightToLeft ? bar.bounds.width - x : x
-            let itemWidth = (bar.bounds.width - 2 * horizontalMargin) / CGFloat(items.count)
-            return leadingX >= horizontalMargin && leadingX < horizontalMargin + itemWidth
-        }
-
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
-                               shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-            true
-        }
-
-        @objc func doubleTapHome() {
-            guard context.isUserInteractionEnabled else { return }
-            try? context.emit(name: "home-double-tap")
         }
     }
 }

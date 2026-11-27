@@ -83,10 +83,10 @@ import UIKit
             scroll.setContentOffset(CGPoint(x: 0, y: scroll.contentSize.height * fraction), animated: false)
             try await Task.sleep(for: .milliseconds(400))
             let halfway = scroll.contentOffset.y / 2
-            try backend.performExtensionEvent(node: strip, name: "home-double-tap", values: [:])
-            try await wait("Double-tapping Home must jump directly to the top") { scroll.contentOffset.y < halfway }
+            try backend.performExtensionEvent(node: strip, name: "select", values: ["index": .int(0)])
+            try await wait("Reselecting Home must jump directly to the top") { scroll.contentOffset.y < halfway }
             guard scroll.contentOffset.y <= -scroll.adjustedContentInset.top + 1 else {
-                throw failure("Double-tapping Home moved through an intermediate position")
+                throw failure("Reselecting Home moved through an intermediate position")
             }
             try await wait("Home must mount the first block before returning to the top") {
                 views(window).compactMap { $0 as? UILabel }.contains { label in
@@ -94,7 +94,7 @@ import UIKit
                 }
             }
         }
-        print("PASS: repeated Home double-taps jump directly to the first journal block, and status-bar returns retain their platform behavior")
+        print("PASS: repeated Home taps jump directly to the first journal block, and status-bar returns retain their platform behavior")
     }
 
     @MainActor private static func delegateContract() throws {

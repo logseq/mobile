@@ -1,10 +1,81 @@
 #if os(iOS)
 import AVFoundation
-import PhotosUI
+@preconcurrency import PhotosUI
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 import ImageIO
+
+struct LGQuickPhotoPicker: View {
+    let onPhoto: (Data, String) async throws -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var selection: [PhotosPickerItem] = []
+    @State private var showAllPhotos = false
+    @State private var isImporting = false
+    @State private var importError: String?
+    @State private var pickerID = UUID()
+
+    var body: some View {
+        VStack(spacing: 4) {
+            HStack {
+                Button(role: .cancel) { dismiss() } label: {
+                    Text("Cancel").frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                Spacer()
+                if isImporting {
+                    ProgressView()
+                }
+                Spacer()
+                Button { showAllPhotos = true } label: {
+                    Text("All Photos").frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .photosPicker(isPresented: $showAllPhotos, selection: $selection,
+                              maxSelectionCount: 1, matching: .images)
+            }
+            .padding(.horizontal, 20)
+            LGEmbeddedPhotos(importedIDs: [], compact: true) { results in
+                guard let photo = results.first else { return }
+                importPhoto { try await loadEmbeddedPhoto(photo) }
+            }
+                .id(pickerID)
+                .frame(height: 104)
+                .clipShape(.rect(cornerRadius: 14))
+                .padding(.horizontal, 12)
+        }
+        .frame(maxHeight: .infinity)
+        .disabled(isImporting)
+        .interactiveDismissDisabled(isImporting)
+        .onChange(of: selection) { _, items in
+            guard let item = items.first else { return }
+            importPhoto { try await item.loadImageForAttachment() }
+        }
+        .alert("Photo import failed", isPresented: Binding(
+            get: { importError != nil }, set: { if !$0 { importError = nil } }
+        )) {
+            Button("OK") { importError = nil }
+        } message: {
+            Text(importError ?? "")
+        }
+    }
+
+    private func importPhoto(load: @escaping () async throws -> (Data, String)) {
+        guard !isImporting else { return }
+        isImporting = true
+        Task {
+            do {
+                let (data, fileExtension) = try await load()
+                try await onPhoto(data, fileExtension)
+            } catch {
+                selection = []
+                pickerID = UUID()
+                importError = error.localizedDescription
+            }
+            isImporting = false
+        }
+    }
+}
 
 struct LGMediaPanel: View {
     let initialService: LGAttachmentService
@@ -137,21 +208,8 @@ struct LGMediaPanel: View {
         Task { @MainActor in
             for photo in photos {
                 do {
-                    let provider = photo.itemProvider
-                    guard let type = provider.registeredTypeIdentifiers.compactMap(UTType.init)
-                        .first(where: { $0.conforms(to: .image) }) else {
-                        throw CocoaError(.fileReadUnknown)
-                    }
-                    let data: Data = try await withCheckedThrowingContinuation { continuation in
-                        provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, error in
-                            if let data { continuation.resume(returning: data) }
-                            else { continuation.resume(throwing: error ?? CocoaError(.fileReadUnknown)) }
-                        }
-                    }
-                    let imageType = CGImageSourceCreateWithData(data as CFData, nil)
-                        .flatMap(CGImageSourceGetType).flatMap { UTType($0 as String) }
-                    onPhotoData(data, imageType?.preferredFilenameExtension
-                                ?? type.preferredFilenameExtension ?? "jpg")
+                    let (data, fileExtension) = try await loadEmbeddedPhoto(photo)
+                    onPhotoData(data, fileExtension)
                     if let id = photo.assetIdentifier { importedPhotoIDs.insert(id) }
                     selectedPhotos.removeAll { $0.assetIdentifier == photo.assetIdentifier }
                 } catch {
@@ -179,13 +237,31 @@ struct LGMediaPanel: View {
 
 }
 
+@MainActor private func loadEmbeddedPhoto(_ photo: PHPickerResult) async throws -> (Data, String) {
+    let provider = photo.itemProvider
+    guard let type = provider.registeredTypeIdentifiers.compactMap(UTType.init)
+        .first(where: { $0.conforms(to: .image) }) else {
+        throw CocoaError(.fileReadUnknown)
+    }
+    let data: Data = try await withCheckedThrowingContinuation { continuation in
+        provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, error in
+            if let data { continuation.resume(returning: data) }
+            else { continuation.resume(throwing: error ?? CocoaError(.fileReadUnknown)) }
+        }
+    }
+    let imageType = CGImageSourceCreateWithData(data as CFData, nil)
+        .flatMap(CGImageSourceGetType).flatMap { UTType($0 as String) }
+    return (data, imageType?.preferredFilenameExtension ?? type.preferredFilenameExtension ?? "jpg")
+}
+
 // Isolate the embedded picker from the surrounding SwiftUI sheet's presentation traits.
 private struct LGEmbeddedPhotos: UIViewControllerRepresentable {
     let importedIDs: Set<String>
+    var compact = false
     let onSelection: ([PHPickerResult]) -> Void
 
     func makeUIViewController(context: Context) -> Container {
-        Container(onSelection: onSelection)
+        Container(compact: compact, onSelection: onSelection)
     }
 
     func updateUIViewController(_ controller: Container, context: Context) {
@@ -193,11 +269,13 @@ private struct LGEmbeddedPhotos: UIViewControllerRepresentable {
     }
 
     final class Container: UIViewController, PHPickerViewControllerDelegate {
+        let compact: Bool
         let onSelection: ([PHPickerResult]) -> Void
         private var picker: PHPickerViewController?
         private var importedIDs: Set<String> = []
 
-        init(onSelection: @escaping ([PHPickerResult]) -> Void) {
+        init(compact: Bool, onSelection: @escaping ([PHPickerResult]) -> Void) {
+            self.compact = compact
             self.onSelection = onSelection
             super.init(nibName: nil, bundle: nil)
         }
@@ -208,8 +286,9 @@ private struct LGEmbeddedPhotos: UIViewControllerRepresentable {
             super.viewDidLoad()
             var configuration = PHPickerConfiguration(photoLibrary: .shared())
             configuration.filter = .images
-            configuration.selectionLimit = 20
-            configuration.selection = .continuousAndOrdered
+            configuration.selectionLimit = compact ? 1 : 20
+            configuration.selection = compact ? .continuous : .continuousAndOrdered
+            configuration.mode = compact ? .compact : .default
             configuration.edgesWithoutContentMargins = .all
             configuration.disabledCapabilities = [.selectionActions]
             let picker = PHPickerViewController(configuration: configuration)
@@ -225,7 +304,7 @@ private struct LGEmbeddedPhotos: UIViewControllerRepresentable {
                 picker.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             ])
             picker.didMove(toParent: self)
-            picker.zoomIn()
+            if !compact { picker.zoomIn() }
         }
 
         func deselectImported(_ identifiers: Set<String>) {
