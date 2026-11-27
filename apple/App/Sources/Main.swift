@@ -204,11 +204,18 @@ private enum JournalShortcutError: LocalizedError {
 @available(iOS 17.0, *)
 struct TakePictureIntent: AppIntent {
     static let title: LocalizedStringResource = "Take Picture"
-    static let description = IntentDescription("Open the camera in the Logseq journal composer.")
+    static let description = IntentDescription("Take a photo and automatically save it to today's Logseq journal.")
     static let openAppWhenRun = true
 
+    @Parameter(title: "Graph", optionsProvider: JournalCaptureGraphOptions())
+    var graph: String
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Take a picture in \(\.$graph)")
+    }
+
     @MainActor func perform() async throws -> some IntentResult {
-        LogseqLogseqRuntime.shared.acceptSharedCaptureURL(URL(string: "logseq://camera")!)
+        try await openJournalCamera(graph: graph)
         return .result()
     }
 }
@@ -216,20 +223,41 @@ struct TakePictureIntent: AppIntent {
 @available(iOS 17.0, *)
 struct CapturePhotoToJournalIntent: AppIntent {
     static let title: LocalizedStringResource = "Capture Photo to Journal"
-    static let description = IntentDescription("Save a photo to today's Logseq journal. Use after Take Photo in Shortcuts.")
+    static let description = IntentDescription("Take a photo or save a supplied image to today's Logseq journal.")
     static let openAppWhenRun = false
+    #if compiler(>=6.2)
+    @available(iOS 26.0, *)
+    static let supportedModes: IntentModes = [.background, .foreground(.dynamic)]
+    #endif
 
     @Parameter(title: "Photo")
-    var photo: IntentFile
+    var photo: IntentFile?
 
     @Parameter(title: "Graph", optionsProvider: JournalCaptureGraphOptions())
     var graph: String
 
     static var parameterSummary: some ParameterSummary {
-        Summary("Capture photo \(\.$photo) in \(\.$graph)")
+        Summary("Capture photo in \(\.$graph)") {
+            \.$photo
+        }
     }
 
     @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard let photo else {
+            #if compiler(>=6.2)
+            if #available(iOS 26.0, *) {
+                try await continueInForeground(alwaysConfirm: false)
+            } else {
+                try await requestToContinueInForeground()
+            }
+            #else
+            try await requestToContinueInForeground()
+            #endif
+            try await openJournalCamera(graph: graph)
+            var result = IntentResultContainer<Never, Never, Never, IntentDialog>.result(dialog: "")
+            result.dialog = nil
+            return result
+        }
         let title = URL(fileURLWithPath: photo.filename).lastPathComponent
         let type = if let type = photo.type, type.conforms(to: .image) {
             type
@@ -245,6 +273,14 @@ struct CapturePhotoToJournalIntent: AppIntent {
         ) else { throw JournalShortcutError.captureFailed }
         return .result(dialog: "Added a photo to today's journal.")
     }
+}
+
+extension CapturePhotoToJournalIntent: ForegroundContinuableIntent {}
+
+@MainActor private func openJournalCamera(graph: String) async throws {
+    guard await LogseqJournalShortcutCapture.openCamera(
+        graphID: JournalCaptureGraphOptions.explicitGraphID(graph)
+    ) else { throw JournalShortcutError.captureFailed }
 }
 
 @available(iOS 17.0, *)

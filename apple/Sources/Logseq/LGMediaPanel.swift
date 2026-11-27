@@ -306,7 +306,68 @@ private final class LGCameraSession: NSObject, AVCapturePhotoCaptureDelegate, @u
     }
 }
 
+struct LGJournalShortcutCamera: View {
+    let graph: LogseqJournalShortcutCapture.Graph
+    @Environment(\.dismiss) private var dismiss
+    @State private var saving = false
+    @State private var saveFailed = false
+    @State private var photo: Data?
+    @State private var title = "Photo-\(UUID().uuidString).jpg"
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if saving {
+                ProgressView("Saving photo…")
+                    .tint(.white)
+            } else if photo == nil {
+                LGInlineCamera(reportsErrorsInline: true) { data in
+                    photo = data
+                    save()
+                }
+            }
+        }
+        .safeAreaInset(edge: .top) {
+            HStack {
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .disabled(saving)
+                Spacer()
+                Text(graph.name)
+                    .font(.headline)
+                    .lineLimit(1)
+            }
+            .padding()
+            .background(.black)
+        }
+        .foregroundStyle(.white)
+        .tint(.white)
+        .alert("Could not save photo", isPresented: $saveFailed) {
+            Button("Try Again") { save() }
+            Button("Discard", role: .destructive) { dismiss() }
+        } message: {
+            Text("Check that the selected graph is downloaded and unlocked.")
+        }
+    }
+
+    private func save() {
+        guard let photo, !saving else { return }
+        saving = true
+        Task {
+            let saved = await LogseqJournalShortcutCapture.capturePhoto(
+                photo, title: title, contentType: "image/jpeg", graphID: graph.id
+            )
+            if saved {
+                dismiss()
+            } else {
+                saving = false
+                saveFailed = true
+            }
+        }
+    }
+}
+
 private struct LGInlineCamera: View {
+    var reportsErrorsInline = false
     let onCapture: (Data) -> Void
     @Environment(\.scenePhase) private var scenePhase
     @State private var camera = LGCameraSession()
@@ -333,6 +394,12 @@ private struct LGInlineCamera: View {
                 .padding(24)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if reportsErrorsInline, let errorMessage {
+                Text(errorMessage)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.white)
+                    .padding(24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             Button {
                 capturing = true
@@ -349,7 +416,12 @@ private struct LGInlineCamera: View {
             .padding(.bottom, 20)
         }
         .onChange(of: errorMessage) { _, message in
-            if let message { logger.error(message) }
+            guard let message else { return }
+            if reportsErrorsInline {
+                logger.debug(message)
+            } else {
+                logger.error(message)
+            }
         }
         .task { visible = true; await start() }
         .onDisappear { visible = false; camera.stop() }
@@ -373,8 +445,10 @@ private struct LGInlineCamera: View {
         }
         let busy = $capturing
         let failure = $errorMessage
+        let visible = $visible
         let capture = onCapture
         camera.onPhoto = { data, message in
+            guard visible.wrappedValue else { return }
             busy.wrappedValue = false
             failure.wrappedValue = message
             if let data { capture(data) }

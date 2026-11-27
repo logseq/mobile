@@ -1113,7 +1113,7 @@ struct LogseqCognitoConfiguration: Decodable {
 }
 
 @MainActor public enum LogseqJournalShortcutCapture {
-    public struct Graph: Decodable, Sendable {
+    public struct Graph: Decodable, Identifiable, Sendable {
         public let id: String
         public let name: String
     }
@@ -1147,6 +1147,16 @@ struct LogseqCognitoConfiguration: Decodable {
         await capture("captureLocalShortcutText", graphID: graphID, fields: ["text": text, "task": task])
     }
 
+    #if os(iOS)
+    public static func openCamera(graphID: String?) async -> Bool {
+        guard let target = await targetGraph(graphID) else { return false }
+        let coordinator = LogseqLogseqRuntime.shared.presentationCoordinator
+        guard coordinator.shortcutCameraGraph == nil else { return false }
+        coordinator.shortcutCameraGraph = target
+        return true
+    }
+    #endif
+
     public static func capturePhoto(
         _ data: Data, title: String, contentType: String, graphID: String?
     ) async -> Bool {
@@ -1166,10 +1176,16 @@ struct LogseqCognitoConfiguration: Decodable {
         return await capture("captureLocalShortcutPhoto", graphID: graphID, fields: fields)
     }
 
-    private static func capture(_ action: String, graphID: String?, fields: [String: Any]) async -> Bool {
+    private static func targetGraph(_ graphID: String?) async -> Graph? {
         let graphs = await availableGraphs()
-        let target = if let graphID { graphs.first { $0.id == graphID } } else { defaultGraph(in: graphs) }
-        guard let target else { return false }
+        if let graphID {
+            return graphs.first { $0.id == graphID }
+        }
+        return defaultGraph(in: graphs)
+    }
+
+    private static func capture(_ action: String, graphID: String?, fields: [String: Any]) async -> Bool {
+        guard let target = await targetGraph(graphID) else { return false }
         let catalogPath = LogseqLogseqRuntime.localDatabasePath
         let directory = LogseqGraphLocalStorage.directoryURL(
             databasePath: catalogPath, graphID: target.id, graphName: target.name
