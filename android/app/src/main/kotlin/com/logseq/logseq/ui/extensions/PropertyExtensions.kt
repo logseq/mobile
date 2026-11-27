@@ -11,10 +11,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerFormatter
+import androidx.compose.material3.DatePickerState
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.TimeInput
 import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -123,47 +122,47 @@ private fun PropertyRow(context: LuiExtensionContext) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PropertyDatePicker(context: LuiExtensionContext) {
-    val time = context.string("kind") == "datetime"
+    val dateTime = context.string("kind") == "datetime"
     val source = context.string("value") ?: ""
-    val currentSource by rememberUpdatedState(source)
     val zone = ZoneId.systemDefault()
-    val initial = remember {
-        if (time) (source.toLongOrNull()?.let(Instant::ofEpochMilli) ?: Instant.now()).atZone(zone)
-        else (runCatching { LocalDate.parse(source) }.getOrDefault(LocalDate.now())).atStartOfDay(zone)
+    val selected = remember(source, dateTime, zone) {
+        if (dateTime) source.toLongOrNull()?.let { Instant.ofEpochMilli(it).atZone(zone) }
+        else runCatching { LocalDate.parse(source).atStartOfDay(zone) }.getOrNull()
     }
+    val initial = remember {
+        selected ?: if (dateTime) Instant.now().atZone(zone) else LocalDate.now(zone).atStartOfDay(zone)
+    }
+    val currentSelection by rememberUpdatedState(selected ?: initial)
+    val currentContext by rememberUpdatedState(context)
     val date = rememberDatePickerState(
         initialSelectedDateMillis = initial.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
         yearRange = 1..9999,
     )
-    val clock = rememberTimePickerState(initialHour = initial.hour, initialMinute = initial.minute)
-    LaunchedEffect(source) {
-        val selected = if (time) source.toLongOrNull()?.let { Instant.ofEpochMilli(it).atZone(zone) }
-            else runCatching { LocalDate.parse(source).atStartOfDay(zone) }.getOrNull()
+    LaunchedEffect(selected) {
         if (selected != null && selected.year in date.yearRange) {
             val millis = selected.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
             if (date.selectedDateMillis != millis) {
                 date.selectedDateMillis = millis
                 date.displayedMonthMillis = millis
             }
-            if (time) {
-                clock.hour = selected.hour
-                clock.minute = selected.minute
-            }
         }
     }
-    LaunchedEffect(Unit) {
-        snapshotFlow { Triple(date.selectedDateMillis, clock.hour, clock.minute) }.distinctUntilChanged().collect { (millis, hour, minute) ->
-            if (millis != null) {
-                val day = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()
-                val value = if (time) day.atTime(hour, minute).atZone(zone).toInstant().toEpochMilli().toString() else day.toString()
-                if (value != currentSource) context.emit("change", mapOf("value" to value))
-            }
+    val picker = remember(date, dateTime) {
+        object : DatePickerState by date {
+            override var selectedDateMillis: Long?
+                get() = date.selectedDateMillis
+                set(millis) {
+                    if (millis == null || millis == date.selectedDateMillis) return
+                    date.selectedDateMillis = millis
+                    val day = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()
+                    val value = if (dateTime) currentSelection.with(day).toInstant().toEpochMilli().toString()
+                        else day.toString()
+                    currentContext.emit("change", mapOf("value" to value))
+                }
         }
     }
-    Column(Modifier.fillMaxWidth().testTag(context.string("identifier") ?: "")) {
-        DatePicker(state = date, dateFormatter = CalendarDateFormatter, showModeToggle = false)
-        if (time) TimeInput(state = clock, modifier = Modifier.padding(top = 16.dp))
-    }
+    DatePicker(state = picker, dateFormatter = CalendarDateFormatter, showModeToggle = false,
+        modifier = Modifier.fillMaxWidth().testTag(context.string("identifier") ?: ""))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

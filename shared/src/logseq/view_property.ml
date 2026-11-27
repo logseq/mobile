@@ -223,25 +223,25 @@ let view ?(compact = false) ?task_completed ~render_block model_source raw_sourc
             | _ -> ())));
           let submit fields = ignore (send (Model.SubmitNodeProperty (id,
             J.to_string (`Assoc (("blockUuid", `String owner) :: fields))))) in
-          let edit_task_date () =
-            let name = if attr = "logseq.property/scheduled" then "scheduled" else "deadline" in
-            ignore (send (Model.OpenBlockTaskDate (owner, name))) in
+          let task_date = match attr with
+            | "logseq.property/scheduled" -> Some ("scheduled", "calendar")
+            | "logseq.property/deadline" -> Some ("deadline", "deadline")
+            | _ -> None in
+          let edit_task_date name () = ignore (send (Model.OpenBlockTaskDate (owner, name))) in
           let edit () =
             let property = Signal.sample property_source in
             if field "editable" property = `Bool true then
-              if Lui_ui.host context = KotlinHost && attr = "logseq.property/deadline" then
-                edit_task_date ()
-              else if field "textLayout" property = `Bool true && field "ref" property = `Bool true then
+              match Lui_ui.host context, task_date with
+              | KotlinHost, Some (name, _) -> edit_task_date name ()
+              | _ when field "textLayout" property = `Bool true && field "ref" property = `Bool true ->
                 submit (["action", `String "editText"; "attr", `String attr; "expected", field "raw" property]
                   @ Option.fold ~none:[] ~some:(fun graph -> ["graphId", `String graph])
                       (Signal.sample model_source).Model.selected_graph_id)
-              else Signal.set editing (Some property) in
+              | _ -> Signal.set editing (Some property) in
           let send_block = function
             | (Model.BeginOutlinerEdit _ | Model.BeginOutlinerEditAt _) as action ->
               if field "editable" (Signal.sample property_source) = `Bool true then send action else true
             | action -> send action in
-          let task_icon = match compact, attr with true, "logseq.property/scheduled" -> Some "calendar"
-            | true, "logseq.property/deadline" -> Some "deadline" | _ -> None in
           let label = Lui_elements.text ~value:(reactive (own (Signal.map2 property_title model_source property_source)))
             ~foreground:"muted-foreground" ~style_class:"callout" ~text_alignment:`start
             ~accessibility_identifier:("property.label." ^ owner ^ "." ^ attr) [] in
@@ -289,8 +289,8 @@ let view ?(compact = false) ?task_completed ~render_block model_source raw_sourc
           mount context ?parent
             (overlay [
               column ~cross:(if compact then `start else `stretch) [
-              (match task_icon with
-              | Some icon_name ->
+              (match task_date with
+              | Some (name, icon_name) when compact ->
                 let timestamp property = int_of_string_opt (text (field "editorValue" property)) in
                 let value = own (Signal.map2 (fun current property ->
                   match timestamp property with
@@ -311,8 +311,8 @@ let view ?(compact = false) ?task_completed ~render_block model_source raw_sourc
                 compact_task_metadata ~icon_name ~disabled_signal:disabled ?overdue_signal
                   ~icon_identifier:("property.label." ^ owner ^ "." ^ attr)
                   ~identifier:("property.value." ^ owner ^ "." ^ attr)
-                  ~label:(property_title (Signal.sample model_source) first) value edit_task_date
-              | None -> fields [
+                  ~label:(property_title (Signal.sample model_source) first) value (edit_task_date name)
+              | _ -> fields [
                 label;
                 reactive (fun text_layout -> if text_layout then
                   reactive (fun empty -> if empty then row [value] else box ~opacity:0.72 [
