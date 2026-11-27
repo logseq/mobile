@@ -616,7 +616,7 @@ type logseq_action =
   | ConfirmOutlinerDelete
   | PerformOutlinerToolbarAction of string
   | ChooseOutlinerAutocomplete of string
-  | OpenOutlinerAsset of string
+  | OpenOutlinerAsset of outline_row
   | DismissAssetPreview
   | DismissCaptureConfirmation of int
   | CloseSearch
@@ -2791,27 +2791,19 @@ let rec update (current : logseq_model) action =
        enqueue_effect current
          (ChooseOutlinerAutocompleteEffect (id, value))
      | None -> current)
-  | OpenOutlinerAsset uuid ->
-    (match row_index current.outliner_rows uuid with
-     | Some index ->
-       let row = List.nth current.outliner_rows index in
-       if row.is_asset then
-         let pdf = List.mem (String.lowercase_ascii (Option.value ~default:"" row.asset_type)) ["pdf"; "application/pdf"]
-           || String.ends_with ~suffix:".pdf" (String.lowercase_ascii row.row_title) in
-         if pdf then update current (OpenPdf (uuid, row.row_title, Option.value ~default:"" row.local_path))
-         else match row.local_path with
-         | Some path ->
-           let id = current.next_effect_id in
-           let asset_type =
-             match row.asset_type with
-             | Some value -> value
-             | None -> "application/octet-stream"
-           in
-           enqueue_effect current
-             (PresentAssetEffect (id, row.row_title, asset_type, path))
-         | None -> current
-       else current
-     | None -> current)
+  | OpenOutlinerAsset row ->
+    if not row.is_asset then current
+    else
+      let asset_type = Option.value ~default:"application/octet-stream" row.asset_type in
+      let pdf = List.mem (String.lowercase_ascii asset_type) ["pdf"; "application/pdf"]
+        || String.ends_with ~suffix:".pdf" (String.lowercase_ascii row.row_title) in
+      if pdf then
+        update current (OpenPdf (row.row_uuid, row.row_title, Option.value ~default:"" row.local_path))
+      else
+        (match row.local_path with
+        | Some path -> enqueue_effect current
+            (PresentAssetEffect (current.next_effect_id, row.row_title, asset_type, path))
+        | None -> current)
   | ResolveAssetPreview (title, path) ->
     {
       current with

@@ -179,12 +179,12 @@ class AndroidEnterPerformanceTest {
             SystemClock.sleep(20)
         }
         val persistenceDeadline = SystemClock.uptimeMillis() + 10_000
-        var burstInserts = persistedInsertCount() - insertsBeforeBurst
-        while (burstInserts < burstCount && SystemClock.uptimeMillis() < persistenceDeadline) {
-            SystemClock.sleep(25)
-            burstInserts = persistedInsertCount() - insertsBeforeBurst
+        // Keep observing after the expected count so late writes are covered too.
+        while (SystemClock.uptimeMillis() < persistenceDeadline) {
+            assertTrue("An Enter burst cannot persist extra insertions",
+                persistedInsertCount() - insertsBeforeBurst <= burstCount)
+            SystemClock.sleep(100)
         }
-        instrumentation.waitForIdleSync()
         assertEquals("Each Enter in the burst must persist exactly one insertion", burstCount,
             persistedInsertCount() - insertsBeforeBurst)
         val settled = focusedEditor() ?: run {

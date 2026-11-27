@@ -602,7 +602,7 @@ type logseq_action =
   | ConfirmOutlinerDelete
   | PerformOutlinerToolbarAction of string
   | ChooseOutlinerAutocomplete of string
-  | OpenOutlinerAsset of string
+  | OpenOutlinerAsset of outline_row
   | DismissAssetPreview
   | DismissCaptureConfirmation of int
   | CloseSearch

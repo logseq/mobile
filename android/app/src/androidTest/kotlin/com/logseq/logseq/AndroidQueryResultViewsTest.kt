@@ -280,6 +280,32 @@ class AndroidQueryResultViewsTest {
         }
     }
 
+    @Test fun queryResultOpensAnAttachmentOutsideTheActiveOutliner() {
+        val file = "/tmp/query-attachment.txt"
+        mount { result ->
+            val query = result.getJSONArray("outlinerRows").getJSONObject(0)
+                .getJSONObject("block").getJSONObject("query")
+            val attachment = JSONObject().put("uuid", "external-file").put("title", "Query attachment.txt")
+                .put("pageId", "other-page").put("isAsset", true).put("assetType", "text/plain")
+                .put("localPath", file)
+            query.getJSONArray("rows").getJSONObject(0).put("block", attachment)
+            val views = query.getJSONArray("views")
+            for (index in 0 until views.length()) {
+                val view = views.getJSONObject(index)
+                if (view.optString("type") == "list") {
+                    view.put("rows", JSONArray().put(JSONObject().put("block", attachment)))
+                }
+            }
+        }
+        ui.onNodeWithText("Query attachment.txt").performClick()
+        ui.runOnIdle {
+            val effect = requireNotNull(takeEffect("present-asset"))
+            val metadata = JSONObject(effect.getString("metadata"))
+            assertEquals(file, metadata.getString("localPath"))
+            assertEquals("text/plain", metadata.getString("assetType"))
+        }
+    }
+
     private fun takeViewActions(): List<JSONObject> {
         val actions = mutableListOf<JSONObject>()
         ui.runOnIdle {

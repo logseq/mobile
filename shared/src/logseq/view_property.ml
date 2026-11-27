@@ -223,10 +223,15 @@ let view ?(compact = false) ?task_completed ~render_block model_source raw_sourc
             | _ -> ())));
           let submit fields = ignore (send (Model.SubmitNodeProperty (id,
             J.to_string (`Assoc (("blockUuid", `String owner) :: fields))))) in
+          let edit_task_date () =
+            let name = if attr = "logseq.property/scheduled" then "scheduled" else "deadline" in
+            ignore (send (Model.OpenBlockTaskDate (owner, name))) in
           let edit () =
             let property = Signal.sample property_source in
             if field "editable" property = `Bool true then
-              if field "textLayout" property = `Bool true && field "ref" property = `Bool true then
+              if Lui_ui.host context = KotlinHost && attr = "logseq.property/deadline" then
+                edit_task_date ()
+              else if field "textLayout" property = `Bool true && field "ref" property = `Bool true then
                 submit (["action", `String "editText"; "attr", `String attr; "expected", field "raw" property]
                   @ Option.fold ~none:[] ~some:(fun graph -> ["graphId", `String graph])
                       (Signal.sample model_source).Model.selected_graph_id)
@@ -286,9 +291,6 @@ let view ?(compact = false) ?task_completed ~render_block model_source raw_sourc
               column ~cross:(if compact then `start else `stretch) [
               (match task_icon with
               | Some icon_name ->
-                let edit_task_date () =
-                  let name = if attr = "logseq.property/scheduled" then "scheduled" else "deadline" in
-                  ignore (send (Model.OpenBlockTaskDate (owner, name))) in
                 let timestamp property = int_of_string_opt (text (field "editorValue" property)) in
                 let value = own (Signal.map2 (fun current property ->
                   match timestamp property with

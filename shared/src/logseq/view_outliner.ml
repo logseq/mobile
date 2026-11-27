@@ -240,7 +240,7 @@ let handle_block_menu_event model_source row_source send = function
        let uuid = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
        ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))
      | Some (StringValue "open-asset") ->
-       if row.is_asset then ignore (send (Model.OpenOutlinerAsset row.row_uuid))
+       ignore (send (Model.OpenOutlinerAsset row))
      | Some (StringValue "open-annotation") ->
        open_annotation (metadata_member "pdfAnnotation" row) send
      | Some (StringValue "select") -> ignore (send (Model.ToggleOutlinerSelection row.row_uuid))
@@ -925,8 +925,7 @@ let outliner_row_body' ?payload_model_source ?(allow_drag = true) ?(trailing_ins
                          if native_image then true
                          else send
                            (if (current_row : Model.outline_row).is_asset then
-                              Model.OpenOutlinerAsset
-                                current_row.row_uuid
+                              Model.OpenOutlinerAsset current_row
                             else if current_row.opens_as_page then
                               if search_open then
                                 Model.RequestSearchNode

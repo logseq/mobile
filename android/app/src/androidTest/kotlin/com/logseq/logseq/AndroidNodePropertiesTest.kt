@@ -8,6 +8,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -38,6 +39,7 @@ import com.logseq.logseq.runtime.logseqIconResolver
 import com.logseq.logseq.ui.LogseqTheme
 import com.logseq.logseq.ui.extensions.logseqExtensionRegistry
 import dev.lui.LuiBackend
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -53,6 +55,48 @@ class AndroidNodePropertiesTest {
 
     @After fun closeBridge() {
         if (::bridge.isInitialized) ui.runOnIdle { bridge.close() }
+    }
+
+    @Test fun taskDetailsDeadlineOpensTheDateOnlySheet() {
+        val backend = LuiBackend(onEvent = { dispatchLuiEvent(it, bridge) },
+            extensions = logseqExtensionRegistry { it }, icons = logseqIconResolver)
+        val filter = LuiPatchFilter(backend)
+        bridge = LogseqNativeBridge(onPatch = { if (it.isNotEmpty()) filter.applyJson(it) })
+        val root = bridge.initialize(authenticationCode = 3)
+        val snapshot = JSONObject(InstrumentationRegistry.getInstrumentation().context.assets
+            .open("node-properties.json").bufferedReader().use { it.readText() })
+        val deadline = JSONObject().put("attr", "logseq.property/deadline").put("title", "Deadline")
+            .put("kind", "datetime").put("editable", true).put("text", "November 27")
+            .put("editorValue", "1795737600000")
+        snapshot.getJSONObject("result").getJSONObject("nodeProperties")
+            .put("properties", JSONArray().put(deadline))
+        filter.applyJson(bridge.applySnapshot(snapshot.toString()))
+        bridge.applyHostUpdate("graph-loading", "false").takeIf { it.isNotEmpty() }?.let(filter::applyJson)
+        ui.setContent {
+            MaterialExpressiveTheme {
+                Box(Modifier.fillMaxSize()) { backend.Content(root) }
+            }
+        }
+        ui.onNodeWithTag("property.value.page.logseq.property/deadline").performClick()
+        ui.runOnIdle {
+            val request = generateSequence {
+                bridge.takeEffect().takeIf { it.isNotEmpty() }?.let { JSONObject(it).optJSONObject("effect") }
+            }.first { it.optString("kind") == "load-property-values" }
+            val fields = JSONObject(request.getString("text"))
+            assertEquals("taskDates", fields.getString("mode"))
+            assertEquals("page", fields.getString("ownerUuid"))
+            val column = JSONObject().put("targets", JSONArray().put(
+                JSONObject().put("uuid", "page").put("deadline", 1795737600000L),
+            ))
+            val values = JSONObject().put("key", fields.getString("key")).put("column", column)
+            val response = JSONObject().put("ok", true)
+                .put("result", JSONObject().put("propertyValues", values))
+            filter.applyJson(bridge.completeEffectWithResponse(request.getLong("id"), response.toString()))
+        }
+        ui.onNodeWithTag("sheet.task-dates").assertIsDisplayed()
+        ui.onNodeWithTag("task-dates.calendar").assertIsDisplayed()
+        ui.onNodeWithTag("task-dates.input").assertIsNotFocused()
+        ui.onNodeWithTag("view.edit.date.property.page.logseq.property/deadline").assertDoesNotExist()
     }
 
     @Test fun historicalDatesCanBeOpenedTypedAndSelected() {
