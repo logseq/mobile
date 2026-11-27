@@ -776,15 +776,8 @@ let active_overflow_menu model_source send : t =
    (* iOS menu items carry no icons; the Kotlin popup did. *)
    let item_icon name = if kotlin_host then Some (`app name) else None in
    mount context ?parent (View_property.with_add_property_picker model_source raw_source send (fun _ add_property add_picker ->
-   let discussion_page = own (Signal.map (fun current ->
-     if View_collaboration.ready current then Model.active_page current else None) model_source) in
    let entries =
-     [ if_dropdown_menu_item ~test:(own (Signal.map Option.is_some discussion_page))
-         (dropdown_menu_item ~text:(View_base.tr (Signal.sample model_source) "Comments")
-           ?icon:(item_icon "discussion-comment") ~accessibility_identifier:"button.page.comments"
-           ~on_press:(fun _ -> Option.iter (fun (page : Model.sidebar_page) ->
-             ignore (send (Model.OpenDiscussion page.uuid))) (Signal.sample discussion_page)) []);
-       if_dropdown_menu_item ~test:page_actions_source
+     [ if_dropdown_menu_item ~test:page_actions_source
          (if kotlin_host then
             dropdown_menu_item
               ~text_signal:

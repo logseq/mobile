@@ -9815,9 +9815,16 @@ let connection_menu_matches_active_page_actions () =
   in
   start application;
   send application
-    (apply_core_snapshot None sidebar [] true "" [] [] None None [] [] []
-       false []);
+    (Model.ApplyCoreSnapshot
+       { (empty_core_projection ()) with
+         sidebar;
+         selected_graph_id = Some "test-graph";
+         sync_connected = true;
+         collaboration_update = Some (`Assoc ["graphId", `String "test-graph"]);
+       });
   flush application;
+  check ~msg:"collaboration is available on the active page"
+    (View_collaboration.ready (App.model application));
   let renderer = Lui_app.runtime application in
   let navigation = extension_node application "native-navigation-stack" in
   let connection =
@@ -9833,6 +9840,10 @@ let connection_menu_matches_active_page_actions () =
     (descendant_count_with_property_string renderer connection
        Lui_protocol.TextValue "Share")
     1;
+  check_eq ~msg:"page overflow excludes Comments when collaboration is available"
+    (descendant_count_with_property_string renderer connection
+       Lui_protocol.TextValue "Comments")
+    0;
   check_eq ~msg:"page overflow excludes graph settings"
     (descendant_count_with_property_string renderer connection
        Lui_protocol.TextValue "Settings")

@@ -1,3 +1,7 @@
+- Quick photo capture. Touch and hold the bottom + to pick a photo. Tap the small × to remove it from your draft.
+- Tap Home again to return to the top of Journals.
+- The page’s More menu drops the Comments shortcut. Open block discussions by long-pressing a block.
+- Cancel in the Delete block alert uses the system text color in light and dark mode.
 - Block discussions. Leave inline comments and emoji reactions, and follow replies and reactions from the Notifications tab or through push notifications.
 - A dedicated Tasks tab. See what’s due today and what’s coming up. Set scheduled dates and deadlines as you create tasks.
 - Native block menus. Long-press a block for a native iOS preview and quick access to reactions, comments, and task dates. The bullet stays aligned as the block lifts.
