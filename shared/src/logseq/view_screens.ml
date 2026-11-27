@@ -610,10 +610,12 @@ let duo_journal_book model_source send classic : t =
         let empty = Signal.map (fun rows -> rows = []) recorded_rows in
         box ~grow:1.0 ~accessibility_identifier:("journal.duo.day." ^ string_of_int day) [
           if_ ~test:empty
-            (column ~padding:24 [
-              View_outliner.page_heading_text ~accessibility_identifier:"journal.duo.empty-title"
+            (column ~padding:16 [
+              View_outliner.page_heading_text ~tracks_scroll_title:false
+                ~accessibility_identifier:"journal.duo.empty-title"
                 (Signal.map (fun current -> View_base.journal_display_title current (Some day)
-                   (Journal.day_title day)) model_source)
+                   (Journal.day_title day)) model_source);
+              spacer ~grow:1.0 [];
             ]);
           if_ ~test:(Signal.map not empty) (root_outliner_view context projection visible send)
         ]) day in

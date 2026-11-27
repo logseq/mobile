@@ -12,17 +12,28 @@ private struct LGDuoJournalPages: View {
     let height: CGFloat
     @State private var position: Int?
     @Environment(\.layoutDirection) private var layoutDirection
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var first: Int { context.property("first-index")?.intValue ?? 0 }
     private var selected: Int { context.property("selected-index")?.intValue ?? 0 }
     private var canTurn: Bool { context.property("can-turn") != .bool(false) }
 
     var body: some View {
+        let pageTurnAngle = reduceMotion ? 0.0 : 4.0
         ScrollView(.horizontal) {
             LazyHStack(spacing: 0) {
                 ForEach(Array(pages.enumerated().reversed()), id: \.element) { offset, node in
                     context.nodeView(of: node)
                         .frame(width: width, height: height)
+                        .overlay { spineShade }
+                        .scrollTransition(.interactive, axis: .horizontal) { spread, phase in
+                            spread.rotation3DEffect(
+                                .degrees(-phase.value * pageTurnAngle),
+                                axis: (x: 0, y: 1, z: 0),
+                                anchor: phase.value < 0 ? .trailing : .leading,
+                                perspective: 0.30
+                            )
+                        }
                         .environment(\.layoutDirection, layoutDirection)
                         .accessibilityHidden(first + offset != selected)
                         .id(first + offset)
@@ -55,6 +66,21 @@ private struct LGDuoJournalPages: View {
         // Page positions are chronological. The notes themselves still use the app language.
         .environment(\.layoutDirection, .leftToRight)
         .accessibilityIdentifier("journal.duo.book")
+    }
+
+    private var spineShade: some View {
+        LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: .primary.opacity(0.07), location: 0.50),
+                .init(color: .clear, location: 1),
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+        .frame(width: 14)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private func select(_ index: Int?) {
