@@ -481,7 +481,7 @@ let root_outliner_view ?scroll_to_top (context : Lui_ui.ui_context) model_source
                  model_source)
             (column ~gap:0
                [
-                 box ~padding_horizontal:16
+                 box ~padding_horizontal:(View_outliner.page_title_inset context)
                    ~accessibility_identifier:"layout.selected-page.title"
                    [
                      row ~gap:8 ~cross:`center [

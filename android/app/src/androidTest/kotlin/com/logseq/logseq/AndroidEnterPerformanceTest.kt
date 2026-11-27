@@ -3,6 +3,7 @@ package com.logseq.logseq
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
 import android.content.Intent
+import android.database.sqlite.SQLiteDatabase
 import android.os.Build
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -159,13 +160,33 @@ class AndroidEnterPerformanceTest {
         }
         moveCaret(0)
         val (_, insertBeforeMs) = measureHandoff(active, "")
+        val database = File(context.filesDir, "graphs/UI_Regression-uiregression/graph.sqlite")
+        assertTrue("The offline benchmark graph must exist", database.isFile)
+        fun persistedInsertCount(): Int =
+            SQLiteDatabase.openDatabase(database.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+                db.rawQuery(
+                    "SELECT COUNT(*) FROM logseq_pending_ops WHERE json_extract(intent, '$.type') = ?",
+                    arrayOf("insert-block"),
+                ).use { rows ->
+                    check(rows.moveToFirst())
+                    rows.getInt(0)
+                }
+            }
+        val insertsBeforeBurst = persistedInsertCount()
         val burstCount = 20
         repeat(burstCount) {
             enter()
             SystemClock.sleep(20)
         }
-        // Persistence is checked from the backed-up SQLite file by the fixture driver.
-        SystemClock.sleep(3_000)
+        val persistenceDeadline = SystemClock.uptimeMillis() + 10_000
+        var burstInserts = persistedInsertCount() - insertsBeforeBurst
+        while (burstInserts < burstCount && SystemClock.uptimeMillis() < persistenceDeadline) {
+            SystemClock.sleep(25)
+            burstInserts = persistedInsertCount() - insertsBeforeBurst
+        }
+        instrumentation.waitForIdleSync()
+        assertEquals("Each Enter in the burst must persist exactly one insertion", burstCount,
+            persistedInsertCount() - insertsBeforeBurst)
         val settled = focusedEditor() ?: run {
             val screenshot = automation.takeScreenshot()
             File(context.filesDir, "enter-failure.png").outputStream().use {

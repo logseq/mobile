@@ -164,6 +164,7 @@ class AndroidRichContentTest {
             })
         ui.onNodeWithTag("outliner-block-content-rich-block").performTouchInput { longClick() }
         ui.onNodeWithTag("outliner.block.menu").assertIsDisplayed()
+        ui.onNodeWithText("Task").performClick()
         ui.onNodeWithText("Deadline").assertIsDisplayed()
         ui.runOnIdle {
             assertTrue(events.filterIsInstance<LuiEvent.Extension>().isEmpty())

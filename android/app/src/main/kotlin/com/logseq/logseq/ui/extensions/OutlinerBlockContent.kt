@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.view.WindowManager
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -18,6 +19,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -29,6 +31,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -41,12 +44,21 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuGroup
+import androidx.compose.material3.DropdownMenuPopup
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MenuAnchorPosition
+import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.SelectableDropdownMenuItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,6 +77,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
@@ -515,6 +528,49 @@ internal val LocalOutlinerBlockActions = compositionLocalOf { false }
 internal val LocalOutlinerSelection = compositionLocalOf { false }
 internal val LocalOutlinerInteraction = compositionLocalOf<String?> { null }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun OutlinerMenuPopup(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    DropdownMenuPopup(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        popupPositionProvider = MenuDefaults.rememberDropdownMenuPopupPositionProvider(MenuAnchorPosition.Below),
+        properties = PopupProperties(
+            flags = WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
+        ),
+    ) {
+        Column(
+            modifier = modifier.verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(MenuDefaults.GroupSpacing),
+            content = content,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun OutlinerMenuGroup(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    DropdownMenuGroup(shapes = MenuDefaults.groupShapes(), modifier = modifier, content = content)
+}
+
+private data class BlockMenuAction(
+    val title: String,
+    val icon: String,
+    val action: String,
+    val submenu: Boolean = false,
+    val destructive: Boolean = false,
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AndroidBlockActionMenu(
     actions: JSONObject,
@@ -530,114 +586,210 @@ internal fun AndroidBlockActionMenu(
     val reactions = actions.optJSONArray("reactionChoices") ?: JSONArray()
     var submenu by remember(expanded) { mutableStateOf<String?>(null) }
     fun label(key: String) = labels?.optString(key, key) ?: key
-    fun perform(action: String) { onDismiss(); onAction(action) }
+    fun perform(action: String) {
+        onDismiss()
+        onAction(action)
+    }
 
     val hasReactions = actions.optBoolean("discussionsAvailable") && reactions.length() > 0
-    val menuModifier = Modifier.testTag("outliner.block.menu").then(
-        if (hasReactions && submenu == null) Modifier.width(320.dp) else Modifier,
-    )
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, modifier = menuModifier) {
-        when (submenu) {
-            "Move" -> {
-                BlockActionItem(label("Move up"), "toolbar-move-up") { perform("moveUp") }
-                BlockActionItem(label("Move down"), "toolbar-move-down") { perform("moveDown") }
-                BlockActionItem(label("Outdent"), "toolbar-outdent") { perform("outdent") }
-                BlockActionItem(label("Indent"), "toolbar-indent") { perform("indent") }
+    val showsReactions = hasReactions && submenu == null
+    OutlinerMenuPopup(
+        expanded = expanded,
+        onDismiss = onDismiss,
+        modifier = Modifier.testTag("outliner.block.menu").width(if (showsReactions) 320.dp else 256.dp),
+    ) {
+        if (showsReactions) OutlinerMenuGroup(Modifier.fillMaxWidth()) {
+            BlockReactionChoices(reactions, label("Add reaction"), ::perform)
+        }
+        submenu?.let { section ->
+            OutlinerMenuGroup(Modifier.fillMaxWidth()) {
+                DropdownMenuItem(
+                    text = { Text(label("Back")) },
+                    onClick = { submenu = if (section == "status") "task" else null },
+                    shape = MenuDefaults.itemShape(0, 1).shape,
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null) },
+                )
             }
-            "Status" -> for (index in 0 until statuses.length()) {
-                val status = statuses.optJSONObject(index) ?: continue
-                BlockActionItem(status.optString("title"), status.optString("icon"),
-                    iconTint = luiThemeColor(status.optString("foreground"), foreground = true)) {
-                    onDismiss()
-                    onStatus(index)
-                }
-            }
-            else -> {
-                if (hasReactions) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+        }
+        if (submenu == "status") {
+            OutlinerMenuGroup(Modifier.fillMaxWidth()) {
+                for (index in 0 until statuses.length()) {
+                    val status = statuses.optJSONObject(index) ?: continue
+                    OutlinerMenuChoice(
+                        title = status.optString("title"),
+                        icon = status.optString("icon"),
+                        selected = status.optBoolean("selected"),
+                        index = index,
+                        itemCount = statuses.length(),
+                        tint = luiThemeColor(status.optString("foreground"), foreground = true),
                     ) {
-                        for (index in 0 until reactions.length()) {
-                            val choice = reactions.optJSONObject(index) ?: continue
-                            val id = choice.getString("id")
-                            val active = choice.optBoolean("selected")
-                            Surface(
-                                onClick = { perform("reaction:" + id) },
-                                shape = CircleShape,
-                                color = Color.Transparent,
-                                modifier = Modifier.size(48.dp).testTag("reaction.quick.$id").semantics {
-                                    contentDescription = choice.getString("name")
-                                    selected = active
-                                },
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    val color = if (active) luiThemeColor("task-tab-selected-background", foreground = false)
-                                        ?: MaterialTheme.colorScheme.secondaryContainer
-                                    else MaterialTheme.colorScheme.surfaceContainerHighest
-                                    Box(Modifier.size(44.dp).background(color, CircleShape), contentAlignment = Alignment.Center) {
-                                        Text(choice.getString("emoji"), fontSize = 22.sp)
-                                    }
-                                }
-                            }
+                        onDismiss()
+                        onStatus(index)
+                    }
+                }
+            }
+        } else {
+            val groups = when (submenu) {
+                "move" -> listOf(listOf(
+                    BlockMenuAction("Move up", "toolbar-move-up", "moveUp"),
+                    BlockMenuAction("Move down", "toolbar-move-down", "moveDown"),
+                    BlockMenuAction("Outdent", "toolbar-outdent", "outdent"),
+                    BlockMenuAction("Indent", "toolbar-indent", "indent"),
+                ))
+                "task" -> listOf(buildList {
+                    if (statuses.length() > 0) add(BlockMenuAction("Status", "toolbar-task", "status", submenu = true))
+                    add(BlockMenuAction("Scheduled", "calendar", "scheduled"))
+                    add(BlockMenuAction("Deadline", "deadline", "deadline"))
+                })
+                "more" -> listOf(buildList {
+                    if (canCut) add(BlockMenuAction("Cut", "toolbar-cut", "cut"))
+                    add(BlockMenuAction("Copy reference", "toolbar-copy-reference", "copyReference"))
+                    add(BlockMenuAction("Copy URL", "toolbar-copy-url", "copyURL"))
+                })
+                else -> listOf(
+                    buildList {
+                        add(BlockMenuAction("Open block", "external-link", "open"))
+                        if (canEdit) add(BlockMenuAction("Edit", "edit", "edit"))
+                        if (canCut) {
+                            val title = if (actions.optBoolean("selectionMember")) "Unselect" else "Select"
+                            add(BlockMenuAction(title, "selected", "select"))
                         }
-                        Surface(
-                            onClick = { perform("reaction") },
-                            shape = CircleShape,
-                            color = Color.Transparent,
-                            modifier = Modifier.size(48.dp).testTag("reaction.more"),
+                        if (actions.optBoolean("discussionsAvailable") && !actions.optBoolean("isComment")) {
+                            add(BlockMenuAction("Add comment", "discussion-comment", "comments"))
+                        }
+                    },
+                    buildList {
+                        if (actions.optBoolean("isTask")) add(BlockMenuAction("Task", "toolbar-task", "task", submenu = true))
+                        add(BlockMenuAction("Copy", "toolbar-copy", "copy"))
+                        add(BlockMenuAction("Move", "toolbar-move-up", "move", submenu = true))
+                        add(BlockMenuAction("More actions", "more-horiz", "more", submenu = true))
+                    },
+                    listOf(BlockMenuAction("Delete", "toolbar-delete", "delete", destructive = true)),
+                )
+            }
+            groups.forEach { group ->
+                OutlinerMenuGroup(Modifier.fillMaxWidth()) {
+                    group.forEachIndexed { index, item ->
+                        BlockActionItem(
+                            title = label(item.title),
+                            icon = item.icon,
+                            index = index,
+                            itemCount = group.size,
+                            submenu = item.submenu,
+                            destructive = item.destructive,
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                val color = MaterialTheme.colorScheme.surfaceContainerHighest
-                                Box(Modifier.size(44.dp).background(color, CircleShape), contentAlignment = Alignment.Center) {
-                                    logseqIconResolver.icon("reaction-add")?.let {
-                                        Icon(it, contentDescription = label("Add reaction"))
-                                    }
-                                }
-                            }
+                            if (item.submenu) submenu = item.action else perform(item.action)
                         }
                     }
                 }
-                BlockActionItem(label("Open block"), "external-link") { perform("open") }
-                if (canEdit) BlockActionItem(label("Edit"), "edit") { perform("edit") }
-                if (canCut) {
-                    val selected = actions.optBoolean("selectionMember")
-                    BlockActionItem(label(if (selected) "Unselect" else "Select"), "selected") { perform("select") }
-                }
-                if (actions.optBoolean("discussionsAvailable")) {
-                    if (!actions.optBoolean("isComment")) {
-                        BlockActionItem(label("Add comment"), "discussion-comment") { perform("comments") }
-                    }
-                }
-                if (actions.optBoolean("isTask")) {
-                    BlockActionItem(label("Scheduled"), "calendar") { perform("scheduled") }
-                    BlockActionItem(label("Deadline"), "deadline") { perform("deadline") }
-                    if (statuses.length() > 0) BlockActionItem(label("Status"), "toolbar-task") { submenu = "Status" }
-                }
-                BlockActionItem(label("Copy"), "toolbar-copy") { perform("copy") }
-                if (canCut) BlockActionItem(label("Cut"), "toolbar-cut") { perform("cut") }
-                BlockActionItem(label("Copy reference"), "toolbar-copy-reference") { perform("copyReference") }
-                BlockActionItem(label("Copy URL"), "toolbar-copy-url") { perform("copyURL") }
-                BlockActionItem(label("Move"), "toolbar-move-up") { submenu = "Move" }
-                BlockActionItem(label("Delete"), "toolbar-delete", destructive = true) { perform("delete") }
             }
         }
     }
 }
 
 @Composable
-private fun BlockActionItem(
-    label: String,
-    iconName: String,
-    iconTint: Color? = null,
+private fun BlockReactionChoices(reactions: JSONArray, addTitle: String, perform: (String) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        for (index in 0 until reactions.length()) {
+            val choice = reactions.optJSONObject(index) ?: continue
+            val id = choice.getString("id")
+            val active = choice.optBoolean("selected")
+            Surface(
+                onClick = { perform("reaction:" + id) },
+                shape = CircleShape,
+                color = Color.Transparent,
+                modifier = Modifier.size(48.dp).testTag("reaction.quick.$id").semantics {
+                    contentDescription = choice.getString("name")
+                    selected = active
+                },
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    val color = if (active) luiThemeColor("task-tab-selected-background", foreground = false)
+                        ?: MaterialTheme.colorScheme.secondaryContainer
+                    else MaterialTheme.colorScheme.surfaceContainerHighest
+                    Box(Modifier.size(44.dp).background(color, CircleShape), contentAlignment = Alignment.Center) {
+                        Text(choice.getString("emoji"), fontSize = 22.sp)
+                    }
+                }
+            }
+        }
+        Surface(
+            onClick = { perform("reaction") },
+            shape = CircleShape,
+            color = Color.Transparent,
+            modifier = Modifier.size(48.dp).testTag("reaction.more"),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                val color = MaterialTheme.colorScheme.surfaceContainerHighest
+                Box(Modifier.size(44.dp).background(color, CircleShape), contentAlignment = Alignment.Center) {
+                    logseqIconResolver.icon("reaction-add")?.let {
+                        Icon(it, contentDescription = addTitle)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun BlockActionItem(
+    title: String,
+    icon: String,
+    index: Int,
+    itemCount: Int,
+    modifier: Modifier = Modifier,
+    submenu: Boolean = false,
     destructive: Boolean = false,
     onClick: () -> Unit,
 ) {
     val tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-    val icon = logseqIconResolver.icon(iconName)
-    DropdownMenuItem(text = { Text(label, color = tint) }, onClick = onClick, leadingIcon = {
-        if (icon != null) Icon(icon, contentDescription = null, tint = iconTint ?: tint)
-    })
+    val image = logseqIconResolver.icon(icon)
+    DropdownMenuItem(
+        text = { Text(title, color = tint) },
+        onClick = onClick,
+        shape = MenuDefaults.itemShape(index, itemCount).shape,
+        modifier = modifier,
+        leadingIcon = image?.let { { Icon(it, contentDescription = null, tint = tint) } },
+        trailingContent = if (submenu) ({
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null,
+                modifier = Modifier.size(MenuDefaults.TrailingIconSize))
+        }) else null,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun OutlinerMenuChoice(
+    title: String,
+    icon: String,
+    selected: Boolean,
+    index: Int,
+    itemCount: Int,
+    modifier: Modifier = Modifier,
+    tint: Color? = null,
+    onClick: () -> Unit,
+) {
+    val image = logseqIconResolver.icon(icon)
+    val leadingIcon: (@Composable () -> Unit)? = image?.let {
+        { Icon(it, contentDescription = null, tint = tint ?: LocalContentColor.current) }
+    }
+    SelectableDropdownMenuItem(
+        selected = selected,
+        onClick = onClick,
+        text = { Text(title) },
+        shapes = MenuDefaults.itemShape(index, itemCount),
+        modifier = modifier,
+        leadingIcon = leadingIcon,
+        selectedLeadingIcon = leadingIcon,
+        trailingContent = {
+            if (selected) Icon(Icons.Filled.Check, contentDescription = null,
+                modifier = Modifier.size(MenuDefaults.TrailingIconSize))
+        },
+    )
 }
 
 internal fun isLinkOnlyMarkup(encoded: String): Boolean = try {
@@ -1144,6 +1296,7 @@ internal fun ProjectedAsset(
     loadImage: (suspend (String, String) -> String)?, onPreview: ((String) -> Unit)?,
     preview: Boolean,
     onBlockMenu: (() -> Unit)?, blockMenuLabel: String,
+    onOpenFile: (() -> Unit)? = null,
 ) {
     when {
         isImageAsset(assetType, localPath) ->
@@ -1153,13 +1306,16 @@ internal fun ProjectedAsset(
             PdfAssetButton(uuid, title, assetType, localPath, loadImage)
         localPath.isNotEmpty() && isAudioAsset(assetType, localPath) ->
             AndroidAudioPlaybackRow(title = title, path = localPath)
-        else -> AssetFallback(title)
+        else -> AssetFallback(title, onOpenFile)
     }
 }
 
 @Composable
-private fun AssetFallback(title: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun AssetFallback(title: String, onOpen: (() -> Unit)? = null) {
+    Row(
+        modifier = if (onOpen == null) Modifier else Modifier.clickable(onClick = onOpen),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Icon(Icons.Filled.Add, contentDescription = null)
         Text(title, modifier = Modifier.padding(start = 8.dp))
     }

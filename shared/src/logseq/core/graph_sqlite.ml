@@ -12,7 +12,7 @@ let check connection operation code =
 let open_db path =
   try
     let connection = Db.db_open path in
-    ignore (Db.exec connection "PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000");
+    Db.busy_timeout connection 5000;
     connection
   with Db.Error message ->
     failwith ("SQLite error while opening graph database: " ^ message)

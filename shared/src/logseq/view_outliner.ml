@@ -222,8 +222,15 @@ let block_menu_reactions current row =
 
 let block_menu_labels current =
   `Assoc (List.map (fun label -> label, `String (View_base.tr current label))
-    ["Open block"; "More actions"; "Add comment"; "Add reaction"; "Edit"; "Scheduled"; "Deadline"; "Status"; "Copy"; "Cut"; "Copy reference"; "Copy URL";
+    ["Open block"; "More actions"; "Add comment"; "Add reaction"; "Edit"; "Back"; "Task"; "Scheduled"; "Deadline"; "Status"; "Copy"; "Cut"; "Copy reference"; "Copy URL";
      "Move"; "Move up"; "Move down"; "Outdent"; "Indent"; "Delete"; "Select"; "Unselect"])
+
+let open_annotation reference send =
+  match reference with
+  | `Assoc _ ->
+    ignore (send (Model.PdfWorkspaceEvent (Yojson.Basic.to_string (`Assoc
+      ["action", `String "open-annotation"; "annotation", reference]))))
+  | _ -> ()
 
 let handle_block_menu_event model_source row_source send = function
   | ExtensionEvent (_, _, "menu-action", values) ->
@@ -232,6 +239,10 @@ let handle_block_menu_event model_source row_source send = function
      | Some (StringValue "open") ->
        let uuid = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
        ignore (send (View_base.request_node_action (Signal.sample model_source) uuid))
+     | Some (StringValue "open-asset") ->
+       if row.is_asset then ignore (send (Model.OpenOutlinerAsset row.row_uuid))
+     | Some (StringValue "open-annotation") ->
+       open_annotation (metadata_member "pdfAnnotation" row) send
      | Some (StringValue "select") -> ignore (send (Model.ToggleOutlinerSelection row.row_uuid))
      | Some (StringValue "comments") ->
        let uuid = Option.value ~default:row.row_uuid row.row_embed_source_uuid in
@@ -622,8 +633,7 @@ let annotation_page_link row_source send =
   if_ ~test:(Signal.map (function `Assoc _ -> true | _ -> false) reference)
     (button ~text:"" ~variant:`ghost ~foreground:"link" ~height:44 ~padding_horizontal:4
       ~accessibility_identifier:("pdf.annotation-page." ^ current_row.Model.row_uuid)
-      ~on_press:(fun _ -> ignore (send (Model.PdfWorkspaceEvent (Yojson.Basic.to_string (`Assoc
-        ["action", `String "open-annotation"; "annotation", Signal.sample reference])))))
+      ~on_press:(fun _ -> open_annotation (Signal.sample reference) send)
       [text ~value:(reactive (fun value ->
         let page = try Yojson.Basic.Util.(value |> member "page" |> to_int) with _ -> 0 in
         "📌 P" ^ string_of_int page) reference) ~style_class:"caption" []])
@@ -751,6 +761,7 @@ let native_outliner_row ?payload_model_source ~allow_drag ~trailing_inset model_
   let summary (page : Model.sidebar_page) = `Assoc ["uuid", `String page.uuid; "title", `String page.title] in
   let status (status : Model.task_status) = `Assoc ["uuid", `String status.uuid;
     "title", `String status.title; "icon", `String (View_base.task_status_icon_name status);
+    "optionId", `String (View_base.outliner_task_status_option_identifier status);
     "foreground", `String (View_base.task_status_foreground status)] in
   let payload (current : Model.logseq_model) (retained : View_rows.retained_row) =
     let row = View_rows.retained_row_value retained in
@@ -794,6 +805,7 @@ let native_outliner_row ?payload_model_source ~allow_drag ~trailing_inset model_
       "priority", (match row.row_priority with None -> `Null | Some priority ->
         `Assoc ["uuid", `String priority.uuid; "title", `String priority.title;
           "icon", `String (View_base.task_priority_icon_name priority)]);
+      "clearPriorityTitle", `String (View_base.tr current "Clear priority");
       "priorities", `List (List.map (fun (priority : Model.task_status) ->
         `Assoc ["uuid", `String priority.uuid; "title", `String priority.title;
           "icon", `String (View_base.task_priority_icon_name priority)]) current.task_priorities);
@@ -1081,6 +1093,13 @@ let page_title_spacer ?(has_properties = false) () =
   box ~height:(if has_properties then 24 else 20)
     ~accessibility_identifier:"spacer.page-title" []
 
+let outliner_entry_inset = 8
+let android_bullet_center_inset = 12
+
+let page_title_inset context =
+  if Lui_ui.host context = KotlinHost then outliner_entry_inset + android_bullet_center_inset
+  else 16
+
 let with_result_page ?(root = false) context model_source send fallback : t =
   reactive (fun full_page -> if not full_page then fallback else
     column ~grow:1.0 ~gap:0 ~cross:`stretch ~accessibility_identifier:"page.results" [
@@ -1089,7 +1108,7 @@ let with_result_page ?(root = false) context model_source send fallback : t =
         (node_breadcrumbs model_source send);
       if_ ~test:(reactive (if root then View_base.selected_page_content_title_visible_ else View_base.node_title_visible_) model_source)
         (column ~gap:0 [
-          box ~padding_horizontal:16 [row ~gap:8 ~cross:`center [
+          box ~padding_horizontal:(page_title_inset context) [row ~gap:8 ~cross:`center [
             View_base.node_icon_view ~size:28 (Signal.map (fun current ->
               View_base.node_icon current (View_base.active_node_uuid current)) model_source);
             heading ~level:`h3 ~style_class:"scroll-section-title" ~foreground:"foreground"
@@ -1195,7 +1214,7 @@ let outliner_entry' ?payload_model_source ?marker_model_source ?active_route_sou
     send : t =
  custom @@ fun entry_ctx parent ->
   let own s = Signal.own_signal entry_ctx.Lui_ui.ui_scope s in
-  let inset = 8 in
+  let inset = outliner_entry_inset in
   let marker_source = match marker_model_source with
     | Some shared -> shared
     | None -> own (Signal.cutoff outliner_marker_model_equal model_source) in
@@ -1254,7 +1273,7 @@ let outliner_entry' ?payload_model_source ?marker_model_source ?active_route_sou
                          (* Align the Android title edge with the center of its 24dp bullet slot. *)
                          box
                            ~padding_horizontal:
-                             (if Lui_ui.host context = KotlinHost then 12 else 8)
+                             (if Lui_ui.host context = KotlinHost then android_bullet_center_inset else 8)
                            [
                              View_base.with_int_prop_signal HeightValue
                                (hown (Signal.map (fun visible -> if visible then 26 else 0) divider_visible))
@@ -1965,7 +1984,7 @@ let placeholder_block context model_source (value : View_rows.placeholder) show_
         let node = mount mount_context ?parent (View_base.with_label_signal
           (Signal.map2 View_base.journal_heading_label model_source title)
           (box ~accessibility_identifier:("button.journal." ^ value.parent_uuid)
-            ~padding_horizontal:(if Lui_ui.host context = KotlinHost then 12 else 8)
+            ~padding_horizontal:(if android then android_bullet_center_inset else 8)
             [row ~gap:8 ~cross:`center [page_heading_text ~tracks_scroll_title:false title]])) in
         Lui_ui.bool_property mount_context node PressEnabled true;
         register_press mount_context node (fun _ -> ignore (send (Model.RequestAppNode value.parent_uuid)));
@@ -2395,7 +2414,7 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
             (node_breadcrumbs model_source send);
           if_ ~test:(reactive View_base.node_title_visible_ model_source)
             (column ~gap:0
-               [ box ~padding_horizontal:16 ~accessibility_identifier:"layout.node.title"
+               [ box ~padding_horizontal:(page_title_inset context) ~accessibility_identifier:"layout.node.title"
                    [ row ~gap:8 ~cross:`center [
                        View_base.node_icon_view ~size:28 (Signal.map (fun current ->
                          View_base.node_icon current (View_base.active_node_uuid current)) model_source);

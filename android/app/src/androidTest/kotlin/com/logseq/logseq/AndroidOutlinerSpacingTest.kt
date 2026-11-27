@@ -22,6 +22,8 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -136,7 +138,7 @@ class AndroidOutlinerSpacingTest {
     private fun gap(editing: Boolean = false) =
         (if (editing) ui.onNodeWithTag("field.outliner.block.parent") else ui.onNodeWithText("Parent note"))
             .getUnclippedBoundsInRoot().left -
-            ui.onNodeWithTag("outliner.bullet-glyph.parent").getUnclippedBoundsInRoot().right
+            ui.onNodeWithTag("outliner.bullet-glyph.parent", useUnmergedTree = true).getUnclippedBoundsInRoot().right
 
     @Test fun ordinaryTextDoesNotReserveAnEmptyPriorityGap() {
         render()
@@ -147,7 +149,7 @@ class AndroidOutlinerSpacingTest {
         val uuid = "f0000000-0000-4000-8000-000000000011"
         render { openSwipeTask(it, uuid) }
         val body = ui.onNodeWithTag("outliner-block-content-$uuid")
-        val bullet = ui.onNodeWithTag("outliner.bullet-glyph.$uuid")
+        val bullet = ui.onNodeWithTag("outliner.bullet-glyph.$uuid", useUnmergedTree = true)
         val parts = listOf(
             bullet,
             ui.onNodeWithTag("outliner.task-status-icon.$uuid"),
@@ -252,15 +254,58 @@ class AndroidOutlinerSpacingTest {
         render()
         val heading = ui.onAllNodesWithText(journal, useUnmergedTree = true).fetchSemanticsNodes()
             .maxBy { it.boundsInRoot.height }.boundsInRoot
-        val bullet = ui.onNodeWithTag("outliner.bullet-glyph.parent").fetchSemanticsNode().boundsInRoot
+        val bullet = ui.onNodeWithTag("outliner.bullet-glyph.parent", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         assertEquals("The heading and top-level bullet share one vertical guide", heading.left,
             bullet.center.x, with(ui.density) { 1.dp.toPx() })
     }
 
+    @Test fun pageHeadingAndTaskGlyphAlignWithTheirOutlinerColumns() {
+        render {
+            val response = JSONObject(snapshot(status = true))
+            val result = response.getJSONObject("result")
+            result.put("selectedPage", JSONObject().put("uuid", "spacing-journal").put("title", "Project notes"))
+            result.getJSONArray("outlinerRows").getJSONObject(1).put("depth", 0)
+            response.toString()
+        }
+        val heading = ui.onNodeWithTag("title.selected-page", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val bullet = ui.onNodeWithTag("outliner.bullet-glyph.parent", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val glyph = ui.onNodeWithTag("outliner.task-status-icon.parent").fetchSemanticsNode().boundsInRoot
+        val plainText = ui.onNodeWithText("Child note").fetchSemanticsNode().boundsInRoot
+        val tolerance = with(ui.density) { 1.dp.toPx() }
+        assertEquals("Top-level bullets align with the page title", heading.left, bullet.center.x, tolerance)
+        assertEquals("Visible status icons align with ordinary block text", plainText.left, glyph.left, tolerance)
+    }
+
+    @Test fun compactLongPressMenuHighlightsTheBulletAndSelectKeepsItHighlighted() {
+        render()
+        val bullet = ui.onNodeWithTag("outliner.bullet-glyph.parent", useUnmergedTree = true)
+        fun bulletBackground(): Int {
+            val image = bullet.captureToImage().asAndroidBitmap()
+            return image.getPixel(image.width / 4, image.height / 2)
+        }
+        val resting = bulletBackground()
+        ui.onNodeWithTag("outliner-block-content-parent").performTouchInput { longClick() }
+        val menu = ui.onNodeWithTag("outliner.block.menu").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertEquals(256f, (menu.right - menu.left).value, 1f)
+        assertTrue("The first menu level fits its primary actions", menu.bottom - menu.top < 380.dp)
+        assertTrue("The long press highlights the bullet gutter", bulletBackground() != resting)
+        ui.onNodeWithText("Select").performClick()
+        ui.runOnIdle {
+            val event = events.filterIsInstance<LuiEvent.Extension>().last()
+            assertEquals("menu-action", event.name)
+            assertEquals("select", event.values["payload"])
+            val response = JSONObject(snapshot())
+            response.getJSONObject("result").getJSONObject("outlinerState")
+                .put("selectedBlockIds", JSONArray().put("parent"))
+            filter.applyJson(requireNotNull(bridge).applySnapshot(response.toString()))
+        }
+        assertTrue("The selection still covers the bullet after dismissal", bulletBackground() != resting)
+    }
+
     @Test fun nestedBulletsAndTextUseTheSameIndentStep() {
         render()
-        val parent = ui.onNodeWithTag("outliner.bullet-glyph.parent").getUnclippedBoundsInRoot()
-        val child = ui.onNodeWithTag("outliner.bullet-glyph.child").getUnclippedBoundsInRoot()
+        val parent = ui.onNodeWithTag("outliner.bullet-glyph.parent", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        val child = ui.onNodeWithTag("outliner.bullet-glyph.child", useUnmergedTree = true).getUnclippedBoundsInRoot()
         val textIndent = ui.onNodeWithText("Child note").getUnclippedBoundsInRoot().left -
             ui.onNodeWithText("Parent note").getUnclippedBoundsInRoot().left
         assertTrue("Child rows remain visibly indented", child.left > parent.left)

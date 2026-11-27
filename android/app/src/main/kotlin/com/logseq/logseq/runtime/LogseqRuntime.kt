@@ -474,9 +474,6 @@ internal class LogseqRuntime(
         finishAppliedCoreResponse(response)
     }
 
-    private suspend fun callCoreAndApplySnapshot(request: String): String =
-        bridge.callCoreAndApplySnapshot(request, ::deliverPatch)
-
     private suspend fun finishAppliedCoreResponse(response: String) {
         outlinerCommands.deliver(response)
         trackSyncState(response)
@@ -592,7 +589,7 @@ internal class LogseqRuntime(
                 }
                 if (token.isNullOrBlank() || !isActive) break
                 val sync = AndroidGraphEventsSync(
-                    callCore = ::callCoreAndApplySnapshot,
+                    callCore = bridge::callCoreAndApplySnapshot,
                     applyResponse = ::finishAppliedCoreResponse,
                     onChangesApplied = { requestSyncNow() },
                     isCancelled = { !isActive },
@@ -661,7 +658,7 @@ internal class LogseqRuntime(
             pendingSyncRequested = false
             if (restoreCoreAccessToken().isNullOrBlank()) return
             AndroidPendingSyncPump(
-                callCore = ::callCoreAndApplySnapshot,
+                callCore = bridge::callCoreAndApplySnapshot,
                 applyResponse = ::finishAppliedCoreResponse,
                 isCancelled = { !job.isActive },
                 log = { level, message -> logRuntime(level, "core", message) },

@@ -1,5 +1,6 @@
 package com.logseq.logseq
 
+import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -7,6 +8,7 @@ import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
@@ -81,6 +83,70 @@ class AndroidQueryResultViewsTest {
         directory.resolve("query-$name.png").outputStream().use {
             ui.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it)
         }
+    }
+
+    @Test fun outlinerStatusPickerAndEditorToolbarKeepTheRowInSync() {
+        val blockId = "task-row"
+        val todo = JSONObject().put("uuid", "todo").put("title", "Todo")
+            .put("ident", "logseq.property/status.todo")
+        val doing = JSONObject().put("uuid", "doing").put("title", "Doing")
+            .put("ident", "logseq.property/status.doing")
+        lateinit var result: JSONObject
+        mount { snapshot ->
+            result = snapshot
+            val block = JSONObject().put("uuid", blockId).put("title", "Test task").put("pageId", "page")
+                .put("isTask", true).put("status", todo)
+            snapshot.put("outlinerRows", JSONArray().put(JSONObject().put("block", block).put("depth", 0)))
+                .put("taskStatuses", JSONArray().put(todo).put(doing))
+        }
+        val status = ui.onNodeWithTag("button.block-task-status")
+        val todoOption = ui.onNodeWithTag("button.block-task-status-option.logseq.property/status.todo")
+        val doingOption = ui.onNodeWithTag("button.block-task-status-option.logseq.property/status.doing")
+        val field = ui.onNodeWithTag("field.outliner.block.$blockId")
+        field.assertDoesNotExist()
+        status.assertContentDescriptionEquals("Todo").performClick()
+        todoOption.assertIsSelected()
+        doingOption.assertIsDisplayed()
+        assertTrue(InstrumentationRegistry.getInstrumentation().uiAutomation
+            .performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK))
+        status.assertContentDescriptionEquals("Todo")
+        ui.runOnIdle {
+            check(takeEffect("set-outliner-task-status") == null) { "Dismissing the menu must not change status" }
+        }
+
+        status.performClick()
+        doingOption.performClick()
+        ui.runOnIdle {
+            val effect = requireNotNull(takeEffect("set-outliner-task-status"))
+            assertEquals(blockId, effect.getString("text"))
+            assertEquals("doing", JSONObject(effect.getString("metadata")).getString("uuid"))
+            result.put("outlinerState", JSONObject().put("editing", JSONObject().put("uuid", blockId)
+                .put("title", "Test task").put("caretUTF16Offset", 0)))
+            filter.applyJson(bridge.applySnapshot(JSONObject().put("ok", true).put("result", result).toString()))
+        }
+
+        field.assertIsDisplayed()
+        status.assertContentDescriptionEquals("Todo")
+        ui.onNodeWithTag("button.outliner.editor.task").performClick()
+        ui.runOnIdle {
+            val effect = requireNotNull(takeEffect("outliner-toolbar"))
+            assertEquals("task", effect.getString("text"))
+            val block = result.getJSONArray("outlinerRows").getJSONObject(0).getJSONObject("block")
+            block.put("status", doing)
+            filter.applyJson(bridge.applySnapshot(JSONObject().put("ok", true).put("result", result).toString()))
+        }
+        status.assertContentDescriptionEquals("Doing")
+        field.assertIsDisplayed()
+    }
+
+    private fun takeEffect(kind: String): JSONObject? {
+        repeat(32) {
+            val encoded = bridge.takeEffect()
+            if (encoded.isEmpty()) return null
+            val effect = JSONObject(encoded).optJSONObject("effect")
+            if (effect?.optString("kind") == kind) return effect
+        }
+        return null
     }
 
     private fun assertFullTabLabel(text: String) {

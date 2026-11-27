@@ -124,13 +124,14 @@ internal class LogseqNativeBridge(
 
     fun applySnapshot(response: String): String {
         if (runtimeScheduler.isCoreBusy) {
-            runtimeScheduler.runUi {
-                apply(decode(traced("core.luiApplySnapshot") { NativeCore.luiApplySnapshot(encode(response)) }))
-            }
+            runtimeScheduler.runUi { apply(snapshotPatch(response)) }
             return ""
         }
-        return decode(traced("core.luiApplySnapshot") { NativeCore.luiApplySnapshot(encode(response)) })
+        return snapshotPatch(response)
     }
+
+    private fun snapshotPatch(response: String): String =
+        decode(traced("core.luiApplySnapshot") { NativeCore.luiApplySnapshot(encode(response)) })
 
     fun completeEffectWithResponse(id: Long, response: String): String {
         if (runtimeScheduler.isCoreBusy) {
@@ -161,12 +162,12 @@ internal class LogseqNativeBridge(
             }
         }
 
-    suspend fun callCoreAndApplySnapshot(request: String, onPatchApplied: (String) -> Unit): String =
+    suspend fun callCoreAndApplySnapshot(request: String): String =
         withContext(NativeCoreThread.dispatcher) {
             runtimeScheduler.runCore {
-                val res = decode(traced("core.logseqCall:" + rpcMethod(request)) { NativeCore.logseqCall(encode(request)) })
-                onPatchApplied(applySnapshot(res))
-                res
+                val response = decode(traced("core.logseqCall:" + rpcMethod(request)) { NativeCore.logseqCall(encode(request)) })
+                apply(snapshotPatch(response))
+                response
             }
         }
 

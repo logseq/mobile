@@ -5,12 +5,14 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.draganddrop.dragAndDropSource
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -49,6 +51,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -56,6 +61,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.logseq.logseq.runtime.logseqIconResolver
+import com.logseq.logseq.runtime.masterIcons
 import dev.lui.LuiExtensionContext
 import dev.lui.LuiExtensionEventSchema
 import dev.lui.LuiExtensionProperty
@@ -127,7 +133,13 @@ internal fun LuiExtensionRegistry.registerOutlinerBlockRow(
     }
 }
 
-private data class OutlinerRowStatus(val uuid: String, val title: String, val icon: String, val foreground: String)
+private data class OutlinerRowStatus(
+    val uuid: String,
+    val title: String,
+    val icon: String,
+    val foreground: String,
+    val optionId: String,
+)
 private data class OutlinerRowPriority(val uuid: String, val title: String, val icon: String)
 private data class OutlinerRowTag(val uuid: String, val title: String)
 
@@ -136,6 +148,7 @@ private data class OutlinerRowPayload(
     val uuid: String,
     val title: String,
     val embedSourceUuid: String?,
+    val pdfPage: Int?,
     val listNumber: Int?,
     val nodeIconJson: String?,
     val markupJson: String,
@@ -147,6 +160,7 @@ private data class OutlinerRowPayload(
     val assetType: String,
     val localPath: String,
     val completed: Boolean,
+    val selected: Boolean,
     val selectionMode: Boolean,
     val selectionMember: Boolean,
     val editing: Boolean,
@@ -170,6 +184,7 @@ private fun parseOutlinerRowPayload(encoded: String?): OutlinerRowPayload? {
             title = it.optString("title"),
             icon = it.optString("icon"),
             foreground = it.optString("foreground"),
+            optionId = it.optString("optionId"),
         )
     }
     val statuses = if (status == null) emptyList() else parseRowStatuses(raw)
@@ -204,7 +219,8 @@ private fun parseOutlinerRowPayload(encoded: String?): OutlinerRowPayload? {
         raw = raw,
         uuid = raw.optString("uuid"),
         title = title,
-        embedSourceUuid = raw.optString("embedSourceUuid").takeIf { it.isNotEmpty() },
+        embedSourceUuid = if (raw.isNull("embedSourceUuid")) null else raw.optString("embedSourceUuid").ifEmpty { null },
+        pdfPage = raw.optJSONObject("pdfAnnotation")?.optInt("page"),
         listNumber = if (raw.isNull("listNumber")) null else raw.optInt("listNumber"),
         nodeIconJson = nodeIconObj?.toString(),
         markupJson = markup,
@@ -216,6 +232,7 @@ private fun parseOutlinerRowPayload(encoded: String?): OutlinerRowPayload? {
         assetType = raw.optString("assetType"),
         localPath = raw.optString("localPath"),
         completed = raw.optBoolean("completed"),
+        selected = raw.optBoolean("selected"),
         selectionMode = raw.optBoolean("selectionMode"),
         selectionMember = raw.optBoolean("selectionMember"),
         editing = raw.optBoolean("editing"),
@@ -240,6 +257,7 @@ private fun parseRowStatuses(raw: JSONObject): List<OutlinerRowStatus> {
             title = item.optString("title"),
             icon = item.optString("icon"),
             foreground = item.optString("foreground"),
+            optionId = item.optString("optionId"),
         )
     }
 }
@@ -262,10 +280,11 @@ private fun buildMenuActionsJson(row: OutlinerRowPayload): JSONObject {
         .put("selectionMode", row.selectionMode)
         .put("selectionMember", row.selectionMember)
         .put("allowsDrag", row.allowsDrag)
+        .put("isComment", raw.optBoolean("isComment"))
         .put("discussionsAvailable", raw.optBoolean("discussionsAvailable"))
         .put("labels", raw.optJSONObject("menuLabels") ?: JSONObject())
         .put("statuses", statusesJson)
-        .put("reactions", raw.optJSONArray("reactionChoices") ?: JSONArray())
+        .put("reactionChoices", raw.optJSONArray("reactionChoices") ?: JSONArray())
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -280,6 +299,13 @@ private fun OutlinerBlockRow(
     val payloadJson = context.string("payload")
     val row = remember(payloadJson) { parseOutlinerRowPayload(payloadJson) } ?: return
     val currentContext by rememberUpdatedState(context)
+    var menuOpen by remember(row.uuid) { mutableStateOf(false) }
+    var menuHeld by remember(row.uuid) { mutableStateOf(false) }
+    val highlight = when {
+        row.selected -> MaterialTheme.colorScheme.secondaryContainer
+        menuOpen || menuHeld -> MaterialTheme.colorScheme.surfaceContainerHighest
+        else -> Color.Transparent
+    }
     val guideColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
     val bulletColor = if (row.collapsed && row.hasChildren) {
         MaterialTheme.colorScheme.onSurfaceVariant
@@ -313,7 +339,12 @@ private fun OutlinerBlockRow(
             onToggleSelection = { currentContext.emit("toggle-selection", "uuid" to row.uuid) },
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                modifier = Modifier.fillMaxWidth()
+                    .then(
+                        if (highlight == Color.Transparent) Modifier
+                        else Modifier.background(highlight, RoundedCornerShape(8.dp)),
+                    )
+                    .padding(vertical = 2.dp),
                 verticalAlignment = Alignment.Top,
             ) {
                 if (row.depth > 0) {
@@ -328,7 +359,14 @@ private fun OutlinerBlockRow(
                             testTagsAsResourceId = true
                             if (row.openLabel.isNotEmpty()) contentDescription = row.openLabel
                         }
-                        .clickable { currentContext.emit("open-node", "uuid" to zoomTarget) },
+                        .combinedClickable(
+                            role = Role.Button,
+                            onClick = {
+                                if (row.selectionMode) currentContext.emit("toggle-selection", "uuid" to row.uuid)
+                                else currentContext.emit("open-node", "uuid" to zoomTarget)
+                            },
+                            onLongClick = if (row.hasCustomContent) null else ({ menuOpen = true }),
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     when {
@@ -338,31 +376,89 @@ private fun OutlinerBlockRow(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         row.nodeIconJson != null -> NodeIcon(row.nodeIconJson, size = 18, muted = false)
-                        else -> Box(
-                            Modifier
+                        else -> Icon(
+                            imageVector = masterIcons.getValue(
+                                if (row.collapsed && row.hasChildren) "outliner-bullet-closed" else "outliner-bullet",
+                            ),
+                            contentDescription = null,
+                            tint = bulletColor,
+                            modifier = Modifier
                                 .size(24.dp)
                                 .semantics {
                                     testTag = "outliner.bullet-glyph.${row.uuid}"
                                     testTagsAsResourceId = true
-                                }
-                                .drawBehind {
-                                    if (row.collapsed && row.hasChildren) {
-                                        drawCircle(
-                                            color = bulletColor.copy(alpha = 0.22f),
-                                            radius = 6.dp.toPx(),
-                                        )
-                                    }
-                                    drawCircle(color = bulletColor, radius = 2.75.dp.toPx())
                                 },
                         )
                     }
                 }
                 Spacer(Modifier.width(2.dp))
-                if (row.hasCustomContent) {
-                    Box(Modifier.weight(1f)) {
-                        context.Children()
+                row.status?.let { status ->
+                    OutlinerRowPicker(
+                        id = "button.block-task-status",
+                        title = status.title,
+                        icon = status.icon,
+                        tint = luiThemeColor(status.foreground, foreground = true),
+                        glyphTag = "outliner.task-status-icon.${row.uuid}",
+                        iconAlignment = Alignment.CenterStart,
+                    ) { dismiss ->
+                        row.statuses.forEachIndexed { index, choice ->
+                            OutlinerMenuChoice(
+                                title = choice.title,
+                                icon = choice.icon,
+                                selected = choice.optionId == status.optionId,
+                                index = index,
+                                itemCount = row.statuses.size,
+                                tint = luiThemeColor(choice.foreground, foreground = true),
+                                modifier = outlinerControlTag(choice.optionId),
+                            ) {
+                                dismiss()
+                                currentContext.emit("set-status", "uuid" to row.uuid, "count" to index)
+                            }
+                        }
                     }
-                } else if (row.status == null && row.priority == null && row.tags.isEmpty()) {
+                }
+                row.priority?.let { priority ->
+                    OutlinerRowPicker("button.block-task-priority", priority.title, priority.icon) { dismiss ->
+                        val choices = row.raw.optJSONArray("priorities")
+                        val count = choices?.length() ?: 0
+                        for (index in 0 until count) {
+                            val choice = choices?.optJSONObject(index) ?: continue
+                            val uuid = choice.optString("uuid")
+                            OutlinerMenuChoice(
+                                title = choice.optString("title"),
+                                icon = choice.optString("icon"),
+                                selected = uuid == priority.uuid,
+                                index = index,
+                                itemCount = count + 1,
+                                modifier = outlinerControlTag("button.block-task-priority-option.$uuid"),
+                            ) {
+                                dismiss()
+                                currentContext.emit("set-priority", "priority" to uuid)
+                            }
+                        }
+                        BlockActionItem(
+                            title = row.raw.optString("clearPriorityTitle", "Clear priority"),
+                            icon = "",
+                            index = count,
+                            itemCount = count + 1,
+                            modifier = outlinerControlTag("button.block-task-priority-clear"),
+                        ) {
+                            dismiss()
+                            currentContext.emit("set-priority", "priority" to "")
+                        }
+                    }
+                }
+                row.pdfPage?.let { page ->
+                    Text(
+                        text = "📌 P$page",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = luiThemeColor("link", foreground = true) ?: MaterialTheme.colorScheme.primary,
+                        modifier = outlinerControlTag("pdf.annotation-page.${row.uuid}")
+                            .clickable { currentContext.emit("menu-action", "payload" to "open-annotation") }
+                            .padding(horizontal = 4.dp, vertical = 6.dp),
+                    )
+                }
+                if (!row.hasCustomContent && row.tags.isEmpty()) {
                     OutlinerRowRichBody(
                         modifier = Modifier.weight(1f),
                         context = context,
@@ -371,79 +467,36 @@ private fun OutlinerBlockRow(
                         youtubeStarts = youtubeStarts,
                         onOpenImage = onOpenImage,
                         loadImage = loadImage,
+                        menuOpen = menuOpen,
+                        onMenuOpen = { menuOpen = it },
+                        onMenuHold = { menuHeld = it },
                     )
                 } else {
-                    Box(Modifier.weight(1f)) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                            row.status?.let { status ->
-                                val statusIcon = logseqIconResolver.icon(status.icon)
-                                val statusColor = luiThemeColor(status.foreground, foreground = true)
-                                    ?: MaterialTheme.colorScheme.onSurfaceVariant
-                                val nextIndex = if (row.statuses.isEmpty()) 0 else {
-                                    val idx = row.statuses.indexOfFirst { it.uuid == status.uuid }
-                                    if (idx < 0) 0 else (idx + 1) % row.statuses.size
-                                }
-                                Box(
-                                    Modifier
-                                        .padding(top = 2.dp, end = 4.dp)
-                                        .size(20.dp)
-                                        .semantics {
-                                            testTag = "button.block-task-status"
-                                            testTagsAsResourceId = true
-                                        }
-                                        .clickable {
-                                            currentContext.emit(
-                                                "set-status",
-                                                "uuid" to row.uuid,
-                                                "count" to nextIndex,
-                                            )
-                                        },
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    if (statusIcon != null) {
-                                        Icon(statusIcon, contentDescription = status.title, tint = statusColor, modifier = Modifier.size(18.dp))
-                                    }
-                                }
-                            }
-                            row.priority?.let { priority ->
-                                val priorityIcon = logseqIconResolver.icon(priority.icon)
-                                if (priorityIcon != null) {
-                                    Icon(
-                                        priorityIcon,
-                                        contentDescription = priority.title,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(top = 3.dp, end = 4.dp).size(16.dp),
-                                    )
-                                }
-                            }
-                            Column(Modifier.weight(1f)) {
-                                OutlinerRowRichBody(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    context = context,
-                                    row = row,
-                                    resolveAssetPath = resolveAssetPath,
-                                    youtubeStarts = youtubeStarts,
-                                    onOpenImage = onOpenImage,
-                                    loadImage = loadImage,
-                                )
-                                if (row.tags.isNotEmpty()) {
-                                    FlowRow(
-                                        modifier = Modifier.padding(top = 2.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                                    ) {
-                                        row.tags.forEach { tag ->
-                                            Text(
-                                                text = "#${tag.title}",
-                                                fontSize = 13.sp,
-                                                color = luiThemeColor("link", foreground = true)
-                                                    ?: MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.clickable {
-                                                    currentContext.emit("open-node", "uuid" to tag.uuid)
-                                                },
-                                            )
-                                        }
-                                    }
+                    Column(Modifier.weight(1f)) {
+                        if (row.hasCustomContent) {
+                            context.Children()
+                        } else {
+                            OutlinerRowRichBody(
+                                modifier = Modifier.fillMaxWidth(),
+                                context = context,
+                                row = row,
+                                resolveAssetPath = resolveAssetPath,
+                                youtubeStarts = youtubeStarts,
+                                onOpenImage = onOpenImage,
+                                loadImage = loadImage,
+                                menuOpen = menuOpen,
+                                onMenuOpen = { menuOpen = it },
+                                onMenuHold = { menuHeld = it },
+                            )
+                        }
+                        if (row.tags.isNotEmpty()) {
+                            FlowRow(
+                                modifier = Modifier.padding(top = 2.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                row.tags.forEach { tag ->
+                                    OutlinerRowTagChip(row, tag, currentContext)
                                 }
                             }
                         }
@@ -484,6 +537,76 @@ private fun OutlinerBlockRow(
     }
 }
 
+private fun outlinerControlTag(id: String) = Modifier.semantics {
+    testTag = id
+    testTagsAsResourceId = true
+}
+
+@Composable
+private fun OutlinerRowPicker(
+    id: String,
+    title: String,
+    icon: String,
+    tint: Color? = null,
+    glyphTag: String? = null,
+    iconAlignment: Alignment = Alignment.Center,
+    content: @Composable ColumnScope.(dismiss: () -> Unit) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Box(Modifier.size(24.dp), contentAlignment = iconAlignment) {
+            logseqIconResolver.icon(icon)?.let {
+                Icon(
+                    it, contentDescription = null,
+                    tint = tint ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = (glyphTag?.let(::outlinerControlTag) ?: Modifier).size(18.dp),
+                )
+            }
+            Box(outlinerControlTag(id)
+                .semantics { contentDescription = title }
+                .clickable(role = Role.Button) { expanded = true }
+                .matchParentSize())
+        }
+        OutlinerMenuPopup(expanded = expanded, onDismiss = { expanded = false }) {
+            OutlinerMenuGroup { content { expanded = false } }
+        }
+    }
+}
+
+@Composable
+private fun OutlinerRowTagChip(row: OutlinerRowPayload, tag: OutlinerRowTag, context: LuiExtensionContext) {
+    val canRemove = row.raw.optBoolean("canRemoveTags")
+    val removeTitle = row.raw.optString("removeTagTitle", "Remove tag")
+    var expanded by remember(tag.uuid) { mutableStateOf(false) }
+    Box {
+        Text(
+            text = "#${tag.title}",
+            fontSize = 13.sp,
+            color = luiThemeColor("link", foreground = true) ?: MaterialTheme.colorScheme.primary,
+            modifier = outlinerControlTag("button.block-tag.${tag.uuid}").combinedClickable(
+                onClick = { context.emit("open-node", "uuid" to tag.uuid) },
+                onLongClick = if (canRemove) ({ expanded = true }) else null,
+                onLongClickLabel = if (canRemove) removeTitle else null,
+            ),
+        )
+        if (canRemove) OutlinerMenuPopup(expanded = expanded, onDismiss = { expanded = false }) {
+            OutlinerMenuGroup {
+                BlockActionItem(
+                    title = removeTitle,
+                    icon = "toolbar-delete",
+                    index = 0,
+                    itemCount = 1,
+                    destructive = true,
+                    modifier = outlinerControlTag("button.block-tag.remove.${row.uuid}.${tag.uuid}"),
+                ) {
+                    expanded = false
+                    context.emit("remove-tag", "uuid" to tag.uuid)
+                }
+            }
+        }
+    }
+}
+
 @Suppress("DEPRECATION")
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -495,6 +618,9 @@ private fun OutlinerRowRichBody(
     youtubeStarts: MutableMap<String, Int>,
     onOpenImage: ((String, String) -> Unit)?,
     loadImage: (suspend (String, String) -> String)?,
+    menuOpen: Boolean,
+    onMenuOpen: (Boolean) -> Unit,
+    onMenuHold: (Boolean) -> Unit,
 ) {
     val uuid = row.uuid
     val linkOnly = remember(row.plainText, row.markupJson) {
@@ -502,7 +628,8 @@ private fun OutlinerRowRichBody(
     }
     val currentContext by rememberUpdatedState(context)
     val haptics by rememberUpdatedState(LocalHapticFeedback.current)
-    var menuOpen by remember(uuid) { mutableStateOf(false) }
+    val setMenuOpen by rememberUpdatedState(onMenuOpen)
+    val setMenuHeld by rememberUpdatedState(onMenuHold)
     val actions = remember(menuOpen, row) { if (!menuOpen) null else buildMenuActionsJson(row) }
     val tapEvent = if (row.selectionMode) "toggle-selection" else "edit"
     val pressBlock: () -> Unit = { currentContext.emit(tapEvent, "uuid" to uuid) }
@@ -518,12 +645,7 @@ private fun OutlinerRowRichBody(
     val density = LocalDensity.current.density
     var hoverPlacement by remember { mutableStateOf("after") }
     var dragHover by remember { mutableStateOf(false) }
-    val targetHoverColor = when {
-        dragHover -> MaterialTheme.colorScheme.primaryContainer
-        menuOpen && !row.selectionMember ->
-            (luiThemeColor("link", foreground = true) ?: MaterialTheme.colorScheme.primary).copy(alpha = 0.24f)
-        else -> Color.Transparent
-    }
+    val targetHoverColor = if (dragHover) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     val hoverColor = if (targetHoverColor == Color.Transparent) {
         Color.Transparent
     } else {
@@ -569,7 +691,6 @@ private fun OutlinerRowRichBody(
             while (true) {
                 val down = awaitPointerEventScope { awaitFirstDown(requireUnconsumed = false) }
                 val policy = gesturePolicy
-                var longPressed = false
                 val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
                     awaitPointerEventScope { awaitOutlinerTap(down) }
                 }
@@ -585,23 +706,27 @@ private fun OutlinerRowRichBody(
                     } == true
                 }
                 if (!stillDown) continue
-                longPressed = true
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                setMenuHeld(true)
                 val originX = rowBounds.coords?.takeIf { it.isAttached }?.positionInRoot()?.x ?: 0f
                 val origin = OutlinerDragOrigin(uuid, originX + down.position.x)
-                while (longPressed) {
-                    val pointer = awaitPointerEventScope {
-                        awaitPointerEvent(PointerEventPass.Main).changes.firstOrNull { it.id == down.id }
-                    } ?: break
-                    if (pointer.changedToUpIgnoreConsumed() || !pointer.pressed) {
-                        menuOpen = true
-                        break
+                try {
+                    while (true) {
+                        val pointer = awaitPointerEventScope {
+                            awaitPointerEvent(PointerEventPass.Main).changes.firstOrNull { it.id == down.id }
+                        } ?: break
+                        if (pointer.changedToUpIgnoreConsumed() || !pointer.pressed) {
+                            setMenuOpen(true)
+                            break
+                        }
+                        if (policy.allowsDrag && (pointer.position - down.position).getDistance() >= viewConfiguration.touchSlop) {
+                            currentContext.emit("drag-start", "uuid" to uuid)
+                            startTransfer(DragAndDropTransferData(ClipData.newPlainText("Logseq block", uuid), localState = origin))
+                            break
+                        }
                     }
-                    if (policy.allowsDrag && (pointer.position - down.position).getDistance() >= viewConfiguration.touchSlop) {
-                        currentContext.emit("drag-start", "uuid" to uuid)
-                        startTransfer(DragAndDropTransferData(ClipData.newPlainText("Logseq block", uuid), localState = origin))
-                        break
-                    }
+                } finally {
+                    setMenuHeld(false)
                 }
             }
         })
@@ -614,6 +739,13 @@ private fun OutlinerRowRichBody(
             ),
         )
         .testTag("outliner-block-content-$uuid")
+        .semantics {
+            val label = row.raw.optJSONObject("menuLabels")?.optString("More actions", "More actions") ?: "More actions"
+            onLongClick(label = label) {
+                onMenuOpen(true)
+                true
+            }
+        }
 
     Box(bodyModifier) {
         if (row.isAsset) {
@@ -627,14 +759,24 @@ private fun OutlinerRowRichBody(
                 onPreview = if (row.selectionMode) ({ _ -> pressBlock() }) else onOpenImage?.let { open ->
                     { path -> open(uuid, path) }
                 },
-                onBlockMenu = { menuOpen = true },
+                onBlockMenu = { onMenuOpen(true) },
                 blockMenuLabel = row.raw.optJSONObject("menuLabels")?.optString("More actions", "More actions") ?: "More actions",
+                onOpenFile = {
+                    if (row.selectionMode) pressBlock()
+                    else currentContext.emit("menu-action", "payload" to "open-asset")
+                },
             )
         } else if (row.plainText != null) {
             Text(
                 text = row.plainText,
                 style = if (decoration == TextDecoration.None) outlinerBodyStyle
                 else outlinerBodyStyle.copy(textDecoration = decoration),
+                modifier = Modifier.semantics {
+                    onClick(label = row.raw.optString("editLabel").ifEmpty { null }) {
+                        pressBlock()
+                        true
+                    }
+                },
             )
         } else {
             CompositionLocalProvider(
@@ -659,7 +801,7 @@ private fun OutlinerRowRichBody(
                 canEdit = linkOnly,
                 canCut = !LocalPropertyValue.current,
                 expanded = menuOpen,
-                onDismiss = { menuOpen = false },
+                onDismiss = { onMenuOpen(false) },
                 onAction = { action ->
                     if (action == "edit") currentContext.emit("edit", "uuid" to uuid)
                     else currentContext.emit("menu-action", "payload" to action)
