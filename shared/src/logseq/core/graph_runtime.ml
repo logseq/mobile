@@ -448,7 +448,12 @@ let create_base path server_t conn options =
   let search_index =
     match options.search_index_path with
     | Some path ->
-      (try Some (Index.create path)
+      let directory = Filename.dirname path in
+      (try
+         if not (Sys.file_exists directory) then Unix.mkdir directory 0o755;
+         if not (Sys.file_exists path) then
+           close_out (open_out_gen [ Open_creat; Open_wronly ] 0o644 path);
+         Some { Index.path }
        with error ->
          search_error "open" error;
          None)
@@ -483,11 +488,14 @@ let create_base path server_t conn options =
     }
   in
   trace_stage "LOGSEQ_RUNTIME_METRIC" started "search";
-  repair_legacy_page_creations runtime;
-  repair_legacy_page_deletions runtime;
+  if Ops.list runtime.path <> [] then begin
+    repair_legacy_page_creations runtime;
+    repair_legacy_page_deletions runtime
+  end;
   rebase runtime server_t [] [];
   let fresh = match search_index with
     | None -> false
+    | Some index when (try (Unix.stat index.path).Unix.st_size = 0 with _ -> true) -> false
     | Some index ->
       (try match Graph_sqlite.search_source_version path with
        | Some version -> Graph_sqlite.search_version index.path = Some version

@@ -97,6 +97,9 @@ public struct LogseqRootView : View {
                 ProgressView()
             } else {
                 LGRendererRoot(renderer: runtime.lgRuntime.renderer)
+                    .onAppear {
+                        runtime.logStartupStage("ui.renderer_root.on_appear")
+                    }
             }
         }
             .task {
@@ -436,14 +439,31 @@ public struct LogseqRootView : View {
             .path
     }
 
+    private static let startupLogger = os.Logger(subsystem: "com.logseq.logseq", category: "startup")
+    private var launchOriginUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+
+    func markStartupOrigin() {
+        launchOriginUptime = ProcessInfo.processInfo.systemUptime
+    }
+
+    func logStartupStage(_ stage: String, since stageStart: TimeInterval? = nil) {
+        let now = ProcessInfo.processInfo.systemUptime
+        let sinceLaunchMs = Int(((now - launchOriginUptime) * 1000.0).rounded())
+        if let stageStart {
+            let elapsedMs = Int(((now - stageStart) * 1000.0).rounded())
+            Self.startupLogger.info("LOGSEQ_STARTUP_METRIC stage=\(stage, privacy: .public) elapsed_ms=\(elapsedMs) since_launch_ms=\(sinceLaunchMs)")
+        } else {
+            Self.startupLogger.info("LOGSEQ_STARTUP_METRIC stage=\(stage, privacy: .public) since_launch_ms=\(sinceLaunchMs)")
+        }
+    }
+
     public func startLGRenderer() {
         guard !didStartLGRenderer else { return }
+        let started = ProcessInfo.processInfo.systemUptime
         do {
-            try lgRuntime.start(
-                platformCode: Self.lgPlatformCode,
-                authenticationCode: Self.authenticationCode(authentication.state)
-            )
-            didStartLGRenderer = true
+            // Queue initial host updates before starting LGRuntime so they are
+            // applied synchronously while coalescesCommits is disabled instead
+            // of triggering four separate async patch cycles during first mount.
             try lgRuntime.applyHostUpdate(
                 kind: "graph-loading",
                 payload: !didApplyLocalLaunchResult ? "true" : "false"
@@ -452,18 +472,22 @@ public struct LogseqRootView : View {
                 kind: "settings",
                 payload: try Self.settingsHostPayload()
             )
-            try lgRuntime.applyHostUpdate(
-                kind: "authentication",
-                payload: try authenticationHostPayload()
-            )
             let persistedDraft = UserDefaults.standard.string(
                 forKey: "logseq.composerDraft"
             ) ?? ""
-            let persistedDraftData = try JSONEncoder().encode(persistedDraft)
-            try lgRuntime.applyHostUpdate(
-                kind: "composer-draft",
-                payload: String(data: persistedDraftData, encoding: .utf8) ?? "\"\""
+            if !persistedDraft.isEmpty {
+                let persistedDraftData = try JSONEncoder().encode(persistedDraft)
+                try lgRuntime.applyHostUpdate(
+                    kind: "composer-draft",
+                    payload: String(data: persistedDraftData, encoding: .utf8) ?? "\"\""
+                )
+            }
+            try lgRuntime.start(
+                platformCode: Self.lgPlatformCode,
+                authenticationCode: Self.authenticationCode(authentication.state)
             )
+            didStartLGRenderer = true
+            logStartupStage("renderer.lg_start.done", since: started)
         } catch {
             logger.error("Could not start LG renderer: \(String(describing: error))")
             #if DEBUG
@@ -475,14 +499,29 @@ public struct LogseqRootView : View {
     public func runLGApplication() async {
         guard !didStartLGApplication else { return }
         didStartLGApplication = true
+        logStartupStage("app.run.start")
         startLGRenderer()
         let opensWidgetBlock = initialWidgetURL != nil
+        var launchSidebarTask: Task<Void, Never>?
+        if !opensWidgetBlock, let graphID = store.snapshot.selectedGraphId {
+            // Load the sidebar for the already-opened local graph concurrently
+            // with authentication restore instead of waiting behind Keychain I/O.
+            launchSidebarTask = Task { [weak self] in
+                guard let self else { return }
+                let sidebarStart = ProcessInfo.processInfo.systemUptime
+                await self.store.loadLaunchSidebar(graphID: graphID)
+                self.logStartupStage("app.load_sidebar.done", since: sidebarStart)
+            }
+        }
         // A cached widget target can render while authentication restores.
         if !opensWidgetBlock {
+            let authStart = ProcessInfo.processInfo.systemUptime
             await waitForAuthenticationRestore()
+            logStartupStage("app.auth_restore.done", since: authStart)
             publishAuthenticationState()
         }
         await waitForLocalLaunchLoad()
+        logStartupStage("app.local_launch.applied")
         if let session = UserDefaults.standard.string(forKey: "logseq.uiSession") {
             do {
                 try lgRuntime.applyHostUpdate(kind: "restore-ui-session", payload: session)
@@ -507,10 +546,15 @@ public struct LogseqRootView : View {
         }
         await resumeLGApplication()
         // A successful graph bootstrap loads the sidebar as part of its projection.
-        if !didResumeCurrentActivation, let graphID = store.snapshot.selectedGraphId {
+        if let launchSidebarTask {
+            await launchSidebarTask.value
+        } else if !didResumeCurrentActivation, let graphID = store.snapshot.selectedGraphId {
+            let sidebarStart = ProcessInfo.processInfo.systemUptime
             await store.loadLaunchSidebar(graphID: graphID)
+            logStartupStage("app.load_sidebar.done", since: sidebarStart)
         }
         didFinishLaunchWork = true
+        logStartupStage("app.launch_work.done")
         deliverPendingDiscussionPush()
         await store.runPendingSyncLoop()
     }
@@ -1175,14 +1219,24 @@ public final class LogseqAppDelegate : Sendable {
     }
 
     @MainActor public func onInit() {
+        let initStart = ProcessInfo.processInfo.systemUptime
         #if os(iOS)
         LogseqCrashReporting.start()
-        RecordingLiveActivity.dismissStaleActivities()
+        Task { @MainActor in
+            RecordingLiveActivity.dismissStaleActivities()
+        }
         #endif
         let runtime = LogseqLogseqRuntime.shared
+        runtime.markStartupOrigin()
+        runtime.logStartupStage("init.crash_and_runtime.done", since: initStart)
+        let localStart = ProcessInfo.processInfo.systemUptime
         runtime.startLocalLaunchLoad()
+        runtime.logStartupStage("init.local_launch_load.done", since: localStart)
         runtime.startAuthenticationRestore()
+        let rendererStart = ProcessInfo.processInfo.systemUptime
         runtime.startLGRenderer()
+        runtime.logStartupStage("init.start_lg_renderer.done", since: rendererStart)
+        runtime.logStartupStage("init.total.done", since: initStart)
         logger.debug("onInit")
     }
 
