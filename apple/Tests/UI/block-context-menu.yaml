@@ -4,8 +4,8 @@ appId: com.logseq.logseq.PageBenchmark
     id: tab.bottom.tasks
 - longPressOn:
     id: outliner.block-action.task
-- assertNotVisible:
-    id: reaction.more
+- assertVisible: Thumbs Up
+- assertVisible: Red Heart
 - tapOn: Scheduled
 - assertVisible:
     id: task-dates.calendar
