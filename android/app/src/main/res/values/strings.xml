@@ -11,6 +11,9 @@
     <string name="audio_notification_body">Tap to return to your recording</string>
     <string name="shortcut_capture">Capture</string>
     <string name="shortcut_capture_long">Capture a note</string>
+    <string name="shortcut_task">Capture Task</string>
+    <string name="shortcut_task_long">Capture a task to today’s journal</string>
+    <string name="shortcut_camera">Take Picture</string>
     <string name="shortcut_journal">Journal</string>
     <string name="shortcut_journal_long">Open today’s journal</string>
     <string name="widget_brand">LOGSEQ</string>

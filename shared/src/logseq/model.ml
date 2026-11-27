@@ -3283,7 +3283,7 @@ let rec update (current : logseq_model) action =
     if reusable then updated
     else enqueue_effect updated (SelectSidebarPageEffect (updated.next_effect_id, uuid))
   | OpenQuickAction kind ->
-    if not (kind = "capture" || kind = "audio" || kind = "journal" || kind = "task") then
+    if not (List.mem kind ["capture"; "audio"; "camera"; "journal"; "task"]) then
       current
     else begin
       let updated =
@@ -3311,9 +3311,9 @@ let rec update (current : logseq_model) action =
         enqueue_effect updated
           (ClearSelectedPageEffect updated.next_effect_id)
       in
-      if kind = "audio" then
+      if kind = "audio" || kind = "camera" then
         enqueue_effect cleared
-          (PresentAttachmentEffect (cleared.next_effect_id, "audio"))
+          (PresentAttachmentEffect (cleared.next_effect_id, kind))
       else cleared
     end
   | ScrollHomeToTop ->

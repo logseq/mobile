@@ -2413,6 +2413,31 @@ let rec dispatch session action payload =
       if existing then snapshot_visible session else
         send_message session (Some (Json.to_string (`Assoc ["uuid", `String uuid; "text", `String text])))
     | _, Error message | Error message, _ -> Rpc.failure "invalid_shared_capture" message)
+  | "captureShortcutText" -> object_action (fun _ fields ->
+    match Rpc.required_string fields "graphId", active_widget_db session with
+    | Ok graph, Some (active, db) when graph = active ->
+      if List.assoc_opt "task" fields = Some (`Bool true) then (
+        let ( let* ) = Result.bind in
+        let capture () =
+          let* uuid = Rpc.required_string fields "uuid" in
+          let* text = Shared_capture.text fields in
+          let* now = Rpc.optional_int fields "now" in
+          let status = Option.bind (Graph_read.default_task_status_eid db)
+            (Graph_read.choice_metadata widget_decrypt db) in
+          let* status = Option.to_result ~none:"The graph has no default task status" status in
+          let* operations = capture_operations session uuid text (Option.value ~default:(now_ms ()) now)
+            (Some status) in
+          match operations with
+          | [] -> Error "The capture is unavailable"
+          | first :: _ ->
+            enqueue_semantic session
+              {first with Ops.intent = Ops.Atomic (List.map (fun op -> op.Ops.intent) operations)}
+        in
+        match capture () with
+        | Ok () -> snapshot_visible session
+        | Error message -> Rpc.failure "capture_failed" message)
+      else dispatch session "captureShared" payload
+    | _ -> Rpc.failure "capture_failed" "The selected graph is unavailable")
   | "handleDeepLink" -> object_action (fun _ fields ->
     match Shared_capture.deep_link fields with
     | Error message -> Rpc.failure "invalid_deep_link" message
@@ -3085,6 +3110,15 @@ let rec dispatch session action payload =
   | "send" -> send_message session payload
   | "sendTask" -> object_action (send_task session)
   | "addAsset" ->
+    let asset_fields = lazy (match payload with
+      | Some raw -> (try match Json.from_string raw with `Assoc fields -> fields | _ -> [] with _ -> [])
+      | None -> []) in
+    let asset_field key = List.assoc_opt key (Lazy.force asset_fields) in
+    let graph_available = match asset_field "graphId" with
+      | None | Some `Null -> true
+      | Some (`String graph) -> Option.exists (fun (active, _) -> active = graph) (active_widget_db session)
+      | _ -> false in
+    if not graph_available then Rpc.failure "capture_failed" "The selected graph is unavailable" else
     let prepare_view () =
       let before = outliner_context session in
       let previous = (state session).outliner_state in
@@ -3103,9 +3137,7 @@ let rec dispatch session action payload =
     let stage () =
       if (state session).config = None then None else
       Option.map (fun stage operation ->
-        let tags = Option.bind payload (fun raw -> try match Json.from_string raw with
-          | `Assoc fields -> List.assoc_opt "tags" fields | _ -> None with _ -> None) in
-        match tags with
+        match asset_field "tags" with
         | None -> stage operation
         | Some tags ->
           let ( let* ) = Result.bind in

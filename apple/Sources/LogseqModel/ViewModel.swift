@@ -404,6 +404,7 @@ private struct AddAssetPayload: Encodable {
     let localPath: String
     let targetBlockId: String?
     let imageDimensions: LogseqImageDimensions?
+    var graphId: String? = nil
 }
 
 private struct ImportSnapshotPayload: Encodable {
@@ -998,6 +999,22 @@ private struct CreateSyncGraphPayload: Encodable {
         await captureShared(text: text, title: nil, url: nil, id: id)
     }
 
+    public func captureShortcutText(_ text: String, graphID: String, task: Bool) async -> Bool {
+        struct Payload: Encodable {
+            let uuid: String
+            let text: String
+            let graphId: String
+            let task: Bool
+        }
+        lastError = nil
+        await dispatchEncodedAndWait("captureShortcutText", Payload(
+            uuid: UUID().uuidString.lowercased(), text: text, graphId: graphID, task: task
+        ))
+        guard lastError == nil else { return false }
+        syncPending()
+        return true
+    }
+
     public func captureShared(text: String?, title: String?, url: String?, id: String) async -> Bool {
         struct Payload: Encodable { let uuid: String; let text: String?; let title: String?; let url: String? }
         lastError = nil
@@ -1041,7 +1058,8 @@ private struct CreateSyncGraphPayload: Encodable {
         assetSize: Int,
         assetChecksum: String,
         localPath: String,
-        imageDimensions: LogseqImageDimensions? = nil
+        imageDimensions: LogseqImageDimensions? = nil,
+        graphID: String? = nil
     ) async -> Bool {
         lastError = nil
         await dispatchEncodedAndWait(
@@ -1055,7 +1073,8 @@ private struct CreateSyncGraphPayload: Encodable {
                 assetChecksum: assetChecksum,
                 localPath: localPath,
                 targetBlockId: nil,
-                imageDimensions: imageDimensions
+                imageDimensions: imageDimensions,
+                graphId: graphID
             )
         )
         guard lastError == nil else { return false }

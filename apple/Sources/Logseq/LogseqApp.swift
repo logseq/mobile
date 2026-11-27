@@ -916,6 +916,33 @@ public struct LogseqRootView : View {
         drainSharedCapturesIfReady()
     }
 
+    public func captureShortcutText(_ text: String, task: Bool) async -> Bool {
+        await waitForLocalLaunchLoad()
+        guard let graphID = store.snapshot.selectedGraphId else { return false }
+        let saved = await store.captureShortcutText(text, graphID: graphID, task: task)
+        if saved { LogseqBackgroundRefresh.syncNow() }
+        return saved
+    }
+
+    public func captureShortcutPhoto(_ data: Data, title: String, contentType: String) async -> Bool {
+        await waitForLocalLaunchLoad()
+        guard let graphID = store.snapshot.selectedGraphId,
+              store.snapshot.isGraphUnlocked == true else { return false }
+        let directory = SharedCaptureStorage.sharedDirectory
+        guard let asset = try? SharedCaptureAssetStager.stage(
+            data: data, title: title, contentType: contentType, sharedDirectory: directory
+        ) else { return false }
+        let saved = await captureSharedAsset(asset, id: UUID().uuidString.lowercased(), graphID: graphID)
+        if saved {
+            LogseqBackgroundRefresh.syncNow()
+        } else {
+            let staged = directory.appendingPathComponent(asset.stagedFileName)
+            // If the import did not move the photo, discard its temporary copy.
+            try? FileManager.default.removeItem(at: staged)
+        }
+        return saved
+    }
+
     public func setWidgetTaskStatus(
         graphId: String,
         uuid: String,
@@ -959,30 +986,35 @@ public struct LogseqRootView : View {
                 case .asset:
                     guard let asset = item.captureAsset else { return true }
                     guard let graphID = self.store.snapshot.selectedGraphId, !graphID.isEmpty else { return false }
-                    let graphDirectory = LogseqGraphLocalStorage.directoryURL(
-                        databasePath: self.databasePath, graphID: graphID
-                    )
-                    guard let imported = try? SharedCaptureAssetImporter.importAsset(
-                        asset,
-                        sharedDirectory: SharedCaptureStorage.sharedDirectory,
-                        documentsDirectory: graphDirectory
-                    ) else { return false }
-                    let file = graphDirectory.appendingPathComponent(imported.localPath)
-                    let dimensions = AssetPresentationPolicy.kind(assetType: imported.assetType, localPath: file.path) == .image
-                        ? LGImageDimensions.read(at: file) : nil
-                    return await self.store.captureSharedAsset(
-                        id: item.id,
-                        title: imported.title,
-                        assetType: imported.assetType,
-                        assetSize: imported.size,
-                        assetChecksum: imported.checksum,
-                        localPath: imported.localPath,
-                        imageDimensions: dimensions
-                    )
+                    return await self.captureSharedAsset(asset, id: item.id, graphID: graphID)
                 }
             }
             self.sharedCaptureTask = nil
         }
+    }
+
+    private func captureSharedAsset(
+        _ asset: SharedCaptureAsset, id: String, graphID: String
+    ) async -> Bool {
+        let graphDirectory = LogseqGraphLocalStorage.directoryURL(databasePath: databasePath, graphID: graphID)
+        guard let imported = try? SharedCaptureAssetImporter.importAsset(
+            asset,
+            sharedDirectory: SharedCaptureStorage.sharedDirectory,
+            documentsDirectory: graphDirectory
+        ) else { return false }
+        let file = graphDirectory.appendingPathComponent(imported.localPath)
+        let dimensions = AssetPresentationPolicy.kind(assetType: imported.assetType, localPath: file.path) == .image
+            ? LGImageDimensions.read(at: file) : nil
+        return await store.captureSharedAsset(
+            id: id,
+            title: imported.title,
+            assetType: imported.assetType,
+            assetSize: imported.size,
+            assetChecksum: imported.checksum,
+            localPath: imported.localPath,
+            imageDimensions: dimensions,
+            graphID: graphID
+        )
     }
 
     private func openSharedLink(_ original: SharedDeepLink, id: String) async -> Bool {
