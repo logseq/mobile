@@ -4,8 +4,14 @@ import SwiftUI
 import UIKit
 #endif
 
+struct LGSidebarBackdrop {
+    let panelWidth: CGFloat
+    let dismissLabel: String
+    let dismiss: () -> Void
+}
+
 extension EnvironmentValues {
-    @Entry var logseqSidebarTranslucent = false
+    @Entry var logseqSidebarBackdrop: LGSidebarBackdrop?
 }
 
 @MainActor
@@ -116,10 +122,9 @@ private struct LGPhoneSidebar: View {
             .environment(\.lgSidebarPanExclusions, panExclusions)
             .background {
                 LGSidebarPan(
+                    isOpen: { open },
                     canStart: { velocity in
-                        let visible = presentation.progress
-                        return abs(velocity.x) > 2 * abs(velocity.y) &&
-                            (velocity.x > 0 ? enabled && visible < 0.99 : visible > 0.01)
+                        enabled && !open && presentation.progress < 0.99 && velocity.x > 2 * abs(velocity.y)
                     },
                     isClosed: { presentation.progress == 0 },
                     exclusions: panExclusions,
@@ -239,23 +244,12 @@ private struct LGSidebarLayers: View, Animatable {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
 
-            if blocksMain {
-                Button(action: dismiss) { Color.clear.contentShape(Rectangle()) }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.leading, panelWidth)
-                    .accessibilityLabel(dismissLabel)
-                    .accessibilityIdentifier("button.sidebar.dismiss")
-                    .accessibilityHidden(!open)
-            }
-
             if hasOpened {
                 panel
-                    .environment(\.logseqSidebarTranslucent, true)
-                    .frame(width: panelWidth)
-                    .frame(maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .environment(\.logseqSidebarBackdrop, LGSidebarBackdrop(
+                        panelWidth: panelWidth, dismissLabel: dismissLabel, dismiss: dismiss
+                    ))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay(alignment: .bottomTrailing) {
                         settings.padding(settingsInsets)
                     }
@@ -302,6 +296,7 @@ struct LGSidebarPanExclusion: UIViewRepresentable {
 }
 
 private struct LGSidebarPan: UIViewRepresentable {
+    let isOpen: () -> Bool
     let canStart: (CGPoint) -> Bool
     let isClosed: () -> Bool
     let exclusions: LGSidebarPanExclusions
@@ -353,7 +348,7 @@ private struct LGSidebarPan: UIViewRepresentable {
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            !handlers.isClosed() || !handlers.exclusions.contains(touch)
+            !handlers.isOpen() && (!handlers.isClosed() || !handlers.exclusions.contains(touch))
         }
 
         override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {

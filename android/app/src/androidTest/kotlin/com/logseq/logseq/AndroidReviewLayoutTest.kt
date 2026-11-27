@@ -30,6 +30,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
@@ -226,6 +227,36 @@ class AndroidReviewLayoutTest {
             shell.bottom - gear.bottom <= 24.dp)
         settings.performTouchInput { click(center) }
         ui.onNodeWithTag("screen.settings").assertIsDisplayed()
+    }
+
+    @Test fun sidebarBackdropScrollsThePagesAndOnlyTapsDismissIt() {
+        val recent = JSONArray().apply {
+            repeat(40) { put(JSONObject().put("uuid", "recent-$it").put("title", "Recent page $it")) }
+        }
+        app(projection = JSONObject().put("recentPages", recent))
+        ui.onRoot().performTouchInput {
+            swipeRight(startX = width * 0.08f, endX = width * 0.78f, durationMillis = 350)
+        }
+        val backdrop = ui.onNodeWithTag("button.sidebar.dismiss").assertIsDisplayed()
+        val row = ui.onNodeWithTag("link.sidebar.page.recent-0")
+        val initialTop = row.getUnclippedBoundsInRoot().top
+        backdrop.performTouchInput {
+            swipe(Offset(centerX, height * 0.70f), Offset(centerX, height * 0.35f), durationMillis = 450)
+        }
+        val scrolledTop = row.getUnclippedBoundsInRoot().top
+        assertTrue("Dragging on the backdrop scrolls the sidebar pages", scrolledTop < initialTop - 48.dp)
+        ui.onNodeWithTag("sidebar.navigation").performTouchInput {
+            swipe(Offset(right - 2f, height * 0.30f), Offset(right - 2f, height * 0.65f), durationMillis = 450)
+        }
+        assertTrue("The panel's right edge also scrolls the sidebar pages",
+            row.getUnclippedBoundsInRoot().top > scrolledTop + 48.dp)
+        backdrop.performTouchInput {
+            swipe(Offset(width * 0.90f, centerY), Offset(width * 0.15f, centerY), durationMillis = 300)
+        }
+        backdrop.assertIsDisplayed()
+        backdrop.performTouchInput { click(center) }
+        backdrop.assertDoesNotExist()
+        ui.onNodeWithTag("button.sidebar").assertIsDisplayed()
     }
 
     @Test fun graphSwitchIsOnlyInTheJournalsHeader() {

@@ -356,7 +356,7 @@ private struct LGSidebarNavigation: View {
     @AppStorage("logseq.appearance") private var appearance = "system"
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.logseqDarkTheme) private var darkTheme
-    @Environment(\.logseqSidebarTranslucent) private var translucent
+    @Environment(\.logseqSidebarBackdrop) private var backdrop
     @State private var topInset: CGFloat = 0
 
     private var settingsBottomPadding: CGFloat {
@@ -379,11 +379,24 @@ private struct LGSidebarNavigation: View {
             ? Color.white
             : LogseqThemePolicy.accent
         let scroll = ScrollView {
-            child(at: 0)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                // Let the rows scroll into the status area while starting just below it.
-                .padding(.top, topInset)
-                .padding(.bottom, settingsBottomPadding + Self.settingsButtonHeight + 4)
+            if let backdrop {
+                ZStack(alignment: .topLeading) {
+                    Color.clear
+                        .containerRelativeFrame(.vertical)
+                        .allowsHitTesting(false)
+                    rows.frame(width: backdrop.panelWidth)
+                }
+                .overlay {
+                    // Keep the backdrop inside the scroll view so drags also reach its native pan recognizer.
+                    Button(action: backdrop.dismiss) { Color.clear.contentShape(Rectangle()) }
+                        .buttonStyle(.plain)
+                        .padding(.leading, backdrop.panelWidth)
+                        .accessibilityLabel(backdrop.dismissLabel)
+                        .accessibilityIdentifier("button.sidebar.dismiss")
+                }
+            } else {
+                rows
+            }
         }
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize)
@@ -403,7 +416,7 @@ private struct LGSidebarNavigation: View {
             #endif
         }
         .overlay(alignment: .bottomTrailing) {
-            if !translucent {
+            if backdrop == nil {
                 child(at: 1)
                     .padding(.trailing, 16)
                     .padding(.bottom, settingsBottomPadding)
@@ -412,7 +425,15 @@ private struct LGSidebarNavigation: View {
         #if os(iOS)
         .background(LGWindowVerticalInsetsReader { topInset = $0.top })
         #endif
-        .background((translucent ? Color.clear : background).ignoresSafeArea())
+        .background((backdrop == nil ? background : Color.clear).ignoresSafeArea())
+    }
+
+    private var rows: some View {
+        child(at: 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // Let the rows scroll into the status area while starting just below it.
+            .padding(.top, topInset)
+            .padding(.bottom, settingsBottomPadding + Self.settingsButtonHeight + 4)
     }
 
     private func child(at index: Int) -> AnyView {

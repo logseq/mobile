@@ -6,15 +6,22 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -65,6 +72,7 @@ import kotlin.math.pow
 import kotlin.math.sqrt
 
 internal val LocalSidebarBlocksMain = compositionLocalOf { false }
+private val LocalSidebarPagesScroll = compositionLocalOf<ScrollState?> { null }
 
 internal fun LuiExtensionRegistry.registerSidebarOverlay() {
     register(
@@ -84,6 +92,14 @@ internal fun LuiExtensionRegistry.registerSidebarOverlay() {
         ),
         events = listOf(LuiExtensionEventSchema("open"), LuiExtensionEventSchema("close")),
     ) { SidebarOverlay(this) }
+    register(
+        "sidebar-pages",
+        "lui-extension-v1|13:sidebar-pages|profiles:android/kotlin|standard-children:1|children:|properties:|events:",
+        acceptsStandardChildren = true,
+    ) {
+        val scroll = LocalSidebarPagesScroll.current ?: rememberScrollState()
+        Box(Modifier.fillMaxSize().testTag("scroll.sidebar.pages").verticalScroll(scroll)) { Children() }
+    }
 }
 
 @Composable
@@ -96,6 +112,7 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
     val dismissLabel = context.string("dismiss-label").orEmpty()
     val scope = rememberCoroutineScope()
     val motion = remember { SidebarMotion(open, scope) }
+    val pagesScroll = rememberScrollState()
     val view = LocalView.current
     val latestOpen by rememberUpdatedState(open)
     val latestCanOpen by rememberUpdatedState(canOpen)
@@ -138,9 +155,12 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
                 endX = if (direction > 0f) viewportWidthPx else 0f,
             )
         }
-        Box(Modifier.fillMaxSize().sidebarPan(
-            motion, widthPx, direction, { latestCanOpen }, { latestOpen }, { latestSelect(it) },
-        )) {
+        Box(
+            Modifier.fillMaxSize()
+                .sidebarPan(motion, widthPx, direction, { latestCanOpen }, { latestOpen }, { latestSelect(it) })
+                // Drags on the backdrop and the panel's padding scroll the same list as drags on its rows.
+                .scrollable(pagesScroll, Orientation.Vertical, enabled = open, reverseDirection = true),
+        ) {
             CompositionLocalProvider(
                 LocalLuiScrollingEnabled provides !blocksMain,
                 LocalSidebarBlocksMain provides blocksMain,
@@ -163,6 +183,8 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
                 // Keep the drawer's leading region modal even while the panel animates.
                 SidebarHitShield(Modifier.fillMaxHeight().width(width))
                 Box(Modifier.matchParentSize().padding(start = width)
+                    // Cancel a pending click even when a horizontal drag stays within the backdrop.
+                    .draggable(rememberDraggableState {}, Orientation.Horizontal)
                     .clickable(interactionSource = null, indication = null, role = Role.Button) { select(false) }
                     .testTag("button.sidebar.dismiss").semantics {
                         contentDescription = dismissLabel
@@ -186,7 +208,9 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
                         onSecondaryContainer = colors.onSurface,
                     )) {
                         Box(Modifier.width(width).fillMaxHeight()) {
-                            context.child(panel)
+                            CompositionLocalProvider(LocalSidebarPagesScroll provides pagesScroll) {
+                                context.child(panel)
+                            }
                             if (!panelInteractive) SidebarHitShield(Modifier.matchParentSize())
                         }
                     }
@@ -264,7 +288,7 @@ private fun Modifier.sidebarPan(
 ): Modifier = pointerInput(motion, width, direction) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
-        if (!canOpen() && motion.progress == 0f) return@awaitEachGesture
+        if (isOpen() || !canOpen()) return@awaitEachGesture
         val velocity = VelocityTracker()
         velocity.addPosition(down.uptimeMillis, down.position)
         var start: Float? = null
@@ -295,9 +319,7 @@ private fun Modifier.sidebarPan(
                 lastMoveTime = change.uptimeMillis
                 if (start == null) {
                     if (travel.getDistance() < viewConfiguration.touchSlop) continue
-                    val visible = motion.progress
-                    val canDrag = if (horizontal > 0f) canOpen() && visible < 0.99f else visible > 0.01f
-                    if (!canDrag || abs(horizontal) <= 2f * abs(travel.y)) break
+                    if (isOpen() || !canOpen() || motion.progress >= 0.99f || horizontal <= 2f * abs(travel.y)) break
                     start = motion.beginDrag()
                 }
                 motion.drag(checkNotNull(start), fraction)

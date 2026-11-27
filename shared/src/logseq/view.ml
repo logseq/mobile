@@ -267,6 +267,11 @@ let native_sidebar_schema () =
   Lui_extension.component "native-sidebar" [profile IOS SwiftUIHost]
     true [] [] []
 
+let sidebar_pages_schema () =
+  let open Lui_protocol in
+  let open Lui_extension in
+  component "sidebar-pages" [profile AndroidOS KotlinHost] true [] [] []
+
 let sidebar_overlay_schema () =
   let open Lui_protocol in
   let open Lui_extension in
@@ -474,6 +479,7 @@ let extension_registry () =
        [Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost]
        true [] [] []);
   Lui_extension.register_component registry (native_sidebar_schema ());
+  Lui_extension.register_component registry (sidebar_pages_schema ());
   Lui_extension.register_component registry (let open Lui_protocol in
     let open Lui_extension in
     component "composer-task-toggle" [profile AndroidOS KotlinHost] false []

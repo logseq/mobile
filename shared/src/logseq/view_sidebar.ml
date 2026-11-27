@@ -269,6 +269,12 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send ~settings : t =
       ] in
   let pages =
     if native_sidebar then pages
+    else if Lui_ui.platform context = AndroidOS && Lui_ui.host context = KotlinHost then
+      box ~grow:1.0 [custom (fun context parent ->
+        let node = Lui_ui.extension context "sidebar-pages" in
+        attach context parent node;
+        ignore (mount context ~parent:node pages);
+        node)]
     else scroll ~grow:1.0 ~accessibility_identifier:"scroll.sidebar.pages" [pages] in
   let content =
     let shortcuts = [
