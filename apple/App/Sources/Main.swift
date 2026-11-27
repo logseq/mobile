@@ -116,45 +116,20 @@ private final class DiscussionNotificationDelegate: NSObject, UNUserNotification
 }
 
 @available(iOS 17.0, *)
-struct JournalCaptureGraph: AppEntity {
-    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Logseq Graph"
-    static let defaultQuery = JournalCaptureGraphQuery()
-    static let recentID = "logseq:last-shortcut-capture"
+struct JournalCaptureGraphOptions: DynamicOptionsProvider {
+    static let recentID = "Last Used Graph"
 
-    let id: String
-    let name: String?
-
-    var displayRepresentation: DisplayRepresentation {
-        if id == Self.recentID {
-            if let name { return DisplayRepresentation(title: "Last Used Graph", subtitle: "\(name)") }
-            return DisplayRepresentation(title: "Last Used Graph")
-        }
-        return DisplayRepresentation(title: "\(name ?? id)")
-    }
-
-    var explicitGraphID: String? { id == Self.recentID ? nil : id }
-}
-
-@available(iOS 17.0, *)
-struct JournalCaptureGraphQuery: EntityQuery {
-    @MainActor func suggestedEntities() async -> [JournalCaptureGraph] {
+    @MainActor func results() async -> IntentItemCollection<String> {
         let graphs = await LogseqJournalShortcutCapture.availableGraphs()
-        return [recentGraph(in: graphs)] + graphs.map { JournalCaptureGraph(id: $0.id, name: $0.name) }
-    }
-
-    @MainActor func entities(for identifiers: [String]) async -> [JournalCaptureGraph] {
-        let graphs = await suggestedEntities()
-        return identifiers.compactMap { id in graphs.first { $0.id == id } }
-    }
-
-    @MainActor func defaultResult() async -> JournalCaptureGraph? {
-        recentGraph(in: await LogseqJournalShortcutCapture.availableGraphs())
-    }
-
-    @MainActor private func recentGraph(in graphs: [LogseqJournalShortcutCapture.Graph]) -> JournalCaptureGraph {
         let name = LogseqJournalShortcutCapture.defaultGraph(in: graphs)?.name
-        return JournalCaptureGraph(id: JournalCaptureGraph.recentID, name: name)
+        let recent = IntentItem(Self.recentID, title: "Last Used Graph", subtitle: name.map { "\($0)" })
+        let options = graphs.map { IntentItem($0.id, title: "\($0.name)") }
+        return IntentItemCollection(sections: [IntentItemSection(items: [recent] + options)])
     }
+
+    func defaultResult() async -> String? { Self.recentID }
+
+    static func explicitGraphID(_ value: String) -> String? { value == recentID ? nil : value }
 }
 
 @available(iOS 17.0, *)
@@ -169,15 +144,15 @@ struct CaptureToJournalIntent: AppIntent {
     )
     var text: String
 
-    @Parameter(title: "Graph")
-    var graph: JournalCaptureGraph?
+    @Parameter(title: "Graph", optionsProvider: JournalCaptureGraphOptions())
+    var graph: String
 
     static var parameterSummary: some ParameterSummary {
         Summary("Capture \(\.$text) in \(\.$graph)")
     }
 
     @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
-        try await captureJournalText(text, task: false, graphID: graph?.explicitGraphID)
+        try await captureJournalText(text, task: false, graphID: JournalCaptureGraphOptions.explicitGraphID(graph))
         return .result(dialog: "Added to today's journal.")
     }
 }
@@ -191,15 +166,15 @@ struct CaptureTaskToJournalIntent: AppIntent {
     @Parameter(title: "Task", requestValueDialog: IntentDialog("What task would you like to capture?"))
     var text: String
 
-    @Parameter(title: "Graph")
-    var graph: JournalCaptureGraph?
+    @Parameter(title: "Graph", optionsProvider: JournalCaptureGraphOptions())
+    var graph: String
 
     static var parameterSummary: some ParameterSummary {
         Summary("Capture task \(\.$text) in \(\.$graph)")
     }
 
     @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
-        try await captureJournalText(text, task: true, graphID: graph?.explicitGraphID)
+        try await captureJournalText(text, task: true, graphID: JournalCaptureGraphOptions.explicitGraphID(graph))
         return .result(dialog: "Added a task to today's journal.")
     }
 }
@@ -247,8 +222,8 @@ struct CapturePhotoToJournalIntent: AppIntent {
     @Parameter(title: "Photo")
     var photo: IntentFile
 
-    @Parameter(title: "Graph")
-    var graph: JournalCaptureGraph?
+    @Parameter(title: "Graph", optionsProvider: JournalCaptureGraphOptions())
+    var graph: String
 
     static var parameterSummary: some ParameterSummary {
         Summary("Capture photo \(\.$photo) in \(\.$graph)")
@@ -265,7 +240,8 @@ struct CapturePhotoToJournalIntent: AppIntent {
         let data = photo.data
         guard !data.isEmpty else { throw JournalShortcutError.invalidPhoto }
         guard await LogseqJournalShortcutCapture.capturePhoto(
-            data, title: title, contentType: type.preferredMIMEType ?? type.identifier, graphID: graph?.explicitGraphID
+            data, title: title, contentType: type.preferredMIMEType ?? type.identifier,
+            graphID: JournalCaptureGraphOptions.explicitGraphID(graph)
         ) else { throw JournalShortcutError.captureFailed }
         return .result(dialog: "Added a photo to today's journal.")
     }
