@@ -1553,6 +1553,18 @@ let navigation_root_model (current : Model.logseq_model) =
     search_navigation_path = [];
   }
 
+let cached_journal_section_markers =
+  let last_rows = ref [] in
+  let last_markers = ref [] in
+  fun rows ->
+    if rows == !last_rows then !last_markers
+    else begin
+      let markers = Model.journal_section_markers rows in
+      last_rows := rows;
+      last_markers := markers;
+      markers
+    end
+
 let journal_navigation_model (current : Model.logseq_model) =
   let rows = current.journal_outliner_rows in
   let root =
@@ -1572,7 +1584,7 @@ let journal_navigation_model (current : Model.logseq_model) =
       search_open = false;
       search_navigation_path = [];
       outliner_rows = rows;
-      outliner_section_markers = Model.journal_section_markers rows;
+      outliner_section_markers = cached_journal_section_markers rows;
     }
   in
   if journal_home_visible_ current then root

@@ -644,29 +644,28 @@ let outliner_patch_result ?(include_agenda = false) session context blocks delet
     else match query_db session with
       | None -> blocks
       | Some db ->
-        let dependent_rows = Hashtbl.create 8 and included = Hashtbl.create (List.length blocks) in
+        let dependent_rows = Hashtbl.create 8 in
         List.iter (fun uuid -> Hashtbl.replace dependent_rows uuid ()) (Query_block.owner_uuids db);
         Seq.iter (fun (datom : Datascript.datom) ->
           Option.iter (fun uuid -> Hashtbl.replace dependent_rows uuid ())
             (Graph_read.uuid_for_eid db datom.e))
           (Datascript.Db.datoms db Datascript.Aevt ~a:"block/link" ());
-        List.iter (fun (block : Model.block) -> Hashtbl.replace included block.uuid ()) blocks;
-        let refreshed = List.filter (fun (block : Model.block) ->
-          Hashtbl.mem dependent_rows block.uuid && not (Hashtbl.mem included block.uuid)) context.Outliner.blocks in
-        List.rev_append (List.rev blocks) refreshed in
-  let encoded = Rpc.outliner_patch_result s.model.revision context s.outliner_state
+        if Hashtbl.length dependent_rows = 0 then blocks
+        else begin
+          let included = Hashtbl.create (List.length blocks) in
+          List.iter (fun (block : Model.block) -> Hashtbl.replace included block.uuid ()) blocks;
+          let refreshed = List.filter (fun (block : Model.block) ->
+            Hashtbl.mem dependent_rows block.uuid && not (Hashtbl.mem included block.uuid)) context.Outliner.blocks in
+          List.rev_append (List.rev blocks) refreshed
+        end in
+  let result = Rpc.outliner_patch_fields s.model.revision context s.outliner_state
     ?sync_error:(Pump.pending_sync_error session)
     ~is_task:(outliner_is_task session)
     s.outliner_revision s.outliner_commands
     (has_pending_operations session)
     blocks deleted splices in
-  match Json.from_string encoded with
-  | `Assoc fields -> (match List.assoc_opt "result" fields with
-      | Some (`Assoc result) ->
-        let agenda = if include_agenda then ["journalTasks", journal_tasks_json session] else [] in
-        success session (`Assoc (("emptyJournals", empty_journals_json session) :: agenda @ result))
-      | Some result -> success session result | None -> encoded)
-  | _ -> encoded
+  let agenda = if include_agenda then ["journalTasks", journal_tasks_json session] else [] in
+  success session (`Assoc (("emptyJournals", empty_journals_json session) :: agenda @ result))
 
 let outliner_patch ?include_agenda session context changed_ids =
   let changed =

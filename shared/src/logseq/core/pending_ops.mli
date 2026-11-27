@@ -206,6 +206,7 @@ val json_object : (string * Yojson.Basic.t) list -> Yojson.Basic.t
 val option_json : ('a -> Yojson.Basic.t) -> 'a option -> Yojson.Basic.t
 val option_value : (Yojson.Basic.t -> 'a) -> Yojson.Basic.t -> 'a option
 val save : string -> pending_operation -> unit
+val find_opt : string -> string -> pending_operation option
 val list : string -> pending_operation list
 val set_state : string -> string -> pending_state -> unit
 val remove : string -> string -> unit

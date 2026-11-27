@@ -44,7 +44,7 @@ internal fun LuiExtensionRegistry.registerNodeIcon() {
 }
 
 @Composable
-private fun NodeIcon(encoded: String?, size: Int, muted: Boolean) {
+internal fun NodeIcon(encoded: String?, size: Int, muted: Boolean) {
     val context = LocalContext.current
     val catalog = remember { NodeIconAssets.get(context) }
     val icon = remember(encoded) { runCatching { JSONObject(encoded ?: "{}") }.getOrDefault(JSONObject()) }

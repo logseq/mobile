@@ -284,7 +284,7 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
     }
 
     static let identifier = "outliner-block-row"
-    static let fingerprint = "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:remove-tag[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],11:menu-action[7:payload:string:required],12:set-priority[8:priority:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[18:caret-utf16-offset:int:optional,4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]"
+    static let fingerprint = "lui-extension-v1|18:outliner-block-row|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:remove-tag[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],11:menu-action[7:payload:string:required],12:set-priority[8:priority:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[18:caret-utf16-offset:int:optional,4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry, playback: LGYouTubePlaybackState) throws {
         let uuid = LUIExtensionEventField(name: "uuid", kind: .string, isRequired: true)

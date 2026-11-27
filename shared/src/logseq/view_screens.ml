@@ -1,6 +1,55 @@
 open Lui_protocol
 open Lui_elements
 
+let is_outliner_hot_effect = function
+  | Model.ReturnOutlinerEditorEffect _
+  | Model.ChangeOutlinerTextEffect _
+  | Model.ComposeOutlinerTextEffect _
+  | Model.SaveOutlinerEditingEffect _
+  | Model.MoveOutlinerCaretEffect _
+  | Model.BackspaceOutlinerEditorEffect _
+  | Model.SyncPendingEffect _ -> true
+  | _ -> false
+
+let non_outliner_effects effects =
+  List.filter (fun eff -> not (is_outliner_hot_effect eff)) effects
+
+let non_outliner_model_equal =
+  let last_pair : (Model.logseq_model * Model.logseq_model * bool) option ref = ref None in
+  fun (a : Model.logseq_model) (b : Model.logseq_model) ->
+    if a == b then true
+    else
+      match !last_pair with
+      | Some (pa, pb, res) when pa == a && pb == b -> res
+      | _ ->
+        let eq =
+          (a.outliner_editing = None) = (b.outliner_editing = None)
+          && (a.has_pending_semantic_operations || a.has_pending_sync_request)
+             = (b.has_pending_semantic_operations || b.has_pending_sync_request)
+          && (a.pending_effects == b.pending_effects
+              || non_outliner_effects a.pending_effects = non_outliner_effects b.pending_effects)
+          && (a.in_flight_effects == b.in_flight_effects
+              || non_outliner_effects a.in_flight_effects = non_outliner_effects b.in_flight_effects)
+          && try
+               { a with
+                 Model.outliner_rows = b.outliner_rows;
+                 navigation_root_rows = b.navigation_root_rows;
+                 journal_outliner_rows = b.journal_outliner_rows;
+                 outliner_section_markers = b.outliner_section_markers;
+                 outliner_editing = b.outliner_editing;
+                 outliner_selection_revision = b.outliner_selection_revision;
+                 has_pending_semantic_operations = b.has_pending_semantic_operations;
+                 has_pending_sync_request = b.has_pending_sync_request;
+                 pending_effects = b.pending_effects;
+                 in_flight_effects = b.in_flight_effects;
+                 next_effect_id = b.next_effect_id;
+                 last_core_response = b.last_core_response;
+               } = b
+             with Invalid_argument _ -> false
+        in
+        last_pair := Some (a, b, eq);
+        eq
+
 let search_result_row model_source hit_source send : t =
  custom @@ fun context parent ->
    let hit : Model.search_hit = Signal.sample hit_source in
@@ -186,15 +235,22 @@ let bottom_tab_row ~android ~tab_width ~action_width model_source send : t =
          ~accessibility_identifier:("group.bottom." ^ name) children in
   let tabs = custom (fun context parent ->
     let node = Lui_ui.extension context "bottom-tab-strip" in
-    let selected = Signal.map (fun (current : Model.logseq_model) ->
+    let selected = Signal.cutoff Int.equal (Signal.map (fun (current : Model.logseq_model) ->
       List.find_index (fun (destination, _, _, _, _, _) -> current.destination = destination)
-        destinations |> Option.value ~default:(-1)) model_source in
-    let items = Signal.map (fun current ->
+        destinations |> Option.value ~default:(-1)) model_source) in
+    let items_source = Signal.cutoff (fun (a : Model.logseq_model) (b : Model.logseq_model) ->
+      a == b
+      || (a.collaboration == b.collaboration
+          && (a.language == b.language || a.language = b.language)
+          && (a.system_language == b.system_language || a.system_language = b.system_language)
+          && a.notifications_recent_only = b.notifications_recent_only
+          && a.selected_graph_id = b.selected_graph_id)) model_source in
+    let items = Signal.cutoff String.equal (Signal.map (fun current ->
       `List (List.map (fun (_, title, name, image, selected_image, _) ->
         `Assoc ["title", `String (tab_label current name title); "name", `String name;
                 "image", `String image; "selectedImage", `String selected_image;
                 "unread", `Bool (name = "notifications" && Model.notification_count current > 0)])
-        destinations) |> Yojson.Safe.to_string) model_source in
+        destinations) |> Yojson.Safe.to_string) items_source) in
     Lui_ui.extension_property context node "inset" (IntValue inset);
     Lui_ui.extension_property context node "cell-width" (IntValue tab_width);
     Lui_ui.extension_property_signal context node "items" (Signal.map View_base.string_wire_value items);
@@ -248,20 +304,21 @@ let capture_and_search_row (context : Lui_ui.ui_context) model_source send : t =
 
 let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) model_source send : t
     =
+  let shell_model = Signal.cutoff non_outliner_model_equal model_source in
   let primary_tabs = uses_ios_native_header context || Lui_ui.host context = KotlinHost in
   let comment_chrome =
     if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
       current.discussion_composition <> None
-      && (Lui_ui.host context = KotlinHost || current.search_open = search_page)) model_source)
+      && (Lui_ui.host context = KotlinHost || current.search_open = search_page)) shell_model)
       (column ~container_relative_frame:`horizontal ~cross:`stretch ~gap:0 ~padding_horizontal:16 [
         box ~height:6 [];
-        View_collaboration.compose_input model_source send;
+        View_collaboration.compose_input shell_model send;
         box ~height:21 [];
       ]) in
   let selection_chrome : t =
     column ~gap:0 ~padding_horizontal:16
       [
-        View_outliner.outliner_selection_toolbar model_source send;
+        View_outliner.outliner_selection_toolbar shell_model send;
         box ~height:21 [];
       ]
   in
@@ -271,10 +328,10 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
         comment_chrome;
         if_
           ~test:(Signal.map View_base.bottom_chrome_selection_
-                   model_source)
+                   shell_model)
           selection_chrome;
         if_
-          ~test:(Signal.map View_base.bottom_chrome_editor_ model_source)
+          ~test:(Signal.map View_base.bottom_chrome_editor_ shell_model)
           (column ~gap:0 ~cross:`stretch
              ~accessibility_identifier:"container.outliner.editor-chrome"
              [
@@ -289,25 +346,25 @@ let main_bottom_chrome ?(search_page = false) (context : Lui_ui.ui_context) mode
         if_
           ~test:
             (Signal.map (View_base.bottom_chrome_expanded_composer_ ~primary_tabs)
-               model_source)
+               shell_model)
           (column ~gap:0 ~padding_horizontal:16
              [
-               if_ ~test:(reactive View_base.composer_reference_active_ model_source)
-                 (View_outliner.composer_reference_bar context model_source send);
+               if_ ~test:(reactive View_base.composer_reference_active_ shell_model)
+                 (View_outliner.composer_reference_bar context shell_model send);
                box ~height:6 [];
                row ~cross:`center
                  ~accessibility_identifier:"row.composer.placement"
-                 [ View_composer.composer_view context model_source send ];
+                 [ View_composer.composer_view context shell_model send ];
                box ~height:21 [];
              ]);
         if_
           ~test:
             (Signal.map (View_base.bottom_chrome_capture_and_search_ ~primary_tabs)
-               model_source)
+               shell_model)
           (column ~container_relative_frame:`horizontal ~cross:`stretch ~gap:0 ~padding_horizontal:16
              [
                box ~height:8 [];
-               capture_and_search_row context model_source send;
+               capture_and_search_row context shell_model send;
                box ~height:21 [];
              ]);
       ]
@@ -440,7 +497,7 @@ let root_outliner_view ?scroll_to_top (context : Lui_ui.ui_context) model_source
           View_outliner.outliner_entries ~prefetch_history ?reset_key:scroll_to_top context model_source
             ~source:
               (Signal.map View_rows.retained_outliner_rows
-                 model_source)
+                 (Signal.cutoff View_rows.retained_rows_inputs_equal model_source))
             send;
           (* The virtual list retains positional slots. A keyed child inside
              a stable container renews appearance even for short journals. *)
@@ -544,29 +601,30 @@ let graph_loading_feedback (context : Lui_ui.ui_context) model_source : t
 
 let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
     =
+  let shell_model = Signal.cutoff non_outliner_model_equal model_source in
   stack ~grow:1.0
     [
       if_
-        ~test:(reactive View_base.journal_tree_retained_ model_source)
+        ~test:(reactive View_base.journal_tree_retained_ shell_model)
         (journal_tree_panes context model_source send);
       if_
-        ~test:(reactive View_base.tasks_destination_ model_source)
+        ~test:(reactive View_base.tasks_destination_ shell_model)
         (View_outliner.tasks_screen context model_source send);
       if_
-        ~test:(Signal.map View_base.flashcards_destination_ model_source)
+        ~test:(Signal.map View_base.flashcards_destination_ shell_model)
         (View_flashcards.flashcard_screen
            ~uses_header:(uses_ios_native_header context || Lui_ui.host context = KotlinHost)
            ~bottom_spacing:(if uses_ios_native_header context then 64 else 88)
-           model_source send);
+           shell_model send);
       View_collaboration.notification_screen
-        ~bottom_spacing:(if uses_ios_native_header context then 72 else 80) model_source send;
+        ~bottom_spacing:(if uses_ios_native_header context then 72 else 80) shell_model send;
       if_
-        ~test:(Signal.map View_base.graphs_destination_ model_source)
-        (View_graphs.graphs_screen context model_source send);
+        ~test:(Signal.map View_base.graphs_destination_ shell_model)
+        (View_graphs.graphs_screen context shell_model send);
 
       if_
-        ~test:(Signal.map View_base.graph_loading_visible_ model_source)
-        (graph_loading_feedback context model_source);
+        ~test:(Signal.map View_base.graph_loading_visible_ shell_model)
+        (graph_loading_feedback context shell_model);
     ]
 
 let main_header_model context current =
@@ -915,19 +973,23 @@ let native_search_view ?base (_context : Lui_ui.ui_context) model_source send :
  custom @@ fun context parent ->
    let node = Lui_ui.extension context "native-search-presentation" in
    attach context parent node;
+   let shell_model =
+     Signal.own_signal context.Lui_ui.ui_scope
+       (Signal.cutoff non_outliner_model_equal model_source)
+   in
    let presented_source =
-     Signal.map View_base.model_search_open_ model_source
+     Signal.map View_base.model_search_open_ shell_model
    in
    let depth_source =
-     Signal.map View_base.search_navigation_depth model_source
+     Signal.map View_base.search_navigation_depth shell_model
    in
-   let query_source = Signal.map View_base.model_search_query model_source in
+   let query_source = Signal.map View_base.model_search_query shell_model in
    Lui_ui.extension_property_signal context node "back-title"
-     (Signal.map (fun current -> StringValue (View_base.tr current "Back")) model_source);
+     (Signal.map (fun current -> StringValue (View_base.tr current "Back")) shell_model);
    Lui_ui.extension_property_signal context node "clear-title"
-     (Signal.map (fun current -> StringValue (View_base.tr current "Clear")) model_source);
+     (Signal.map (fun current -> StringValue (View_base.tr current "Clear")) shell_model);
    Lui_ui.extension_property_signal context node "close-title"
-     (Signal.map (fun current -> StringValue (View_base.tr current "Close")) model_source);
+     (Signal.map (fun current -> StringValue (View_base.tr current "Close")) shell_model);
    Lui_ui.extension_property_signal context node "presented"
      (Signal.map View_base.bool_wire_value presented_source);
    Lui_ui.extension_property_signal context node "depth"
@@ -937,13 +999,13 @@ let native_search_view ?base (_context : Lui_ui.ui_context) model_source send :
    Lui_ui.extension_property_signal context node "status-title"
      (Signal.map (fun current ->
        let status = View_base.search_result_status current in
-       StringValue (if status = "" then View_base.tr current "Search" else status)) model_source);
+       StringValue (if status = "" then View_base.tr current "Search" else status)) shell_model);
    Lui_ui.extension_property_signal context node "title"
      (Signal.map (fun (current : Model.logseq_model) -> StringValue
        (if Lui_ui.host context = SwiftUIHost || current.search_navigation_path = [] then View_base.tr current "Search"
-        else View_base.active_node_title current)) model_source);
+        else View_base.active_node_title current)) shell_model);
    Lui_ui.extension_property_signal context node "bottom-occupies-layout-space"
-     (Signal.map (fun current -> BoolValue (View_base.search_editor_active_ current)) model_source);
+     (Signal.map (fun current -> BoolValue (View_base.search_editor_active_ current)) shell_model);
    Lui_ui.on_event context node (fun input_event ->
        ignore (View_base.handle_native_search_event input_event send));
    if Lui_ui.host context = KotlinHost then
@@ -952,27 +1014,27 @@ let native_search_view ?base (_context : Lui_ui.ui_context) model_source send :
          [
            column ~grow:1.0
              ~display_signal:(Signal.map (fun current ->
-               if View_base.kotlin_app_root_visible_ current then `contents else `none) model_source)
+               if View_base.kotlin_app_root_visible_ current then `contents else `none) shell_model)
              [logseq_main_view context (Signal.map View_base.navigation_root_model model_source) send];
            column ~grow:1.0
              ~display_signal:(Signal.map (fun (current : Model.logseq_model) ->
-               if current.search_open then `none else `contents) model_source)
+               if current.search_open then `none else `contents) shell_model)
              [native_node_stack context model_source
-               ~source:(Signal.map Model.app_node_routes model_source) send];
+               ~source:(Signal.map Model.app_node_routes shell_model) send];
            if_
              ~test:
                (Signal.map View_base.kotlin_search_root_visible_
-                  model_source)
+                  shell_model)
              (column ~grow:1.0 ~background:"background"
-                [ search_screen model_source send ]);
+                [ search_screen shell_model send ]);
            native_node_stack context model_source
-             ~source:(Signal.map View_base.search_node_routes model_source) send;
+             ~source:(Signal.map View_base.search_node_routes shell_model) send;
          ])
      in
      ignore (mount context ~parent:node (if_ ~test:(Signal.map (fun (current : Model.logseq_model) ->
-       current.search_open && current.search_navigation_path <> []) model_source)
-       (reactive (fun selecting -> if selecting then selection_done model_source send
-          else active_overflow_menu model_source send) (Signal.map header_selection_active model_source))));
+       current.search_open && current.search_navigation_path <> []) shell_model)
+       (reactive (fun selecting -> if selecting then selection_done shell_model send
+          else active_overflow_menu shell_model send) (Signal.map header_selection_active shell_model))));
      node
    else (
      ignore
@@ -1032,20 +1094,22 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
  custom @@ fun context parent ->
    let node = Lui_ui.extension context "native-navigation-stack" in
    attach context parent node;
+   let shell_model = Signal.own_signal context.ui_scope
+     (Signal.cutoff non_outliner_model_equal model_source) in
    let depth_source =
-     Signal.map View_base.app_navigation_depth model_source
+     Signal.map View_base.app_navigation_depth shell_model
    in
    let back_depth_source =
-     Signal.map View_base.app_back_depth model_source
+     Signal.map View_base.app_back_depth shell_model
    in
    let bottom_occupies_source =
      Signal.map View_base.bottom_chrome_occupies_layout_space_
-       model_source
+       shell_model
    in
    let composer_dismissal_source =
      Signal.map (fun current -> current.Model.discussion_composition <> None
        || View_base.bottom_chrome_expanded_composer_
-          ~primary_tabs:(uses_ios_native_header context || Lui_ui.host context = KotlinHost) current) model_source
+          ~primary_tabs:(uses_ios_native_header context || Lui_ui.host context = KotlinHost) current) shell_model
    in
    let title_source =
      Signal.map
@@ -1055,7 +1119,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
            || View_collaboration.notification_root current
            || (View_base.journals_destination_ current && View_base.selected_page_content_title_visible_ current) then ""
          else View_base.main_title current)
-       model_source
+       shell_model
    in
    Lui_ui.extension_property_signal context node "depth"
      (Signal.map View_base.int_wire_value depth_source);
@@ -1070,7 +1134,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
    Lui_ui.extension_property_signal context node "title"
      (Signal.map View_base.string_wire_value title_source);
    Lui_ui.extension_property_signal context node "selection-active"
-     (Signal.map (fun current -> BoolValue (header_selection_active current)) model_source);
+     (Signal.map (fun current -> BoolValue (header_selection_active current)) shell_model);
    Lui_ui.on_event context node (fun input_event ->
        ignore
          (View_base.handle_native_navigation_event input_event send));
@@ -1084,15 +1148,15 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
            [
              column ~grow:1.0
                [
-                 android_main_header context model_source send;
+                 android_main_header context shell_model send;
                  stack ~grow:1.0
                    [ native_search_view context model_source send ];
                ];
              if_
-               ~test:(Signal.map View_base.asset_preview_ model_source)
+               ~test:(Signal.map View_base.asset_preview_ shell_model)
                (file_preview
                   ~path_signal:
-                    (Signal.map View_base.asset_preview_path model_source)
+                    (Signal.map View_base.asset_preview_path shell_model)
                   ~on_dismiss:(press send Model.DismissAssetPreview)
                   []);
            ]));
@@ -1229,42 +1293,43 @@ let authentication_screen (context : Lui_ui.ui_context) model_source send
 
 let application_main_content (context : Lui_ui.ui_context) model_source
     send : t =
+  let shell_model = Signal.cutoff non_outliner_model_equal model_source in
   let content_children : t list =
     if Lui_ui.platform context = AndroidOS then
       [
         if_
-          ~test:(reactive View_base.main_screen_visible_ model_source)
+          ~test:(reactive View_base.main_screen_visible_ shell_model)
           (native_navigation_view context model_source send);
         if_
           ~test:
             (Signal.map View_base.graph_picker_screen_visible_
-               model_source)
-          (View_graphs.graph_picker_screen context model_source send);
+               shell_model)
+          (View_graphs.graph_picker_screen context shell_model send);
         if_
-          ~test:(reactive View_base.model_settings_open_ model_source)
-          (View_settings.settings_sheet context model_source send);
+          ~test:(reactive View_base.model_settings_open_ shell_model)
+          (View_settings.settings_sheet context shell_model send);
         if_
           ~test:(Signal.map View_base.model_create_graph_open_
-                   model_source)
-          (View_graphs.graph_create_sheet context model_source send);
+                   shell_model)
+          (View_graphs.graph_create_sheet context shell_model send);
         if_
           ~test:(Signal.map View_base.graph_deletion_pending_
-                   model_source)
-          (View_graphs.graph_delete_dialog context model_source send);
+                   shell_model)
+          (View_graphs.graph_delete_dialog context shell_model send);
         if_
           ~test:(Signal.map View_base.model_graph_password_open_
-                   model_source)
-          (View_graphs.graph_password_sheet context model_source send);
+                   shell_model)
+          (View_graphs.graph_password_sheet context shell_model send);
         if_
-          ~test:(Signal.map View_base.node_deletion_pending_ model_source)
-          (View_settings.page_delete_dialog model_source context send);
+          ~test:(Signal.map View_base.node_deletion_pending_ shell_model)
+          (View_settings.page_delete_dialog shell_model context send);
         if_
-          ~test:(Signal.map View_base.sign_out_pending_ model_source)
-          (View_settings.sign_out_dialog model_source context send);
+          ~test:(Signal.map View_base.sign_out_pending_ shell_model)
+          (View_settings.sign_out_dialog shell_model context send);
         if_
           ~test:(Signal.map View_base.model_sync_details_open_
-                   model_source)
-          (View_settings.sync_status_sheet context model_source send);
+                   shell_model)
+          (View_settings.sync_status_sheet context shell_model send);
       ]
     else
       [
@@ -1341,18 +1406,19 @@ let application_main_content (context : Lui_ui.ui_context) model_source
     [content; confirmation]
 
 let application_sidebar model_source send ~width main : t =
-  let selected = Signal.map View_base.drawer_selected_ model_source in
-  let disabled = Signal.map View_base.drawer_disabled_ model_source in
+  let sidebar_model = Signal.cutoff non_outliner_model_equal model_source in
+  let selected = Signal.cutoff Bool.equal (Signal.map View_base.drawer_selected_ sidebar_model) in
+  let disabled = Signal.cutoff Bool.equal (Signal.map View_base.drawer_disabled_ sidebar_model) in
   let navigate open_ = ignore (send (if open_ then Model.OpenSidebar else Model.CloseSidebar)) in
   let shell main panel =
     drawer ~selected_signal:selected ~disabled_signal:disabled ~width
-      ~label:(View_base.tr (Signal.sample model_source) "Navigation")
+      ~label:(View_base.tr (Signal.sample sidebar_model) "Navigation")
       ~accessibility_identifier:"application.shell" ~on_toggle:navigate main panel in
   custom (fun context parent ->
     let ios = Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost in
     let android = Lui_ui.platform context = AndroidOS && Lui_ui.host context = KotlinHost in
-    let settings = View_sidebar.sidebar_settings context model_source send in
-    let panel settings = View_sidebar.sidebar_view context model_source send ~settings in
+    let settings = View_sidebar.sidebar_settings context sidebar_model send in
+    let panel settings = View_sidebar.sidebar_view context sidebar_model send ~settings in
     if not (ios || android) then
       mount context ?parent (shell main (panel (Some settings)))
     else
@@ -1362,7 +1428,7 @@ let application_sidebar model_source send ~width main : t =
       Lui_ui.extension_property_signal context node "enabled" (Signal.map (fun disabled -> BoolValue (not disabled)) disabled);
       Lui_ui.extension_property context node "width" (IntValue width);
       Lui_ui.extension_property_signal context node "dismiss-label"
-        (Signal.map (fun current -> StringValue (View_base.tr current "Close sidebar")) model_source);
+        (Signal.map (fun current -> StringValue (View_base.tr current "Close sidebar")) sidebar_model);
       let child key body = custom (fun context parent ->
         let id = mount context ?parent body in
         Lui_ui.extension_property context node key (IntValue id);
@@ -1440,8 +1506,11 @@ let application_view (context : Lui_ui.ui_context) model_source send : t =
     let node = Lui_ui.extension context "native-pdf-workspace" in
     attach context parent node;
     Lui_ui.extension_property_signal context node "payload"
-      (Signal.map (fun (current : Model.logseq_model) ->
-        View_base.string_wire_value (Option.value ~default:"null" current.pdf_workspace)) model_source);
+      (Signal.own_signal context.ui_scope
+        (Signal.cutoff (=)
+          (Signal.own_signal context.ui_scope
+            (Signal.map (fun (current : Model.logseq_model) ->
+              View_base.string_wire_value (Option.value ~default:"null" current.pdf_workspace)) model_source))));
     Lui_ui.on_event context node (function
       | ExtensionEvent (_, _, "event", values) ->
         (match String_map.find_opt "payload" values with
@@ -1452,9 +1521,10 @@ let application_view (context : Lui_ui.ui_context) model_source send : t =
     node
 
 let logseq_view context model_source send : t =
+  let shell_model = Signal.cutoff non_outliner_model_equal model_source in
   stack ~grow:1.0 [application_view context model_source send;
-    View_collaboration.overlays model_source send;
-    View_outliner.task_dates_dialog model_source send;
-    View_outliner.composer_task_date_dialog model_source send;
-    if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.authentication_form.opened) model_source)
-      (View_authentication.sheet model_source send)]
+    View_collaboration.overlays shell_model send;
+    View_outliner.task_dates_dialog shell_model send;
+    View_outliner.composer_task_date_dialog shell_model send;
+    if_ ~test:(Signal.cutoff Bool.equal (Signal.map (fun (current : Model.logseq_model) -> current.authentication_form.opened) shell_model))
+      (View_authentication.sheet shell_model send)]

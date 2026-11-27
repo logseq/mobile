@@ -81,6 +81,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.positionInWindow
@@ -177,16 +178,16 @@ private fun decodeSampledFile(path: String): android.graphics.Bitmap? {
     })
 }
 
-private data class OutlinerDragOrigin(val uuid: String, val x: Float)
+internal data class OutlinerDragOrigin(val uuid: String, val x: Float)
 
-private data class OutlinerGesturePolicy(
+internal data class OutlinerGesturePolicy(
     val takesTap: Boolean,
     val tapEvent: String,
     val allowsDrag: Boolean,
     val hasMenu: Boolean,
 )
 
-private suspend fun AwaitPointerEventScope.awaitOutlinerTap(down: PointerInputChange): PointerInputChange? {
+internal suspend fun AwaitPointerEventScope.awaitOutlinerTap(down: PointerInputChange): PointerInputChange? {
     val touchSlop = viewConfiguration.touchSlop
     while (true) {
         val change = awaitPointerEvent(PointerEventPass.Main).changes.singleOrNull() ?: return null
@@ -215,38 +216,44 @@ internal fun OutlinerBlockContent(
     val isAsset = context.flag("is-asset")
     val linkOnly = remember(markupJson) { isLinkOnlyMarkup(markupJson) }
     val actionsJson = context.string("row-actions")
-    val actions = remember(actionsJson) { actionsJson?.let { runCatching { JSONObject(it) }.getOrNull() } }
-    val selectionMode = actions?.optBoolean("selectionMode") == true
+    val selectionMode = remember(actionsJson) { actionsJson?.contains("\"selectionMode\":true") == true }
     val interaction = context.string("interaction")
     val readOnly = interaction != null
-    val allowDrag = !readOnly && actions?.optBoolean("allowsDrag", true) != false
+    val allowDrag = remember(readOnly, actionsJson) {
+        !readOnly && actionsJson?.contains("\"allowsDrag\":false") != true
+    }
     val preview = interaction == "preview"
     val currentContext by rememberUpdatedState(context)
     val haptics by rememberUpdatedState(LocalHapticFeedback.current)
     var menuOpen by remember(uuid) { mutableStateOf(false) }
+    val actions = remember(menuOpen, actionsJson) {
+        if (!menuOpen) null else actionsJson?.let { runCatching { JSONObject(it) }.getOrNull() }
+    }
     val tapEvent = if (selectionMode) "toggle-selection" else "edit"
     val pressBlock: () -> Unit = { currentContext.emit(tapEvent, "uuid" to uuid) }
+    val hasActions = !actionsJson.isNullOrEmpty()
     val gesturePolicy by rememberUpdatedState(OutlinerGesturePolicy(
         takesTap = !isAsset && (!linkOnly || selectionMode),
         tapEvent = tapEvent,
         allowsDrag = allowDrag,
-        hasMenu = actions != null,
+        hasMenu = hasActions,
     ))
     fun openBlockMenu() { menuOpen = true }
-    var rowHeightPx by remember { mutableIntStateOf(0) }
-    var rowPosition by remember { mutableStateOf(Offset.Zero) }
+    val rowBounds = remember { object { var heightPx = 0; var position = Offset.Zero } }
     val density = LocalDensity.current.density
     var hoverPlacement by remember { mutableStateOf("after") }
     var dragHover by remember { mutableStateOf(false) }
-    val hoverColor by animateColorAsState(
-        when {
-            dragHover -> MaterialTheme.colorScheme.primaryContainer
-            menuOpen && actions?.optBoolean("selectionMember") != true ->
-                (luiThemeColor("link", foreground = true) ?: MaterialTheme.colorScheme.primary).copy(alpha = 0.24f)
-            else -> Color.Transparent
-        },
-        label = "dropHighlight",
-    )
+    val targetHoverColor = when {
+        dragHover -> MaterialTheme.colorScheme.primaryContainer
+        menuOpen && actions?.optBoolean("selectionMember") != true ->
+            (luiThemeColor("link", foreground = true) ?: MaterialTheme.colorScheme.primary).copy(alpha = 0.24f)
+        else -> Color.Transparent
+    }
+    val hoverColor = if (targetHoverColor == Color.Transparent) {
+        Color.Transparent
+    } else {
+        animateColorAsState(targetHoverColor, label = "dropHighlight").value
+    }
 
     val dropTarget = remember(uuid, density) {
         object : DragAndDropTarget {
@@ -255,9 +262,9 @@ internal fun OutlinerBlockContent(
                 val origin = drag.localState as? OutlinerDragOrigin ?: return null
                 if (origin.uuid == uuid) return null
                 return outlinerDropPlacement(
-                    (drag.y - rowPosition.y) / density,
-                    rowHeightPx / density,
-                    (drag.x - rowPosition.x) / density,
+                    (drag.y - rowBounds.position.y) / density,
+                    rowBounds.heightPx / density,
+                    (drag.x - rowBounds.position.x) / density,
                     (drag.x - origin.x) / density,
                 )
             }
@@ -296,12 +303,12 @@ internal fun OutlinerBlockContent(
     val rowModifier = Modifier
             .fillMaxWidth()
             .onGloballyPositioned {
-                rowHeightPx = it.size.height
-                rowPosition = it.positionInRoot()
+                rowBounds.heightPx = it.size.height
+                rowBounds.position = it.positionInRoot()
                 // First placed block ≈ first frame with real journal content.
                 AndroidLaunchMetrics.report("journals_ui_ready")
             }
-            .background(hoverColor, RoundedCornerShape(8.dp))
+            .then(if (hoverColor == Color.Transparent) Modifier else Modifier.background(hoverColor, RoundedCornerShape(8.dp)))
             .then(if (readOnly || (linkOnly && !selectionMode && actions == null)) Modifier else
                 Modifier.dragAndDropSource(block = {
                     awaitEachGesture {
@@ -312,7 +319,7 @@ internal fun OutlinerBlockContent(
                                 .firstOrNull { it.id == initialDown.id && !it.isConsumed } ?: return@awaitEachGesture
                             down.consume()
                         }
-                        val origin = OutlinerDragOrigin(uuid, rowPosition.x + initialDown.position.x)
+                        val origin = OutlinerDragOrigin(uuid, rowBounds.position.x + initialDown.position.x)
                         val finished = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
                             if (policy.takesTap) {
                                 awaitOutlinerTap(initialDown)?.let { up ->
@@ -366,13 +373,13 @@ internal fun OutlinerBlockContent(
                     onPreview = if (preview) null else if (selectionMode) ({ _ -> pressBlock() }) else onOpenImage?.let { open ->
                         { path -> open(uuid, path) }
                     },
-                    onBlockMenu = if (readOnly || actions == null) null else ::openBlockMenu,
+                    onBlockMenu = if (readOnly || !hasActions) null else ::openBlockMenu,
                     blockMenuLabel = actions?.optJSONObject("labels")?.optString("More actions", "More actions") ?: "More actions",
                 )
             } else {
                 CompositionLocalProvider(
                     LocalShowCodeLanguage provides (context.bool("show-code-language") ?: true),
-                    LocalOutlinerBlockActions provides (actions != null || readOnly),
+                    LocalOutlinerBlockActions provides (hasActions || readOnly),
                     LocalOutlinerSelection provides (selectionMode || preview),
                     LocalOutlinerInteraction provides interaction,
                 ) {
@@ -387,7 +394,7 @@ internal fun OutlinerBlockContent(
                 }
             }
         }
-        if (actions != null) {
+        if (menuOpen && actions != null) {
             AndroidBlockActionMenu(actions, canEdit = linkOnly, canCut = !LocalPropertyValue.current,
                 expanded = menuOpen, onDismiss = { menuOpen = false },
                 onAction = { action ->
@@ -442,43 +449,74 @@ private fun Modifier.outlinerSelectionSwipe(
 internal fun OutlinerRowSwipeSurface(context: LuiExtensionContext) {
     val blockId = context.string("block-id").orEmpty()
     val currentContext by rememberUpdatedState(context)
-    var rowLeft by remember { mutableFloatStateOf(0f) }
+    OutlinerRowSwipeContainer(
+        blockId = blockId,
+        enabled = context.flag("enabled"),
+        markerInsetDp = context.int("marker-inset") ?: 0,
+        onToggleSelection = { currentContext.emit("toggle-selection", "uuid" to blockId) },
+    ) {
+        context.Children()
+    }
+}
+
+@Composable
+internal fun OutlinerRowSwipeContainer(
+    blockId: String,
+    enabled: Boolean,
+    markerInsetDp: Int,
+    onToggleSelection: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    if (!enabled) {
+        content()
+        return
+    }
+    val currentOnToggle by rememberUpdatedState(onToggleSelection)
+    val rowBounds = remember { object { var coords: androidx.compose.ui.layout.LayoutCoordinates? = null } }
     val density = LocalDensity.current
-    val markerInset = with(density) { (context.int("marker-inset") ?: 0).dp.toPx() }
+    val markerInset = with(density) { markerInsetDp.dp.toPx() }
     val maxSwipe = with(density) { 48.dp.toPx() }
-    // The marker stays in view while selection uses the full finger travel.
-    val swipeLimit by rememberUpdatedState((rowLeft + markerInset).coerceIn(0f, maxSwipe))
+    fun swipeLimit(): Float {
+        val left = rowBounds.coords?.takeIf { it.isAttached }?.positionInWindow()?.x ?: 0f
+        return (left + markerInset).coerceIn(0f, maxSwipe)
+    }
     var offset by remember(blockId) { mutableFloatStateOf(0f) }
     var swiping by remember(blockId) { mutableStateOf(false) }
-    val displacement by animateFloatAsState(offset, if (swiping) snap() else spring(), label = "blockSwipeOffset")
-    val swipe = if (!context.flag("enabled")) Modifier else Modifier.outlinerSelectionSwipe(
+    val displacement = if (!swiping && offset == 0f) {
+        0f
+    } else {
+        animateFloatAsState(offset, if (swiping) snap() else spring(), label = "blockSwipeOffset").value
+    }
+    val swipe = if (!enabled) Modifier else Modifier.outlinerSelectionSwipe(
         blockId,
         onStart = { swiping = true },
         onDrag = { travel ->
-            val resistanceStart = swipeLimit * 0.75f
+            val limit = swipeLimit()
+            val resistanceStart = limit * 0.75f
             val resistedTravel = minOf(travel, resistanceStart) +
                 (travel - resistanceStart).coerceAtLeast(0f) * 0.18f
-            offset = minOf(resistedTravel, swipeLimit)
+            offset = minOf(resistedTravel, limit)
         },
         onFinish = { selected ->
             swiping = false
             offset = 0f
-            if (selected) currentContext.emit("toggle-selection", "uuid" to blockId)
+            if (selected) currentOnToggle()
         },
     )
-    Box(Modifier.fillMaxWidth().onGloballyPositioned { rowLeft = it.positionInWindow().x }.then(swipe)) {
-        Box(Modifier.graphicsLayer { translationX = -minOf(displacement, swipeLimit) }) {
-            context.Children()
-        }
+    val shiftModifier = if (displacement == 0f) Modifier else Modifier.graphicsLayer {
+        translationX = -minOf(displacement, swipeLimit())
+    }
+    Box(Modifier.fillMaxWidth().onPlaced { rowBounds.coords = it }.then(swipe).then(shiftModifier)) {
+        content()
     }
 }
 
-private val LocalOutlinerBlockActions = compositionLocalOf { false }
-private val LocalOutlinerSelection = compositionLocalOf { false }
-private val LocalOutlinerInteraction = compositionLocalOf<String?> { null }
+internal val LocalOutlinerBlockActions = compositionLocalOf { false }
+internal val LocalOutlinerSelection = compositionLocalOf { false }
+internal val LocalOutlinerInteraction = compositionLocalOf<String?> { null }
 
 @Composable
-private fun AndroidBlockActionMenu(
+internal fun AndroidBlockActionMenu(
     actions: JSONObject,
     canEdit: Boolean,
     canCut: Boolean,
@@ -622,7 +660,7 @@ internal fun outlinerDropPlacement(localY: Float, rowHeight: Float, localX: Floa
 // --- markup-json ---
 
 @Composable
-private fun ProjectedMarkup(
+internal fun ProjectedMarkup(
     youtubeStarts: MutableMap<String, Int>,
     encoded: String,
     fallback: String,
@@ -1101,7 +1139,7 @@ private fun AndroidLinkedImage(url: String, alt: String) {
 }
 
 @Composable
-private fun ProjectedAsset(
+internal fun ProjectedAsset(
     uuid: String, title: String, assetType: String, localPath: String,
     loadImage: (suspend (String, String) -> String)?, onPreview: ((String) -> Unit)?,
     preview: Boolean,

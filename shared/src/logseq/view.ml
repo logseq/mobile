@@ -111,7 +111,7 @@ let logseq_view (context : Lui_ui.ui_context) model_source send =
       (* Sidebar and navigation extensions reference children by node ID.
          Replace the locale branch as a unit so those IDs stay consistent. *)
       Lui_elements.keyed
-        ~source:(Signal.map (fun model -> [language model]) model_source)
+        ~source:(Signal.cutoff (List.equal String.equal) (Signal.map (fun model -> [language model]) model_source))
         ~key:Fun.id ~cmp:String.compare
         ~mount:(fun _ -> View_screens.logseq_view context model_source send)
     else
@@ -120,8 +120,10 @@ let logseq_view (context : Lui_ui.ui_context) model_source send =
   in
   let dark_theme (model : Model.logseq_model) = model.dark_theme in
   with_ui_state model_source (Lui_elements.themed
-    ~tokens_signal:(Signal.map (logseq_theme_tokens context) (Signal.map dark_theme model_source))
-    ~mode:(reactive logseq_theme_mode model_source)
+    ~tokens_signal:(Signal.map (logseq_theme_tokens context)
+      (Signal.cutoff String.equal (Signal.map dark_theme model_source)))
+    ~mode:(reactive logseq_theme_mode
+      (Signal.cutoff (fun (a : Model.logseq_model) (b : Model.logseq_model) -> a.appearance = b.appearance) model_source))
     screen)
 
 let outliner_editor_schema () =
@@ -218,7 +220,7 @@ let outliner_block_row_schema () =
   let open Lui_protocol in
   let open Lui_extension in
   let uuid = Lui_extension.event_field "uuid" StringScalar true in
-  Lui_extension.component "outliner-block-row" [profile IOS SwiftUIHost] true []
+  Lui_extension.component "outliner-block-row" [profile IOS SwiftUIHost; profile AndroidOS KotlinHost] true []
     [Lui_extension.property "payload" StringScalar true None]
     [Lui_extension.event "edit" [uuid; Lui_extension.event_field "caret-utf16-offset" IntScalar false];
      Lui_extension.event "open-node" [uuid];

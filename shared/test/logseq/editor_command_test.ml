@@ -853,19 +853,13 @@ let embedded_outliner_bullets_open_source () = R.with_runtime (fun session runti
   check ~msg:"source blocks retain their ordinary bullet" (member "isEmbed" ordinary <> `Bool true);
   check ~msg:"the child title is separate from the embedded source title"
     (not (String_kit.includes ~sub:"Source child" (J.to_string (member "markup" embedded))));
-  List.iter (fun (backend, ios) -> Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
+  List.iter (fun (backend, _ios) -> Q.with_ui backend (Rpc_session.snapshot_visible session) (fun app ->
     let host = Lui_app.runtime app in
     let row = App_test.descendant_with_identifier host (Lui_app.root_node app) ("outliner.block." ^ Q.alpha) in
     check ~msg:"embedded wrapper is present in the outliner" (row <> -1);
-    let descriptor = if ios then (
-      let payload = App_test.native_row_payload app row in
-      check_eq ~msg:"embed arrows take precedence over numbered bullets" (member "listNumber" payload) `Null;
-      member "nodeIcon" payload)
-    else (
-      let icon = App_test.descendant_with_extension host app row "node-icon" in
-      match App_test.extension_property app icon "payload" with
-      | Some (Lui_protocol.StringValue raw) -> J.from_string raw
-      | _ -> `Null) in
+    let payload = App_test.native_row_payload app row in
+    check_eq ~msg:"embed arrows take precedence over numbered bullets" (member "listNumber" payload) `Null;
+    let descriptor = member "nodeIcon" payload in
     check_eq ~msg:"both platforms render the embed arrow" (member "id" descriptor) (`String "arrow-narrow-right");
     let open Lui_protocol in
     let entry = App_test.descendant_with_identifier host (Lui_app.root_node app) ("outliner.entry." ^ Q.alpha) in
@@ -874,31 +868,22 @@ let embedded_outliner_bullets_open_source () = R.with_runtime (fun session runti
     check ~msg:"the embedded child has its own row" (child_row <> -1);
     let grandchild_row = find_child grandchild in
     check ~msg:"the embedded outline renders the grandchild too" (grandchild_row <> -1);
-    if ios then begin
-      check_eq (member "depth" (App_test.native_row_payload app child_row)) (`Int 1);
-      check_eq (member "depth" (App_test.native_row_payload app grandchild_row)) (`Int 2)
-    end;
-    let collapse = if ios then
+    check_eq (member "depth" (App_test.native_row_payload app child_row)) (`Int 1);
+    check_eq (member "depth" (App_test.native_row_payload app grandchild_row)) (`Int 2);
+    let collapse =
       ExtensionEvent (App_test.native_row app row, "outliner-block-row", "collapse",
-        String_map.singleton "uuid" (StringValue Q.alpha))
-    else
-      Press (App_test.descendant_with_identifier host row ("button.outliner.collapse." ^ Q.alpha)) in
+        String_map.singleton "uuid" (StringValue Q.alpha)) in
     App_test.dispatch app collapse;
     App_test.flush app;
     check_eq ~msg:"collapsing the embed hides its outline" (find_child child) (-1);
     App_test.dispatch app collapse;
     App_test.flush app;
     check ~msg:"expanding restores the embedded outline" (find_child grandchild <> -1);
-    let event = if ios then
-      let target = member "embedSourceUuid" (App_test.native_row_payload app row) in
-      check_eq ~msg:"the native bullet receives the source UUID" target (`String Q.beta);
+    let target = member "embedSourceUuid" (App_test.native_row_payload app row) in
+    check_eq ~msg:"the native bullet receives the source UUID" target (`String Q.beta);
+    let event =
       ExtensionEvent (App_test.native_row app row, "outliner-block-row", "open-node",
-        String_map.singleton "uuid" (StringValue (text target)))
-    else
-      let bullet = App_test.descendant_with_identifier host row
-        ("button.outliner.zoom." ^ Q.alpha ^ ".Beta result") in
-      check ~msg:"the embed arrow is interactive" (bullet <> -1);
-      Press bullet in
+        String_map.singleton "uuid" (StringValue (text target))) in
     App_test.dispatch app event;
     App_test.flush app;
     check_eq (App.model app).app_navigation_path [Model.NodeRoute Q.beta]))

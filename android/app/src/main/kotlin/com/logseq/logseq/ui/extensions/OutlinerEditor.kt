@@ -91,6 +91,14 @@ private sealed interface EditorHandoff {
     data class Paste(val payload: String) : EditorHandoff
 }
 
+private class EditorRef<T>(var value: T)
+
+private operator fun <T> EditorRef<T>.getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>): T = value
+
+private operator fun <T> EditorRef<T>.setValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>, next: T) {
+    value = next
+}
+
 private class EditorFieldValue(private val state: TextFieldState) {
     var prefix: String = ""
 
@@ -147,22 +155,22 @@ internal fun OutlinerEditor(
     val fieldState = remember { TextFieldState(modelTitle, TextRange(modelCaret.coerceIn(0, modelTitle.length))) }
     val nativeValue = remember { EditorFieldValue(fieldState) }
     var value: TextFieldValue by nativeValue
-    var observedValue by remember { mutableStateOf(value) }
-    var compositionStartText by remember { mutableStateOf<String?>(null) }
+    var observedValue: TextFieldValue by remember { EditorRef(nativeValue.read()) }
+    var compositionStartText: String? by remember { EditorRef<String?>(null) }
     val preImeEnterKeys = remember { mutableSetOf<Key>() }
-    var previousText by remember { mutableStateOf(modelTitle) }
-    var previousSelection by remember { mutableStateOf(value.selection) }
-    var rememberedModelTitle by remember { mutableStateOf(modelTitle) }
-    var rememberedSelectionRevision by remember { mutableIntStateOf(selectionRevision) }
-    var rememberedBlockId by remember { mutableStateOf(blockId) }
-    var awaitingHandoff by remember { mutableStateOf(false) }
-    var retainedReturn by remember { mutableStateOf<EditorHandoff.Return?>(null) }
+    var previousText: String by remember { EditorRef(modelTitle) }
+    var previousSelection: TextRange by remember { EditorRef(observedValue.selection) }
+    var rememberedModelTitle: String by remember { EditorRef(modelTitle) }
+    var rememberedSelectionRevision: Int by remember { EditorRef(selectionRevision) }
+    var rememberedBlockId: String by remember { EditorRef(blockId) }
+    var awaitingHandoff: Boolean by remember { EditorRef(false) }
+    var retainedReturn: EditorHandoff.Return? by remember { EditorRef<EditorHandoff.Return?>(null) }
     // Each segment buffers native edits after a structural edit until acknowledgement.
     val handoffSegments = remember { ArrayDeque<PendingEditorInput>() }
     val queuedHandoffs = remember { ArrayDeque<EditorHandoff>() }
-    var applyingModel by remember { mutableStateOf(false) }
-    var debounceSeq by remember { mutableIntStateOf(0) }
-    var handoffRevision by remember { mutableStateOf<Int?>(null) }
+    var applyingModel: Boolean by remember { EditorRef(false) }
+    var debounceJob: kotlinx.coroutines.Job? by remember { EditorRef<kotlinx.coroutines.Job?>(null) }
+    var handoffRevision: Int? by remember { EditorRef<Int?>(null) }
     val nativeToolbar = LocalTextToolbar.current
     val androidContext = LocalContext.current
     val pasteLabel = stringResource(android.R.string.paste)
@@ -174,9 +182,14 @@ internal fun OutlinerEditor(
     val latestSelectionRevision by rememberUpdatedState(selectionRevision)
     var importingImages by remember { mutableStateOf(false) }
     val pasteKey = remember { Any() }
-    val publishedTitles = remember { mutableStateListOf<String>() }
-    var publishedInput by remember { mutableStateOf<Triple<String, Int, Boolean>?>(null) }
-    var handoffEvent by remember { mutableStateOf<EditorHandoff?>(null) }
+    val publishedTitles = remember { mutableListOf<String>() }
+    var publishedInput: Triple<String, Int, Boolean>? by remember { EditorRef<Triple<String, Int, Boolean>?>(null) }
+    var handoffEvent: EditorHandoff? by remember { EditorRef<EditorHandoff?>(null) }
+
+    fun cancelDebounce() {
+        debounceJob?.cancel()
+        debounceJob = null
+    }
 
     fun applyNativeValue(next: TextFieldValue) {
         // Snapshot observers can run during the edit. Mark it before writing.
@@ -201,6 +214,7 @@ internal fun OutlinerEditor(
     val handoffAcknowledged = handoffRevision != null && selectionRevision != handoffRevision
     val canReconcileHandoff = awaitingHandoff && (blockId != rememberedBlockId || handoffAcknowledged)
     val composingAcrossHandoff = canReconcileHandoff && value.composition != null
+    var needsDebounceAfterReconcile = false
     if (canReconcileHandoff && !composingAcrossHandoff) {
         val buffered = value
         capturePendingInput(buffered)
@@ -235,7 +249,7 @@ internal fun OutlinerEditor(
             }
         } else {
             keepPrefix("", TextFieldValue(merged, selection))
-            if (merged != modelTitle) debounceSeq++
+            if (merged != modelTitle) needsDebounceAfterReconcile = true
         }
     }
     LaunchedEffect(blockId, selectionRevision) {
@@ -272,7 +286,7 @@ internal fun OutlinerEditor(
             if (titleChanged) publishedTitles.clear()
             publishedInput = null
             applyingModel = true
-            debounceSeq++
+            cancelDebounce()
             val offset = modelCaret.coerceIn(0, modelTitle.length)
             applyNativeValue(TextFieldValue(modelTitle, TextRange(offset)))
             applyingModel = false
@@ -294,7 +308,24 @@ internal fun OutlinerEditor(
             "title" to title, "caret-utf16-offset" to caret)
     }
 
-    LaunchedEffect(focusEnabled) { if (focusEnabled) focusRequester.requestFocus() }
+    fun scheduleDebounce() {
+        debounceJob?.cancel()
+        if (awaitingHandoff || !focusEnabled) {
+            debounceJob = null
+            return
+        }
+        debounceJob = pasteScope.launch {
+            delay(80)
+            if (awaitingHandoff || !focusEnabled) return@launch
+            val input = value
+            publishInput(input, composing = input.composition != null)
+        }
+    }
+
+    LaunchedEffect(focusEnabled) {
+        if (focusEnabled) focusRequester.requestFocus()
+        else cancelDebounce()
+    }
     // When the system dismisses the IME while this editor still owns focus,
     // end the editing session so the editor toolbar doesn't stay orphaned.
     // Only fire after the IME was actually shown for this editor — with a
@@ -313,25 +344,19 @@ internal fun OutlinerEditor(
             context.emit("ime-dismissed")
         }
     }
-    // Debounced text-change emission, cancelled by the next edit.
-    LaunchedEffect(debounceSeq, focusEnabled) {
-        if (debounceSeq == 0 || awaitingHandoff || !focusEnabled) return@LaunchedEffect
-        delay(80)
-        val input = value
-        publishInput(input, composing = input.composition != null)
-    }
     val inputOwner = remember { Any() }
     SideEffect {
+        if (needsDebounceAfterReconcile) scheduleDebounce()
         if (focusEnabled) NativeEditorInput.register(inputOwner) {
             if (!awaitingHandoff) {
-                debounceSeq++
+                cancelDebounce()
                 publishInput(value, composing = false)
             }
         } else NativeEditorInput.unregister(inputOwner)
     }
     DisposableEffect(Unit) {
         onDispose {
-            debounceSeq++
+            cancelDebounce()
             NativeEditorInput.unregister(inputOwner)
         }
     }
@@ -347,7 +372,7 @@ internal fun OutlinerEditor(
             handoffSegments.addLast(PendingEditorInput(value.text, value.selection.start))
             return
         }
-        debounceSeq++
+        cancelDebounce()
         publishedTitles.add(title)
         awaitingHandoff = true
         handoffRevision = selectionRevision
@@ -367,7 +392,7 @@ internal fun OutlinerEditor(
         val committed = current.copy(composition = null)
         capturePendingInput(committed)
         applyNativeValue(committed)
-        if (!awaitingHandoff) debounceSeq++
+        if (!awaitingHandoff) scheduleDebounce()
         return true
     }
 
@@ -389,7 +414,7 @@ internal fun OutlinerEditor(
             val start = value.selection.min.coerceIn(0, value.text.length)
             val end = value.selection.max.coerceIn(start, value.text.length)
             val next = TextFieldValue(value.text.replaceRange(start, end, "\n"), TextRange(start + 1))
-            if (awaitingHandoff) capturePendingInput(next) else debounceSeq++
+            if (awaitingHandoff) capturePendingInput(next) else scheduleDebounce()
             applyNativeValue(next)
         }
         return true
@@ -450,7 +475,7 @@ internal fun OutlinerEditor(
                     (next.selection != prior.selection &&
                         (next.composition != null || next.text != (publishedInput?.first ?: modelTitle)))
                 ) {
-                    debounceSeq++
+                    scheduleDebounce()
                 } else if (next.selection != prior.selection && next.selection.start >= 0) {
                     publishedInput = Triple(next.text, next.selection.start, false)
                     context.emit("caret-change", "caret-utf16-offset" to next.selection.start)
@@ -484,7 +509,7 @@ internal fun OutlinerEditor(
                 applyingModel = false
                 submitReturn(submitted, submittedCaret)
             } else {
-                debounceSeq++ // schedule text-change
+                scheduleDebounce() // schedule text-change
             }
     }
 
@@ -504,7 +529,7 @@ internal fun OutlinerEditor(
                             .put("targetBlockId", blockId).put("beforeTitle", value.text)
                             .put("selectionStart", value.selection.min)
                             .put("selectionLength", value.selection.max - value.selection.min)
-                        debounceSeq++
+                        cancelDebounce()
                         handoffRevision = selectionRevision
                         awaitingHandoff = true
                         handoffSegments.addLast(PendingEditorInput(value.text, value.selection.start))
@@ -531,7 +556,7 @@ internal fun OutlinerEditor(
         val end = value.selection.max.coerceIn(start, value.text.length)
         value = TextFieldValue(value.text.replaceRange(start, end, plain), TextRange(start + plain.length))
         observedValue = value
-        debounceSeq++
+        cancelDebounce()
         if (awaitingHandoff) {
             queuedHandoffs.addLast(EditorHandoff.Paste(payload))
             handoffSegments.addLast(PendingEditorInput(value.text, value.selection.start))
@@ -547,13 +572,14 @@ internal fun OutlinerEditor(
         snapshotFlow { nativeValue.read() }
             .collect { onNativeChange(it) }
     }
-    val completionToolbar = remember(nativeToolbar, value, selectionRevision) {
+    val onSubmitPaste by rememberUpdatedState(::submitPaste)
+    val completionToolbar = remember(nativeToolbar) {
         object : TextToolbar {
             override val status get() = nativeToolbar.status
             override fun hide() = nativeToolbar.hide()
             override fun showMenu(rect: Rect, onCopyRequested: (() -> Unit)?, onPasteRequested: (() -> Unit)?,
                 onCutRequested: (() -> Unit)?, onSelectAllRequested: (() -> Unit)?) {
-                nativeToolbar.showMenu(rect, onCopyRequested, onPasteRequested?.let { { submitPaste() } },
+                nativeToolbar.showMenu(rect, onCopyRequested, onPasteRequested?.let { { onSubmitPaste() } },
                     onCutRequested, onSelectAllRequested)
             }
         }
@@ -562,8 +588,10 @@ internal fun OutlinerEditor(
     CompositionLocalProvider(LocalTextToolbar provides completionToolbar) {
     Box(if (code) Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
         .padding(12.dp).testTag("outliner.code-editor.$visibleBlockId") else Modifier) {
-    val displayTitle = if (composingAcrossHandoff) value.text else retainedReturn?.title ?: value.text
-    val highlighted = if (code) rememberHighlightedCode(displayTitle, codeLanguage) else null
+    val highlighted = if (code) {
+        val displayTitle = if (composingAcrossHandoff) value.text else retainedReturn?.title ?: value.text
+        rememberHighlightedCode(displayTitle, codeLanguage)
+    } else null
     val highlightedState = rememberUpdatedState(highlighted)
     val hideHandoffPrefix = rememberUpdatedState(composingAcrossHandoff)
     val inputTransformation = remember {

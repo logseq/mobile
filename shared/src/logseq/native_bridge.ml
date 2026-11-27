@@ -117,8 +117,9 @@ let apply_response encoded = flush_action (core_response_action encoded)
 let complete_effect_with_response id encoded =
   patch_batches := [];
   let app = app () in
+  let action = core_response_action encoded in
   (* The editor must see the new focus and the acknowledgement in one patch. *)
-  ignore (Lui_app.send app (core_response_action encoded));
+  ignore (Lui_app.send app action);
   ignore (Lui_app.send app (Model.ResolveEffect (id, true, encoded)));
   ignore (Lui_app.flush app);
   note_effect_deadlines ();
@@ -601,10 +602,18 @@ let take_effect () =
     if waits then max 0. (Option.value ~default:now
       (Hashtbl.find_opt effect_deadlines (Model.effect_id eff)) -. now)
     else 0. in
+  let background = function
+    | Model.SyncPendingEffect _ -> true
+    | _ -> false in
+  let ready eff = remaining eff <= 0. in
   match effects with
   | [] -> ""
   | _ ->
-    match List.find_opt (fun eff -> remaining eff <= 0.) effects with
+    let picked =
+      match List.find_opt (fun eff -> not (background eff) && ready eff) effects with
+      | Some _ as found -> found
+      | None -> List.find_opt ready effects in
+    match picked with
     | Some eff ->
       let patch = flush_action (Model.DequeueEffect (Model.effect_id eff)) in
       encode_effect_dispatch ~model:current eff patch

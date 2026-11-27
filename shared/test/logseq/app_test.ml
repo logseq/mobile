@@ -7999,7 +7999,8 @@ let journal_task_results_edit_and_select_the_source_block () =
     let find id = descendant_with_identifier runtime root id in
     let row () = find ("journal-task." ^ uuid) in
     let trigger name =
-      let identifier = if ios then "outliner-block-row" else "outliner-block-content" in
+      let _ = ios in
+      let identifier = "outliner-block-row" in
       let node = descendant_with_extension runtime app (row ()) identifier in
       check ~msg:"agenda uses the native block event target" (node <> -1);
       dispatch app (Lui_protocol.ExtensionEvent (node, identifier, name,
@@ -8573,7 +8574,7 @@ let journal_rows_stay_flat_while_retaining_the_first_viewport () =
     (List.assoc "data-first-section-count" metadata) "3";
   check ~msg:"all journal rows use the same bounded source"
     (List.for_all (fun entry ->
-       List.exists (fun item -> List.mem entry (children renderer item))
+       List.exists (fun item -> item = entry || List.mem entry (children renderer item))
          (children renderer first_section)) [first_entry; child_entry; next_entry]);
   check_eq ~msg:"later journals do not create nested section containers"
     (descendant_with_identifier renderer outliner "journal.section.page-b")
@@ -10413,63 +10414,24 @@ let kotlin_outliner_markers_match_ios_visual_metrics () =
   flush application;
   let renderer = Lui_app.runtime application in
   let root = main_root renderer application in
-  let rendered_row =
-    descendant_with_identifier renderer root "outliner.block.block-a"
+  let native_row =
+    descendant_with_extension renderer application root "outliner-block-row"
   in
-  let bullet =
-    descendant_with_identifier renderer rendered_row
-      "outliner.bullet-glyph.block-a"
+  check ~msg:"Kotlin renders outliner rows with the native outliner-block-row extension"
+    (native_row <> -1);
+  let payload_json node_id =
+    match extension_property application node_id "payload" with
+    | Some (Lui_protocol.StringValue json) -> Yojson.Basic.from_string json
+    | _ -> `Null
   in
-  let zoom_button =
-    descendant_with_identifier renderer rendered_row
-      "button.outliner.zoom.block-a.Ship it"
+  let status_field payload key =
+    Yojson.Basic.Util.(payload |> member "status" |> member key |> to_string)
   in
-  let status_icon =
-    descendant_with_identifier renderer rendered_row
-      "outliner.task-status-icon.block-a"
-  in
-  let status_button =
-    descendant_with_identifier renderer rendered_row
-      "button.block-task-status"
-  in
-  check
-    ~msg:"Kotlin renders a dedicated visual bullet inside its hit target"
-    (bullet <> -1);
-  check_eq (property_string renderer bullet Lui_protocol.ForegroundValue) "outliner-bullet";
-  check_eq ~msg:"Kotlin uses the same 24-point vector slot as iOS"
-    (property_int renderer bullet Lui_protocol.WidthValue)
-    24;
-  check_eq ~msg:"the bullet asset remains square"
-    (property_int renderer bullet Lui_protocol.HeightValue)
-    24;
-  check_eq ~msg:"the zoom control keeps iOS main's 24-point layout slot"
-    (property_int renderer zoom_button Lui_protocol.WidthValue)
-    24;
-  check_eq ~msg:"the zoom control keeps a stable square interaction slot"
-    (property_int renderer zoom_button Lui_protocol.HeightValue)
-    24;
-  check
-    ~msg:"Kotlin renders the task glyph independently from its menu target"
-    (status_icon <> -1);
-  check_eq ~msg:"Kotlin uses iOS main's 22-point task status glyph"
-    (property_int renderer status_icon Lui_protocol.WidthValue)
-    22;
-  check_eq ~msg:"the task status glyph keeps iOS main's square frame"
-    (property_int renderer status_icon Lui_protocol.HeightValue)
-    22;
-  check_eq ~msg:"Kotlin matches master's Todo status color"
-    (property_string renderer status_icon Lui_protocol.ForegroundValue)
-    "task-todo";
-  check_eq
-    ~msg:
-      "the transparent zoom target does not re-add a large Material \
-       circle"
-    (property_string renderer zoom_button Lui_protocol.InlineIconName)
-    "<missing>";
-  check_eq
-    ~msg:"the transparent status target does not duplicate the visible glyph"
-    (property_string renderer status_button Lui_protocol.InlineIconName)
-    "<missing>";
+  let initial_payload = payload_json native_row in
+  check_eq ~msg:"Kotlin row payload carries the Todo status icon"
+    (status_field initial_payload "icon") "app:task-todo";
+  check_eq ~msg:"Kotlin row payload carries the Todo status color"
+    (status_field initial_payload "foreground") "task-todo";
   send application
     (apply_core_snapshot None (empty_sidebar_projection ()) [] true "" [] []
        None None [] []
@@ -10477,27 +10439,20 @@ let kotlin_outliner_markers_match_ios_visual_metrics () =
        true []);
   flush application;
   let updated_root = main_root renderer application in
-  let updated_row =
-    descendant_with_identifier renderer updated_root "outliner.block.block-a"
+  let updated_native_row =
+    descendant_with_extension renderer application updated_root "outliner-block-row"
   in
-  let updated_status_icon =
-    descendant_with_identifier renderer updated_row
-      "outliner.task-status-icon.block-a"
-  in
-  check_eq
-    ~msg:
-      "a retained Kotlin row replaces the task glyph when status changes"
-    (property_string renderer updated_status_icon Lui_protocol.IconName)
-    "app:task-done";
-  check_eq
-    ~msg:"retained status changes update to the master Done color"
-    (property_string renderer updated_status_icon
-       Lui_protocol.ForegroundValue)
-    "task-done"
+  check_eq ~msg:"a retained Kotlin native row keeps its node identity on status change"
+    updated_native_row native_row;
+  let updated_payload = payload_json updated_native_row in
+  check_eq ~msg:"a retained Kotlin row replaces the task glyph when status changes"
+    (status_field updated_payload "icon") "app:task-done";
+  check_eq ~msg:"retained status changes update to the master Done color"
+    (status_field updated_payload "foreground") "task-done"
 
 let ios_rows_use_one_native_layout_and_keep_typed_actions () =
   check_eq (Lui_extension.fingerprint (View.outliner_block_row_schema ()))
-    "lui-extension-v1|18:outliner-block-row|profiles:ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:remove-tag[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],11:menu-action[7:payload:string:required],12:set-priority[8:priority:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[18:caret-utf16-offset:int:optional,4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]";
+    "lui-extension-v1|18:outliner-block-row|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:7:payload:string:required:none|events:10:drag-start[4:uuid:string:required],10:long-press[4:uuid:string:required],10:remove-tag[4:uuid:string:required],10:set-status[4:uuid:string:required,5:count:int:required],11:menu-action[7:payload:string:required],12:set-priority[8:priority:string:required],16:toggle-selection[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[18:caret-utf16-offset:int:optional,4:uuid:string:required],8:collapse[4:uuid:string:required],9:open-node[4:uuid:string:required]";
   let application = App.create (ios_backend ()) in
   let row = { (outline_row "native-row" "Native title") with
     Model.depth = 3; has_children = true;

@@ -10,6 +10,7 @@ type retained_row = {
 val make_retained_outline_row :
   ?edit_scope:string -> Model.logseq_model -> Model.outline_row -> retained_row
 val embedded_edit_scope : parent_scope:string option -> page:string -> row:string -> mount_id:int -> string
+val retained_rows_inputs_equal : Model.logseq_model -> Model.logseq_model -> bool
 val retained_outliner_rows : Model.logseq_model -> retained_row list
 val first_journal_section_visible_ : Model.logseq_model -> bool
 val retained_row_value : retained_row -> Model.outline_row
@@ -27,6 +28,7 @@ val windowed_keyed :
   ?reset_key:string Signal.signal -> ?window_size:int -> ?identifier:string -> ?item_extent:int ->
   ?on_visible_range:(int -> int -> unit) -> ?on_window:('a list -> unit) ->
   ?on_prefetch:('a list -> unit) -> ?is_pinned:('a -> bool) ->
+  ?item_equal:('a -> 'a -> bool) ->
   source:'a list Signal.signal -> key:('a -> string) ->
   cmp:(string -> string -> int) -> mount:('a Signal.signal -> Lui_elements.t) ->
   unit -> Lui_elements.t
@@ -60,6 +62,8 @@ val page_entry_identifier : page_entry -> string
 val page_entry_outline : page_entry -> retained_row
 val page_entry_reference : page_entry -> reference_entry
 
+val page_entry_fast_equal : page_entry -> page_entry -> bool
+val first_journal_section_count_of_entries : journal_home:bool -> page_entry list -> int
 val first_journal_section_count : Model.logseq_model -> int
 
 val unloaded_entry_id : page_entry -> string option

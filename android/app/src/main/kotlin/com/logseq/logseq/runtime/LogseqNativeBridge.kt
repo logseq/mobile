@@ -91,25 +91,26 @@ internal class LogseqNativeBridge(
         text: String,
         value: Long,
     ) = runtimeScheduler.runUi {
-        apply(
-            decode(
-                traced("core.luiExtensionEvent") {
-                    NativeCore.luiExtensionEvent(
-                        node,
-                        encode(identifier),
-                        encode(name),
-                        encode(text),
-                        value,
-                    )
-                }
-            )
+        val patch = decode(
+            traced("core.luiExtensionEvent") {
+                NativeCore.luiExtensionEvent(
+                    node,
+                    encode(identifier),
+                    encode(name),
+                    encode(text),
+                    value,
+                )
+            }
         )
+        apply(patch)
     }
 
     // --- NativeEffectRuntime surface ---
 
-    fun takeEffect(): String =
-        if (runtimeScheduler.isCoreBusy) "" else decode(traced("core.luiTakeEffect") { NativeCore.luiTakeEffect() })
+    fun takeEffect(): String {
+        if (runtimeScheduler.isCoreBusy) return ""
+        return decode(traced("core.luiTakeEffect") { NativeCore.luiTakeEffect() })
+    }
 
     fun resolveEffect(id: Long, succeeded: Boolean, message: String): String {
         if (runtimeScheduler.isCoreBusy) {
@@ -157,6 +158,15 @@ internal class LogseqNativeBridge(
         withContext(NativeCoreThread.dispatcher) {
             runtimeScheduler.runCore {
                 decode(traced("core.logseqCall:" + rpcMethod(request)) { NativeCore.logseqCall(encode(request)) })
+            }
+        }
+
+    suspend fun callCoreAndApplySnapshot(request: String, onPatchApplied: (String) -> Unit): String =
+        withContext(NativeCoreThread.dispatcher) {
+            runtimeScheduler.runCore {
+                val res = decode(traced("core.logseqCall:" + rpcMethod(request)) { NativeCore.logseqCall(encode(request)) })
+                onPatchApplied(applySnapshot(res))
+                res
             }
         }
 

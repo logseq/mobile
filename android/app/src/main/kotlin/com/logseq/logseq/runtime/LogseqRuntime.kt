@@ -85,7 +85,7 @@ internal class LogseqRuntime(
         val payload = pendingDiscussionPush ?: return
         pendingDiscussionPush = null
         hostUpdateAsync("open-pushed-discussion", payload)
-        scope.launch { effectDrain?.drain(scope) }
+        launchDrain()
     }
 
     private val platformEffects = AndroidPlatformEffects(
@@ -193,8 +193,15 @@ internal class LogseqRuntime(
     private var appearance by mutableStateOf("system")
     private var darkTheme by mutableStateOf(DEFAULT_DARK_THEME)
 
+    private val drainDispatcher = NativeCoreThread.dispatcher
+
+    private fun launchDrain() {
+        val drain = effectDrain ?: return
+        scope.launch(drainDispatcher) { drain.drain(this) }
+    }
+
     init {
-        bridge.onCoreIdle = { scope.launch { effectDrain?.drain(scope) } }
+        bridge.onCoreIdle = { launchDrain() }
         logRuntime("info", "ui", "Kotlin host initialized")
     }
 
@@ -254,8 +261,21 @@ internal class LogseqRuntime(
                 graphLifecycle = lifecycle
                 val executor = CoreEffectExecutor(
                     callCore = bridge::callCore,
-                    executePlatformEffect = NativeEffectExecutor(platformEffects::execute),
-                    executeGraphEffect = NativeEffectExecutor(lifecycle::execute),
+                    executePlatformEffect = NativeEffectExecutor { effect ->
+                        if (effect.kind == "sync-pending") {
+                            if (!graphSyncEligibility.canSync(hasAuthenticatedSession, hasOpenGraph)) {
+                                NativeEffectResolution.Discard(succeeded = false)
+                            } else {
+                                mainHandler.post { requestSyncNow() }
+                                NativeEffectResolution.Discard(succeeded = true)
+                            }
+                        } else {
+                            withContext(Dispatchers.Main) { platformEffects.execute(effect) }
+                        }
+                    },
+                    executeGraphEffect = NativeEffectExecutor { effect ->
+                        withContext(Dispatchers.Main) { lifecycle.execute(effect) }
+                    },
                 )
                 coreEffects = executor
                 graphCatalogAutoRefresh = GraphCatalogAutoRefresh(
@@ -279,13 +299,22 @@ internal class LogseqRuntime(
                             onCore { deliverPatch(bridge.applyHostUpdate(kind, payload)); "" }
                     },
                     execute = NativeEffectExecutor(::executeEffect),
-                    applyPatch = ::applyPatch,
-                    onError = ::reportError,
+                    applyPatch = { patch -> if (patch.isNotEmpty()) mainHandler.post { applyPatch(patch) } },
+                    onError = { error -> mainHandler.post { reportError(error) } },
                     trace = ::traceNativeEffect,
                     afterCoreResponseApplied = { response ->
-                        outlinerCommands.deliver(response)
-                        trackSyncState(response)
-                        ensureGraphEventsSync()
+                        val hasMetadata = response.contains("\"outlinerCommands\"") ||
+                            response.contains("\"selectedGraphId\"") ||
+                            response.contains("\"appliedServerT\"") ||
+                            response.contains("\"graphBootstrap\"") ||
+                            response.contains("\"isGraphUnlocked\"")
+                        if (hasMetadata || !graphEventsSession.isActive) {
+                            scope.launch {
+                                outlinerCommands.deliver(response)
+                                trackSyncState(response)
+                                ensureGraphEventsSync()
+                            }
+                        }
                     },
                 )
                 effectDrain = drain
@@ -296,7 +325,7 @@ internal class LogseqRuntime(
                 NativeCoreSession.refreshActiveRandomWidget = {
                     AndroidWidgetContent.refresh(activity.applicationContext, bridge::callCore, resampleRandom = true)
                 }
-                scope.launch { drain.drain(scope) }
+                launchDrain()
                 restoreCore(hasStoredSession, storage)
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
@@ -362,8 +391,7 @@ internal class LogseqRuntime(
         // Pending editor text must reach the core before the press it precedes.
         if (event is LuiEvent.Press) NativeEditorInput.flush()
         NativeCoreThread.execute { dispatchLuiEvent(event, bridge) }
-        val drain = effectDrain ?: return
-        scope.launch { drain.drain(scope) }
+        launchDrain()
     }
 
     private suspend fun <T> onCore(block: () -> T): T = withContext(NativeCoreThread.dispatcher) { block() }
@@ -443,10 +471,17 @@ internal class LogseqRuntime(
         // Decode big snapshot patches (~0.5s for a 461KB journal) on the core
         // thread; the retained tree is only mutated on the main thread.
         onCore { deliverPatch(bridge.applySnapshot(response)) }
+        finishAppliedCoreResponse(response)
+    }
+
+    private suspend fun callCoreAndApplySnapshot(request: String): String =
+        bridge.callCoreAndApplySnapshot(request, ::deliverPatch)
+
+    private suspend fun finishAppliedCoreResponse(response: String) {
         outlinerCommands.deliver(response)
         trackSyncState(response)
         ensureGraphEventsSync()
-        effectDrain?.let { drain -> scope.launch { drain.drain(scope) } }
+        launchDrain()
     }
 
     // The core reports the sync cursor and selected graph on every
@@ -458,6 +493,7 @@ internal class LogseqRuntime(
             pendingSyncRequested = false
             pendingSyncJob?.cancel()
         }
+        if (!response.contains("\"appliedServerT\"") && !response.contains("\"selectedGraphId\"")) return
         runCatching {
             val result = JSONObject(response).optJSONObject("result") ?: return
             if (result.has("appliedServerT") && !result.isNull("appliedServerT")) {
@@ -505,7 +541,9 @@ internal class LogseqRuntime(
     // --- Graph events WebSocket (port of iOS startSync/runGraphEventsOnce) ---
 
     private suspend fun restoreCoreAccessToken(): String? {
-        val token = platformEffects.restoreAccessToken()?.takeIf { it.isNotBlank() } ?: return null
+        val token = withContext(Dispatchers.IO) {
+            platformEffects.restoreAccessToken()
+        }?.takeIf { it.isNotBlank() } ?: return null
         if (token == configuredAccessToken) return token
         val response = bridge.callCore(JSONObject()
             .put("apiVersion", 1).put("method", "dispatch")
@@ -554,8 +592,8 @@ internal class LogseqRuntime(
                 }
                 if (token.isNullOrBlank() || !isActive) break
                 val sync = AndroidGraphEventsSync(
-                    callCore = bridge::callCore,
-                    applyResponse = ::applyCoreResponse,
+                    callCore = ::callCoreAndApplySnapshot,
+                    applyResponse = ::finishAppliedCoreResponse,
                     onChangesApplied = { requestSyncNow() },
                     isCancelled = { !isActive },
                 )
@@ -623,8 +661,8 @@ internal class LogseqRuntime(
             pendingSyncRequested = false
             if (restoreCoreAccessToken().isNullOrBlank()) return
             AndroidPendingSyncPump(
-                callCore = bridge::callCore,
-                applyResponse = ::applyCoreResponse,
+                callCore = ::callCoreAndApplySnapshot,
+                applyResponse = ::finishAppliedCoreResponse,
                 isCancelled = { !job.isActive },
                 log = { level, message -> logRuntime(level, "core", message) },
                 sendWebSocket = { graphEventsSync?.sendPending(it) },
@@ -673,7 +711,32 @@ internal class LogseqRuntime(
         catch (_: Exception) { logRuntime("warn", "sync", "Profile saved. Sync authentication will refresh on retry.") }
     }
 
+    private val mainThreadEffectKinds = setOf(
+        "present-account-profile",
+        "present-attachment",
+        "delete-local-graph",
+        "save-settings",
+        "sign-in",
+        "sign-out",
+    )
+
     private suspend fun executeEffect(effect: NativeEffect): NativeEffectResolution {
+        if (effect.kind in mainThreadEffectKinds) {
+            return withContext(Dispatchers.Main) { executeEffectOnMain(effect) }
+        }
+        val executor = coreEffects
+            ?: return NativeEffectResolution.Discard(
+                succeeded = false,
+                message = "The native core effect executor is unavailable",
+            )
+        val resolution = executor.execute(effect)
+        if (effect.kind == "save-outliner-editing" && resolution.succeeded) {
+            mainHandler.post { scheduleStoppedWidgetRefresh() }
+        }
+        return resolution
+    }
+
+    private suspend fun executeEffectOnMain(effect: NativeEffect): NativeEffectResolution {
         if (effect.kind == "present-account-profile") {
             accountProfileOpen = true
             return NativeEffectResolution.Discard()
@@ -1109,7 +1172,7 @@ internal class LogseqRuntime(
             .confirmDeletion(blockIds.size > 1)
         if (confirmed) {
             hostUpdate("confirm-outliner-delete", "null")
-            effectDrain?.let { drain -> scope.launch { drain.drain(scope) } }
+            launchDrain()
         }
     }
 

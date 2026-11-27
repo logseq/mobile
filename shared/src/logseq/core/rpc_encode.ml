@@ -226,10 +226,19 @@ let outliner_rows_json serialize_block context state =
            serialize_block row)
        rows)
 
-let rec common_row_prefix before after =
+let visible_row_equal (a : Outliner.outliner_row) (b : Outliner.outliner_row) =
+  a == b
+  || (a.block == b.block && a.depth = b.depth && a.has_children = b.has_children
+      && a.is_collapsed = b.is_collapsed)
+  || a = b
+
+let rec common_row_prefix_with eq before after =
   match (before, after) with
-  | b :: bs, a :: at when b = a -> 1 + common_row_prefix bs at
+  | b :: bs, a :: at when eq b a -> 1 + common_row_prefix_with eq bs at
   | _ -> 0
+
+let common_row_prefix before after =
+  common_row_prefix_with (fun b a -> b == a || b = a) before after
 
 let sub_list list start length =
   let rec take acc n xs =
@@ -244,17 +253,24 @@ let sub_list list start length =
   in
   take [] length (drop start list)
 
-let common_row_suffix before after start =
+let common_row_suffix_with eq before after start =
+  let before_arr = Array.of_list before in
+  let after_arr = Array.of_list after in
+  let before_len = Array.length before_arr in
+  let after_len = Array.length after_arr in
   let rec loop length =
-    let before_index = List.length before - length - 1 in
-    let after_index = List.length after - length - 1 in
+    let before_index = before_len - length - 1 in
+    let after_index = after_len - length - 1 in
     if
       before_index >= start && after_index >= start
-      && List.nth before before_index = List.nth after after_index
+      && eq before_arr.(before_index) after_arr.(after_index)
     then loop (length + 1)
     else length
   in
   loop 0
+
+let common_row_suffix before after start =
+  common_row_suffix_with (fun b a -> b == a || b = a) before after start
 
 let row_splice_position anchored before start =
   if anchored then
@@ -292,7 +308,9 @@ let structural_outliner_delta anchored before_context before_state
   let blocks =
     List.filter
       (fun (block : Model.block) ->
-        Hashtbl.find_opt before_uuids block.uuid <> Some block)
+        match Hashtbl.find_opt before_uuids block.uuid with
+        | Some prev -> prev != block && prev <> block
+        | None -> true)
       after_context.Outliner.blocks
   in
   let deleted =
@@ -301,17 +319,26 @@ let structural_outliner_delta anchored before_context before_state
         if Hashtbl.mem after_uuids block.uuid then None else Some block.uuid)
       before_context.Outliner.blocks
   in
-  let start = common_row_prefix before_rows after_rows in
-  let suffix = common_row_suffix before_rows after_rows start in
+  let start = common_row_prefix_with visible_row_equal before_rows after_rows in
+  let suffix = common_row_suffix_with visible_row_equal before_rows after_rows start in
   let delete_count = List.length before_rows - start - suffix in
   let insert_count = List.length after_rows - start - suffix in
-  let targets =
-    youtube_target_map
-      (List.map (fun row -> row.Outliner.block) after_rows)
-  in
   let splices =
     if delete_count = 0 && insert_count = 0 then []
     else
+      let inserted_rows = sub_list after_rows start insert_count in
+      let rec has_timestamp = function
+        | `Assoc fields ->
+          List.assoc_opt "type" fields = Some (`String "youtubeTimestamp")
+          || List.exists (fun (_, value) -> has_timestamp value) fields
+        | `List values -> List.exists has_timestamp values
+        | _ -> false
+      in
+      let targets =
+        if List.exists (fun row -> has_timestamp (raw_markup_json row.Outliner.block)) inserted_rows
+        then youtube_target_map (List.map (fun row -> row.Outliner.block) after_rows)
+        else Hashtbl.create 0
+      in
       [
         Wire.json_object
           (row_splice_position anchored before_rows start
@@ -324,7 +351,7 @@ let structural_outliner_delta anchored before_context before_state
                         outliner_row_json
                           (Hashtbl.find_opt targets row.Outliner.block.Model.uuid)
                           visible_block_json row)
-                      (sub_list after_rows start insert_count)) )
+                      inserted_rows) )
              ]);
       ]
   in
@@ -470,24 +497,29 @@ let with_node_icons resolve result =
       (uuid, Option.value ~default:`Null (resolve uuid)) :: icons) ids [])) :: fields)
   | _ -> result
 
+let outliner_patch_fields ?sync_error ?is_task revision context state command_revision commands
+    pending blocks deleted splices =
+  [
+    ("revision", `Int revision)
+  ; ("blocks", Wire.json_list (List.map visible_block_json blocks))
+  ; ("deletedBlockIds", Wire.json_strings deleted)
+  ; ("selectedBlock", `Null)
+  ; ("outlinerState", outliner_state_json ?is_task state)
+  ; ( "outlinerAutocompleteCandidates"
+    , outliner_candidates_json context state )
+  ; ("outlinerRows", Wire.json_list [])
+  ; ("outlinerRowSplices", Wire.json_list splices)
+  ; ("outlinerCommandRevision", `Int command_revision)
+  ; ( "outlinerCommands"
+    , Wire.json_list (List.map outliner_command_json commands) )
+  ; ("hasPendingSemanticOperations", `Bool pending)
+  ; ("pendingSyncError", match sync_error with Some message -> `String message | None -> `Null)
+  ; ("isOutlinerPatch", `Bool true)
+  ]
+
 let outliner_patch_result ?sync_error ?is_task revision context state command_revision commands
     pending blocks deleted splices =
   Wire.success
     (Wire.json_object
-       [
-         ("revision", `Int revision)
-       ; ("blocks", Wire.json_list (List.map visible_block_json blocks))
-       ; ("deletedBlockIds", Wire.json_strings deleted)
-       ; ("selectedBlock", `Null)
-       ; ("outlinerState", outliner_state_json ?is_task state)
-       ; ( "outlinerAutocompleteCandidates"
-         , outliner_candidates_json context state )
-       ; ("outlinerRows", Wire.json_list [])
-       ; ("outlinerRowSplices", Wire.json_list splices)
-       ; ("outlinerCommandRevision", `Int command_revision)
-       ; ( "outlinerCommands"
-         , Wire.json_list (List.map outliner_command_json commands) )
-       ; ("hasPendingSemanticOperations", `Bool pending)
-       ; ("pendingSyncError", match sync_error with Some message -> `String message | None -> `Null)
-       ; ("isOutlinerPatch", `Bool true)
-       ])
+       (outliner_patch_fields ?sync_error ?is_task revision context state command_revision commands
+          pending blocks deleted splices))

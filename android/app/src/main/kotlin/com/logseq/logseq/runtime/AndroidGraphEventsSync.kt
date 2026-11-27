@@ -31,6 +31,10 @@ internal class CoreGraphSyncEligibility {
 
     @Synchronized
     fun update(response: String) {
+        if (!response.contains("\"selectedGraphId\"") &&
+            !response.contains("\"graphBootstrap\"") &&
+            !response.contains("\"isGraphUnlocked\"")
+        ) return
         runCatching {
             val result = JSONObject(response).optJSONObject("result") ?: return
             if (result.has("selectedGraphId")) {

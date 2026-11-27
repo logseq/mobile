@@ -43,6 +43,19 @@ val outliner_state_json : ?is_task:(string -> bool) -> Outliner_state.outliner_s
 val outliner_command_json :
   Outliner_effects.outliner_platform_command -> Yojson.Basic.t
 val with_node_icons : (string -> Yojson.Basic.t option) -> Yojson.Basic.t -> Yojson.Basic.t
+val outliner_patch_fields :
+  ?sync_error:string ->
+  ?is_task:(string -> bool) ->
+  int ->
+  Outliner_state.outliner_context ->
+  Outliner_state.outliner_state ->
+  int ->
+  Outliner_effects.outliner_platform_command list ->
+  bool ->
+  Cache_model.block list ->
+  string list ->
+  Yojson.Basic.t list ->
+  (string * Yojson.Basic.t) list
 val outliner_patch_result :
   ?sync_error:string ->
   ?is_task:(string -> bool) ->
