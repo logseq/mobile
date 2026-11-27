@@ -1,0 +1,30 @@
+appId: com.logseq.logseq.PageBenchmark
+---
+- tapOn:
+    id: tab.bottom.tasks
+- longPressOn:
+    id: outliner.block-action.task
+- assertVisible: Thumbs Up
+- assertVisible: Red Heart
+- tapOn: Scheduled
+- assertVisible:
+    id: task-dates.calendar
+- tapOn:
+    point: 50%,20%
+- longPressOn:
+    id: outliner.block-action.task
+- tapOn: Deadline
+- assertVisible:
+    id: task-dates.calendar
+- tapOn:
+    id: task-dates.clear
+- assertVisible: Deadline cleared
+- longPressOn:
+    id: outliner.block-action.task
+- tapOn: Add comment
+- assertVisible:
+    id: field.comment
+- inputText: Context menu comment draft
+- assertVisible:
+    id: button.comment.post
+    enabled: true

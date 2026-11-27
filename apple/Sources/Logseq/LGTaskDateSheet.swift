@@ -217,23 +217,25 @@ struct LGTaskDateSheet: View {
             .padding(.horizontal, 12)
         }
 
-        Button {
-            editingInput = false
-            try? context.emit(name: "clear", values: [:])
-        } label: {
-            Text(state.clearTitle)
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .padding(.horizontal, 12)
-                .background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
-                .contentShape(Rectangle())
+        if state.canClear {
+            Button {
+                editingInput = false
+                try? context.emit(name: "clear", values: [:])
+            } label: {
+                Text(state.clearTitle)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .disabled(!enabled)
+            .opacity(enabled ? 1 : 0.45)
+            .accessibilityIdentifier("task-dates.clear")
+            .padding(.horizontal, 12)
+            .padding(.bottom, 4)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .disabled(!enabled || !state.canClear)
-        .opacity(enabled && state.canClear ? 1 : 0.45)
-        .accessibilityIdentifier("task-dates.clear")
-        .padding(.horizontal, 12)
-        .padding(.bottom, 4)
     }
 
     private func choose(_ day: Date) {

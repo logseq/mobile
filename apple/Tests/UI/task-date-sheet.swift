@@ -3,26 +3,35 @@ import SwiftUI
 @testable import Logseq
 
 // Launch with run-simulator-runtime-check.py in --interactive mode and an empty
-// fixture directory, then run task-date-sheet.yaml against the same simulator.
+// fixture directory, then run task-date-sheet.yaml or a block-context-menu flow
+// against the same simulator.
 @MainActor @Observable private final class TaskDateEffects: LGEffectExecuting {
     private let scheduled = 1_795_504_200_000
     private let title = "Check the release date"
     private var deadline: Int? = 1_795_504_200_000
     private var editing = false
+    private var selected: String?
     var cleared = false
     private var deadlineValue: Any { deadline.map { $0 as Any } ?? NSNull() }
 
     func snapshot() throws -> String {
-        let outlinerState = editing
-            ? ["editing": ["uuid": "task", "title": title, "isTask": true, "caretUTF16Offset": 0]]
-            : [:]
+        var outlinerState: [String: Any] = ["selectedBlockIds": selected.map { [$0] } ?? []]
+        if editing {
+            outlinerState["editing"] = ["uuid": "task", "title": title, "isTask": true, "caretUTF16Offset": 0]
+        }
+        let journalBlocks = [("note", "Release notes"), ("nested", "Nested release note")]
+            + (1...8).map { ("item-\($0)", "Release item \($0)") }
+        let journalRows: [[String: Any]] = journalBlocks.enumerated().map { index, row in
+            ["depth": index == 0 ? 0 : 1, "hasChildren": index == 0, "block": [
+                "uuid": row.0, "pageId": "today", "title": row.1,
+                "journalTitle": "November 24", "journalDay": 20261124
+            ]]
+        }
         return try response([
             "selectedGraphId": "task-graph",
             "graphName": "Journals",
-            "outlinerRows": [["depth": 0, "block": [
-                "uuid": "note", "pageId": "today", "title": "Release notes",
-                "journalTitle": "November 24", "journalDay": 20261124
-            ]]],
+            "collaboration": ["graphId": "task-graph", "account": "fixture-user"],
+            "outlinerRows": journalRows,
             "outlinerState": outlinerState,
             "journalTasks": [
                 "graphId": "task-graph",
@@ -30,9 +39,11 @@ import SwiftUI
                 "day": 20261124,
                 "enabled": true,
                 "success": true,
-                "doing": [[
+                "today": [[
                     "uuid": "task",
-                    "block": ["uuid": "task", "pageId": "older", "title": title, "isTask": true],
+                    "block": ["uuid": "task", "pageId": "older", "title": title, "isTask": true,
+                              "reactions": [["id": "+1", "count": 1, "selected": true],
+                                            ["id": "heart", "count": 1, "selected": true]]],
                     "scheduled": scheduled,
                     "deadline": deadlineValue
                 ]]
@@ -45,10 +56,17 @@ import SwiftUI
             switch effect.kind {
             case "editor-outliner-event":
                 let input = try JSONSerialization.jsonObject(with: Data(effect.text.utf8)) as? [String: Any]
+                if input?["type"] as? String == "toggleBlockSelection", let uuid = input?["uuid"] as? String {
+                    selected = selected == uuid ? nil : uuid
+                    return .init(succeeded: true, message: try snapshot())
+                }
                 guard input?["type"] as? String == "tapBlock", input?["uuid"] as? String == "task" else {
                     return .init(succeeded: true, message: "", output: .discard)
                 }
                 editing = true
+                return .init(succeeded: true, message: try snapshot())
+            case "outliner-toolbar" where effect.text == "unselect":
+                selected = nil
                 return .init(succeeded: true, message: try snapshot())
             case "load-property-values":
                 let input = try JSONSerialization.jsonObject(with: Data(effect.text.utf8)) as? [String: Any]

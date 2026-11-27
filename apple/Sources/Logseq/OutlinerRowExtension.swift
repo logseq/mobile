@@ -106,7 +106,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
 }
 
 #if os(iOS)
-@MainActor final class OutlinerBlockInteractions: NSObject, UIContextMenuInteractionDelegate, UIDragInteractionDelegate, UIDropInteractionDelegate, UIGestureRecognizerDelegate {
+@MainActor final class OutlinerBlockInteractions: NSObject, UIContextMenuInteractionDelegate, UIDragInteractionDelegate, UIDropInteractionDelegate {
     struct DropTarget {
         let id: String
         let depth: Int
@@ -116,10 +116,9 @@ struct OutlinerRowPayload: Decodable, Equatable {
 
     struct Configuration {
         let menu: () -> UIMenu?
-        let openReactionMenu: (() -> Void)?
         let dragID: String?
         let beginDrag: () -> Void
-        let previewBackground: UIColor
+        let previewBackground: () -> UIColor
         var dropTarget: DropTarget? = nil
     }
 
@@ -129,22 +128,11 @@ struct OutlinerRowPayload: Decodable, Equatable {
     }
 
     private lazy var dragInteraction = UIDragInteraction(delegate: self)
-    private lazy var reactionPress: UILongPressGestureRecognizer = {
-        let press = UILongPressGestureRecognizer(target: self, action: #selector(handleReactionPress(_:)))
-        press.delegate = self
-        press.cancelsTouchesInView = false
-        press.isEnabled = false
-        return press
-    }()
-    private var pressOrigin: CGPoint?
-    private var dragActive = false
 
     var configuration: Configuration? {
         didSet {
             let enabled = configuration?.dragID != nil
             if dragInteraction.isEnabled != enabled { dragInteraction.isEnabled = enabled }
-            let menuEnabled = configuration?.openReactionMenu != nil
-            if reactionPress.isEnabled != menuEnabled { reactionPress.isEnabled = menuEnabled }
         }
     }
 
@@ -153,35 +141,6 @@ struct OutlinerRowPayload: Decodable, Equatable {
         view.addInteraction(dragInteraction)
         view.addInteraction(UIDropInteraction(delegate: self))
         view.addInteraction(UIContextMenuInteraction(delegate: self))
-        view.addGestureRecognizer(reactionPress)
-    }
-
-    @objc private func handleReactionPress(_ press: UILongPressGestureRecognizer) {
-        let point = press.location(in: press.view)
-        switch press.state {
-        case .began:
-            pressOrigin = dragActive ? nil : point
-            if !dragActive { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
-        case .changed:
-            if let origin = pressOrigin,
-               hypot(point.x - origin.x, point.y - origin.y) > press.allowableMovement {
-                pressOrigin = nil
-            }
-        case .ended:
-            defer { pressOrigin = nil }
-            // Wait for release to give the native drag interaction control when the finger moves.
-            if !dragActive, let origin = pressOrigin,
-               hypot(point.x - origin.x, point.y - origin.y) <= press.allowableMovement {
-                configuration?.openReactionMenu?()
-            }
-        default:
-            pressOrigin = nil
-        }
-    }
-
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
-                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-        gestureRecognizer === reactionPress
     }
 
     func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
@@ -201,10 +160,11 @@ struct OutlinerRowPayload: Decodable, Equatable {
     }
 
     private func preview(for view: UIView?) -> UITargetedPreview? {
-        guard let view, view.window != nil else { return nil }
+        guard let view, view.window != nil, !view.bounds.isEmpty else { return nil }
+        // Keep the entire bullet slot so the preview includes its leading gutter.
         let parameters = UIPreviewParameters()
         parameters.visiblePath = UIBezierPath(roundedRect: view.bounds, cornerRadius: 10)
-        if let background = configuration?.previewBackground { parameters.backgroundColor = background }
+        if let background = configuration?.previewBackground() { parameters.backgroundColor = background }
         return UITargetedPreview(view: view, parameters: parameters)
     }
 
@@ -216,13 +176,7 @@ struct OutlinerRowPayload: Decodable, Equatable {
 
     func dragInteraction(_ interaction: UIDragInteraction, sessionWillBegin session: any UIDragSession) {
         // UIKit may request items while previewing the menu. Select only after lift.
-        dragActive = true
-        pressOrigin = nil
         configuration?.beginDrag()
-    }
-
-    func dragInteraction(_ interaction: UIDragInteraction, session: any UIDragSession, didEndWith operation: UIDropOperation) {
-        dragActive = false
     }
 
     private func origin(for session: any UIDropSession) -> DragOrigin? {
@@ -360,12 +314,9 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
     let playback: LGYouTubePlaybackState
     @State private var dropPlacement: OutlinerDropPlacement?
     @State private var titleWidth: CGFloat = 0
-    #if os(iOS)
-    @State private var blockActionsOpen = false
-    @State private var pendingBlockAction: (() -> Void)?
-    #endif
     @Environment(\.luiSemanticColors) private var semanticColors
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.logseqDarkTheme) private var darkTheme
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.lgPropertyValue) private var propertyValue
@@ -385,14 +336,9 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
 
     private var selectionBackground: some View {
         let accent = semanticColors["link"] ?? LogseqThemePolicy.linkColor(isDark: colorScheme == .dark)
-        #if os(iOS)
-        let highlighted = row.selected || blockActionsOpen
-        #else
-        let highlighted = row.selected
-        #endif
         return RoundedRectangle(cornerRadius: 10)
-            .fill(accent.opacity(highlighted ? 0.24 : 0))
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: highlighted)
+            .fill(accent.opacity(row.selected ? 0.24 : 0))
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: row.selected)
     }
 
     @ViewBuilder var body: some View {
@@ -401,16 +347,18 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
             let selectable = content(interactions: blockInteractions)
                 .contentShape(Rectangle())
                 .modifier(OutlinerSelectionSwipe { emit("toggle-selection") })
-                .sheet(isPresented: $blockActionsOpen, onDismiss: runBlockAction) {
-                    OutlinerBlockMenuSheet(reactions: row.reactionChoices ?? [], groups: blockMenuGroups(),
-                        moreLabel: menuTitle("Add reaction"), semanticColors: semanticColors,
-                        onChoose: chooseBlockAction, onReaction: { action in
-                            chooseBlockAction { emit("menu-action", extra: ["payload": .string(action)]) }
-                        })
-                }
                 .accessibilityActions {
-                    if hasReactionMenu {
-                        Button { blockActionsOpen = true } label: { menuText("More actions") }
+                    if context.isUserInteractionEnabled {
+                        if row.discussionsAvailable == true, row.isComment != true {
+                            Button { emitMenuAction("comments") } label: { menuText("Add comment") }
+                        }
+                        if row.discussionsAvailable == true, !(row.reactionChoices ?? []).isEmpty {
+                            Button { emitMenuAction("reaction") } label: { menuText("Add reaction") }
+                        }
+                        if row.isTask == true {
+                            Button { emitMenuAction("scheduled") } label: { menuText("Scheduled") }
+                            Button { emitMenuAction("deadline") } label: { menuText("Deadline") }
+                        }
                     }
                 }
                 .accessibilityAction(named: menuText(row.selectionMember == true ? "Unselect" : "Select")) {
@@ -459,10 +407,6 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
     #endif
 
     #if os(iOS)
-    private var hasReactionMenu: Bool {
-        context.isUserInteractionEnabled && row.discussionsAvailable == true && !(row.reactionChoices ?? []).isEmpty
-    }
-
     private var blockInteractions: OutlinerBlockInteractions.Configuration {
         let dropTarget: OutlinerBlockInteractions.DropTarget? = context.isUserInteractionEnabled && row.allowsDrag != false
             ? .init(id: row.uuid, depth: row.depth,
@@ -470,36 +414,24 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
                 drop: { emit("drop", extra: ["placement": .string($0.eventValue)]) })
             : nil
         return .init(
-            menu: {
-                guard context.isUserInteractionEnabled, !hasReactionMenu else { return nil }
-                return UIMenu(children: blockMenuGroups().map { group in
-                    UIMenu(options: .displayInline, children: group.map(\.native))
-                })
-            },
-            openReactionMenu: hasReactionMenu ? { blockActionsOpen = true } : nil,
+            menu: { context.isUserInteractionEnabled ? blockMenu() : nil },
             dragID: context.isUserInteractionEnabled && row.allowsDrag != false && !row.journalBullet ? row.uuid : nil,
             beginDrag: { emit("drag-start") },
-            previewBackground: UIColor(semanticColors["surface"] ?? Color(uiColor: .secondarySystemBackground)),
+            previewBackground: {
+                UIColor(LogseqThemePolicy.sheetBackground(isDark: colorScheme == .dark, darkTheme: darkTheme))
+            },
             dropTarget: dropTarget
         )
     }
 
-    private func chooseBlockAction(_ action: @escaping () -> Void) {
-        pendingBlockAction = action
-        blockActionsOpen = false
-    }
-
-    private func runBlockAction() {
-        let action = pendingBlockAction
-        pendingBlockAction = nil
-        action?()
-    }
-
-    private func blockMenuGroups() -> [[OutlinerBlockMenuItem]] {
-        var primary: [OutlinerBlockMenuItem] = [
-            .action(title: menuTitle("Open block"), image: menuImage("arrow.up.right"), destructive: false,
-                    perform: { emit("open-node", uuid: row.embedSourceUuid) })
-        ]
+    private func blockMenu() -> UIMenu {
+        var items: [UIMenuElement] = []
+        if row.discussionsAvailable == true, let choices = row.reactionChoices, !choices.isEmpty {
+            items.append(reactionPalette(choices))
+        }
+        var primary: [UIMenuElement] = [UIAction(title: menuTitle("Open block"), image: menuImage("arrow.up.right")) { _ in
+            emit("open-node", uuid: row.embedSourceUuid)
+        }]
         if !propertyValue {
             let selectionTitle = row.selectionMember == true ? "Unselect" : "Select"
             primary.append(menuAction(selectionTitle, icon: "checkmark.circle", action: "select"))
@@ -507,48 +439,86 @@ private struct OutlinerHostedBlockRow<Content: View>: UIViewControllerRepresenta
         if row.discussionsAvailable == true, row.isComment != true {
             primary.append(menuAction("Add comment", icon: "bubble.left", action: "comments"))
         }
-        var groups = [primary]
+        items.append(UIMenu(options: .displayInline, children: primary))
         if row.isTask == true {
-            var taskItems = [
+            var taskItems: [UIMenuElement] = [
                 menuAction("Scheduled", icon: "calendar", action: "scheduled"),
                 menuAction("Deadline", icon: "flag", action: "deadline")
             ]
             if !row.statuses.isEmpty {
-                let statuses: [OutlinerBlockMenuItem] = row.statuses.enumerated().map { index, status in
-                    .action(title: status.title, image: status.menuImage(in: semanticColors), destructive: false,
-                            perform: { emit("set-status", extra: ["count": .int(index)]) })
+                let statuses = row.statuses.enumerated().map { index, status in
+                    UIAction(title: status.title, image: status.menuImage(in: semanticColors)) { _ in
+                        emit("set-status", extra: ["count": .int(index)])
+                    }
                 }
-                taskItems.append(.submenu(title: menuTitle("Status"), image: menuImage("checkmark.circle"), items: statuses))
+                taskItems.append(UIMenu(title: menuTitle("Status"), image: menuImage("checkmark.circle"), children: statuses))
             }
-            groups.append(taskItems)
+            items.append(UIMenu(options: .displayInline, children: taskItems))
         }
         var clipboard = [menuAction("Copy", icon: "doc.on.doc", action: "copy")]
         if !propertyValue { clipboard.append(menuAction("Cut", icon: "scissors", action: "cut")) }
         clipboard.append(menuAction("Copy reference", icon: "r.square", action: "copyReference"))
         clipboard.append(menuAction("Copy URL", icon: "link", action: "copyURL"))
-        groups.append(clipboard)
-        groups.append([.submenu(title: menuTitle("Move"), image: menuImage("arrow.up.arrow.down"), items: [
+        items.append(UIMenu(options: .displayInline, children: clipboard))
+        items.append(UIMenu(title: menuTitle("Move"), image: menuImage("arrow.up.arrow.down"), children: [
             menuAction("Move up", icon: "arrow.up", action: "moveUp"),
             menuAction("Move down", icon: "arrow.down", action: "moveDown"),
             menuAction("Outdent", icon: "arrow.left", action: "outdent"),
             menuAction("Indent", icon: "arrow.right", action: "indent")
-        ])])
-        groups.append([menuAction("Delete", icon: "trash", action: "delete", destructive: true)])
-        return groups
+        ]))
+        items.append(menuAction("Delete", icon: "trash", action: "delete", destructive: true))
+        return UIMenu(children: items)
+    }
+
+    private func reactionPalette(_ choices: [OutlinerRowPayload.ReactionChoice]) -> UIMenu {
+        let actions = choices.map { choice in
+            let action = UIAction(title: choice.name, image: menuEmoji(choice.emoji), state: choice.selected ? .on : .off) { _ in
+                emitMenuAction("reaction:" + choice.id)
+            }
+            if choice.selected {
+                action.selectedImage = menuEmoji(choice.emoji, selected: true)
+            }
+            return action
+        }
+        return UIMenu(options: [.displayInline, .displayAsPalette],
+                      children: actions + [menuAction("Add reaction", icon: "face.smiling", action: "reaction")])
+    }
+
+    private func menuEmoji(_ emoji: String, selected: Bool = false) -> UIImage {
+        let size = CGSize(width: 28, height: 28)
+        let glyph = emoji as NSString
+        let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 19)]
+        let textSize = glyph.size(withAttributes: attributes)
+        return UIGraphicsImageRenderer(size: size).image { _ in
+            if selected {
+                // Keep adjacent selection backgrounds apart inside the system palette cells.
+                UIColor.secondarySystemFill.resolvedColor(with: menuTraits).setFill()
+                let bounds = CGRect(origin: .zero, size: size).insetBy(dx: 1, dy: 1)
+                UIBezierPath(roundedRect: bounds, cornerRadius: 7).fill()
+            }
+            glyph.draw(at: CGPoint(x: (size.width - textSize.width) / 2, y: (size.height - textSize.height) / 2),
+                       withAttributes: attributes)
+        }.withRenderingMode(.alwaysOriginal)
     }
 
     private func menuTitle(_ key: String) -> String { row.menuLabels?[key] ?? key }
     private func menuText(_ key: String) -> Text { Text(verbatim: menuTitle(key)) }
 
-    private func menuImage(_ name: String, tint: UIColor = .label) -> UIImage? {
-        let traits = UITraitCollection(userInterfaceStyle: colorScheme == .dark ? .dark : .light)
-        return UIImage(systemName: name)?.withTintColor(tint.resolvedColor(with: traits), renderingMode: .alwaysOriginal)
+    private var menuTraits: UITraitCollection {
+        UITraitCollection(userInterfaceStyle: colorScheme == .dark ? .dark : .light)
     }
 
-    private func menuAction(_ title: String, icon: String, action: String, destructive: Bool = false) -> OutlinerBlockMenuItem {
-        .action(title: menuTitle(title), image: menuImage(icon, tint: destructive ? .systemRed : .label),
-                destructive: destructive,
-                perform: { emit("menu-action", extra: ["payload": .string(action)]) })
+    private func menuImage(_ name: String, tint: UIColor = .label) -> UIImage? {
+        UIImage(systemName: name)?.withTintColor(tint.resolvedColor(with: menuTraits), renderingMode: .alwaysOriginal)
+    }
+
+    private func menuAction(_ title: String, icon: String, action: String, destructive: Bool = false) -> UIAction {
+        UIAction(title: menuTitle(title), image: menuImage(icon, tint: destructive ? .systemRed : .label),
+                 attributes: destructive ? .destructive : []) { _ in emitMenuAction(action) }
+    }
+
+    private func emitMenuAction(_ action: String) {
+        emit("menu-action", extra: ["payload": .string(action)])
     }
     #endif
 
