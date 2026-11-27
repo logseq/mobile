@@ -122,9 +122,11 @@ private struct LGPhoneSidebar: View {
             .environment(\.lgSidebarPanExclusions, panExclusions)
             .background {
                 LGSidebarPan(
-                    isOpen: { open },
                     canStart: { velocity in
-                        enabled && !open && presentation.progress < 0.99 && velocity.x > 2 * abs(velocity.y)
+                        guard abs(velocity.x) > 2 * abs(velocity.y) else { return false }
+                        let visible = presentation.progress
+                        return open ? velocity.x < 0 && visible > 0.01
+                            : enabled && velocity.x > 0 && visible < 0.99
                     },
                     isClosed: { presentation.progress == 0 },
                     exclusions: panExclusions,
@@ -296,7 +298,6 @@ struct LGSidebarPanExclusion: UIViewRepresentable {
 }
 
 private struct LGSidebarPan: UIViewRepresentable {
-    let isOpen: () -> Bool
     let canStart: (CGPoint) -> Bool
     let isClosed: () -> Bool
     let exclusions: LGSidebarPanExclusions
@@ -348,7 +349,7 @@ private struct LGSidebarPan: UIViewRepresentable {
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            !handlers.isOpen() && (!handlers.isClosed() || !handlers.exclusions.contains(touch))
+            !handlers.isClosed() || !handlers.exclusions.contains(touch)
         }
 
         override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {

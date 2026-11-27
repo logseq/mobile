@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
@@ -157,7 +158,10 @@ private fun SidebarOverlay(context: LuiExtensionContext) {
         }
         Box(
             Modifier.fillMaxSize()
-                .sidebarPan(motion, widthPx, direction, { latestCanOpen }, { latestOpen }, { latestSelect(it) })
+                .sidebarPan(
+                    motion, widthPx, direction,
+                    { latestCanOpen }, { latestOpen }, { latestSelect(it) },
+                )
                 // Drags on the backdrop and the panel's padding scroll the same list as drags on its rows.
                 .scrollable(pagesScroll, Orientation.Vertical, enabled = open, reverseDirection = true),
         ) {
@@ -288,15 +292,18 @@ private fun Modifier.sidebarPan(
 ): Modifier = pointerInput(motion, width, direction) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
-        if (isOpen() || !canOpen()) return@awaitEachGesture
+        val startsOpen = isOpen()
+        if (!startsOpen && !canOpen()) return@awaitEachGesture
+        // Give a closing swipe priority over the backdrop's click cancellation.
+        // When closed, let page scrollers and pagers handle their own gestures first.
+        val pass = if (startsOpen) PointerEventPass.Initial else PointerEventPass.Main
         val velocity = VelocityTracker()
         velocity.addPosition(down.uptimeMillis, down.position)
         var start: Float? = null
         var lastMoveTime = down.uptimeMillis
         try {
             while (true) {
-                // Main pass visits children first so a pager or scroller can own its gesture.
-                val event = awaitPointerEvent()
+                val event = awaitPointerEvent(pass)
                 if (event.changes.count { it.pressed } > 1) break
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
                 val travel = change.position - down.position
@@ -319,7 +326,13 @@ private fun Modifier.sidebarPan(
                 lastMoveTime = change.uptimeMillis
                 if (start == null) {
                     if (travel.getDistance() < viewConfiguration.touchSlop) continue
-                    if (isOpen() || !canOpen() || motion.progress >= 0.99f || horizontal <= 2f * abs(travel.y)) break
+                    if (isOpen() != startsOpen || abs(horizontal) <= 2f * abs(travel.y)) break
+                    val canDrag = if (startsOpen) {
+                        horizontal < 0f && motion.progress > 0.01f
+                    } else {
+                        horizontal > 0f && canOpen() && motion.progress < 0.99f
+                    }
+                    if (!canDrag) break
                     start = motion.beginDrag()
                 }
                 motion.drag(checkNotNull(start), fraction)

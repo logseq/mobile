@@ -391,8 +391,7 @@ private struct LGSidebarNavigation: View {
                     Button(action: backdrop.dismiss) { Color.clear.contentShape(Rectangle()) }
                         .buttonStyle(.plain)
                         .padding(.leading, backdrop.panelWidth)
-                        .accessibilityLabel(backdrop.dismissLabel)
-                        .accessibilityIdentifier("button.sidebar.dismiss")
+                        .accessibilityHidden(true)
                 }
             } else {
                 rows
@@ -414,6 +413,18 @@ private struct LGSidebarNavigation: View {
             #else
             scroll
             #endif
+        }
+        .overlay {
+            if let backdrop {
+                // Keep the accessible close target within the visible viewport when the list scrolls.
+                Color.clear
+                    .allowsHitTesting(false)
+                    .accessibilityRepresentation {
+                        Button(backdrop.dismissLabel, action: backdrop.dismiss)
+                            .accessibilityIdentifier("button.sidebar.dismiss")
+                    }
+                    .padding(.leading, backdrop.panelWidth)
+            }
         }
         .overlay(alignment: .bottomTrailing) {
             if backdrop == nil {
