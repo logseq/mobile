@@ -1,0 +1,29 @@
+appId: com.logseq.logseq.PageBenchmark
+---
+- assertVisible:
+    id: outliner.block-action.nested
+- takeScreenshot: bullets-idle
+- longPressOn:
+    id: outliner.block-action.note
+- assertVisible: Add comment
+- takeScreenshot: bullet-root-preview
+- tapOn: Select
+- assertVisible:
+    id: button.outliner.selection.done
+- takeScreenshot: bullet-root-selected
+- tapOn:
+    id: button.outliner.selection.done
+- longPressOn:
+    id: outliner.block-action.nested
+- assertVisible: Add comment
+- takeScreenshot: bullet-nested-preview
+- tapOn: Select
+- assertVisible:
+    id: button.outliner.selection.done
+- takeScreenshot: bullet-nested-selected
+- tapOn:
+    id: button.outliner.selection.done
+- longPressOn:
+    id: outliner.block-action.item-5
+- assertVisible: Add comment
+- takeScreenshot: bullet-lower-preview

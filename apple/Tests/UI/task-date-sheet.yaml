@@ -21,6 +21,5 @@ appId: com.logseq.logseq.PageBenchmark
     id: button.outliner.editor.deadline
 - assertVisible:
     id: task-dates.calendar
-- assertVisible:
+- assertNotVisible:
     id: task-dates.clear
-    enabled: false
