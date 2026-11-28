@@ -359,15 +359,20 @@ internal fun OutlinerEditor(
         var shownBottom = 0
         var dismissalPending = false
         snapshotFlow { ime.getBottom(density) }.collect { bottom ->
-            val hiding = imeWasVisible && bottom < shownBottom - 4
-            if (bottom > 0 && !hiding) {
+            val shrinking = imeWasVisible && bottom < shownBottom - 4
+            if (bottom > 0 && !shrinking) {
                 imeWasVisible = true
                 shownBottom = maxOf(shownBottom, bottom)
                 dismissalPending = false
                 dismissalEmitted = false
                 return@collect
             }
-            if (!hiding) return@collect
+            if (!shrinking) return@collect
+            // A predictive Back preview can lower the IME briefly and then
+            // restore it. When the root animation signal is available, this
+            // watcher only cleans up a missed signal after the IME reaches
+            // zero; without that signal, the first shrink is the early path.
+            if (dismissalSignal != null && bottom > 4) return@collect
             if (dismissalPending) return@collect
             dismissalPending = true
             launch {
