@@ -69,7 +69,13 @@ let dispatch_requires_an_explicit_agent () =
   let thread, _ = Bot_chat.update main (Bot_chat.Open (Bot_chat.Thread (bot_id, message_id))) in
   let reply = send thread "Check Android as well" in
   check_eq (route ^ "/sessions/" ^ message_id ^ "/messages") (Bot_store.string "path" reply);
-  check_eq `Null (Bot_store.field "agent" (Bot_store.field "body" reply))
+  check_eq `Null (Bot_store.field "agent" (Bot_store.field "body" reply));
+  let thread_route = route ^ "/sessions/" ^ message_id in
+  let thread, _ = Bot_chat.update thread (Bot_chat.Receive (`Assoc ["route", `String thread_route; "agents", agents])) in
+  let forwarded = send thread "@Codex Review the earlier reply" in
+  check_eq (thread_route ^ "/messages") (Bot_store.string "path" forwarded);
+  check_eq "codex" (Bot_store.string "agent" (Bot_store.field "body" forwarded))
+
 
 let mentions_complete_inside_the_draft () =
   let update state action = fst (Bot_chat.update state action) in

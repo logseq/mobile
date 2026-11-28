@@ -95,8 +95,9 @@ let mention_picker source send bots =
     String.lowercase_ascii name |> String.split_on_char ' ' |> List.exists (String.starts_with ~prefix:query) in
   let request = Signal.map (fun state ->
     Option.map (fun (mention : Chat.mention) ->
-      let agents = match state.Chat.page with Chat.Main _ -> Chat.configured_agents state | _ -> [] in
-      mention.query, Chat.bot_default state, agents, Chat.mentionable_bots state) state.Chat.active_mention)
+      let default = match state.Chat.page with Chat.Thread _ -> Data.string "agent" (Chat.session state)
+        | _ -> Chat.bot_default state in
+      mention.query, default, Chat.configured_agents state, Chat.mentionable_bots state) state.Chat.active_mention)
       bots |> Signal.cutoff (=) in
   let visible = Signal.map Option.is_some request in
   if_ ~test:visible (reactive (function
@@ -122,12 +123,17 @@ let message_card source ~thread message =
   let outgoing = sender = "user" in
   let handoff = Data.field "handoff" message in
   let format label name = View_base.tr_named (Signal.sample source) label name in
-  let status =
+  let recipient = Data.string "requested_agent" message in
+  let attribution =
     if Data.string "source_name" handoff <> "" then Some (format "From {1}" (Data.string "source_name" handoff))
     else if Data.string "target_name" handoff <> "" then Some (format "To {1}" (Data.string "target_name" handoff))
-    else if Data.field "pending" message = `Bool true then Some (tr source "Pending")
+    else if thread && outgoing && recipient <> "" then Some (format "To {1}" (Chat.label recipient))
     else if thread && not outgoing && sender <> "bot" then Some (Chat.label sender)
     else None in
+  let status =
+    if Data.field "pending" message = `Bool true then
+      Some (String.concat " · " (Option.to_list attribution @ [tr source "Pending"]))
+    else attribution in
   let width = (Signal.sample source : Model.logseq_model).viewport_width in
   let width = if width <= 0 then 390 else width in
   let max_bubble = max 180 (min 500 ((width - 36) * 82 / 100)) in
@@ -214,29 +220,74 @@ let coalesced_view bots =
 let message_view bots =
   Signal.cutoff (fun a b -> a.Chat.view = b.Chat.view && Chat.unsent a = Chat.unsent b) bots
 
-let message_list bots rows render =
+let message_list source bots rows render =
   let message_id (message, _) = Data.string "id" message in
-  let at_end = ref true and target = ref None and last_send = ref None in
   let rows = Signal.cutoff (=) rows in
   let sent = Signal.map Chat.latest_send bots |> Signal.cutoff (=) in
-  let newest = Signal.map2 (fun rows sent ->
-    if sent <> !last_send && Option.fold ~none:false
-        ~some:(fun id -> List.exists (fun row -> message_id row = id) rows) sent then (
-      last_send := sent;
-      at_end := true);
-    if !at_end || !target = None then
-      target := List.fold_left (fun _ row -> Some (message_id row)) None rows;
-    !target) rows sent |> Signal.cutoff (=) in
-  let window = View_rows.windowed_keyed ~scroll_target:newest ~native_scroll_anchor:`bottom
-    ~identifier:"bots.messages" ~item_extent:80 ~style:`plain
-    ~on_visible_range:(fun _ last -> at_end := last >= List.length (Signal.sample rows) - 1)
-    ~source:rows ~key:message_id ~cmp:String.compare
-    ~mount:(fun row -> list_item ~key:(message_id (Signal.sample row)) ~padding:0 ~separator:`hidden [reactive render row]) () in
   custom (fun context parent ->
-    let content = match Lui_ui.host context with
+    let tail = "bots.tail" in
+    let at_end = ref true and last_send = ref None and following = ref None in
+    let away = Signal.state context.Lui_ui.ui_scheduler false in
+    let jump = Signal.state context.Lui_ui.ui_scheduler 0 in
+    let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
+    let newest = own (Signal.map2 (fun rows sent ->
+      if sent <> !last_send && Option.fold ~none:false
+          ~some:(fun id -> List.exists (fun row -> message_id row = id) rows) sent then (
+        last_send := sent;
+        at_end := true;
+        Signal.set away false);
+      if !at_end || !following = None then
+        following := List.fold_left (fun _ row -> Some (message_id row)) None rows;
+      !following) rows sent) |> Signal.cutoff (=) |> own in
+    let target = own (Signal.map (Option.map (fun _ -> tail)) newest) in
+    let revision = own (Signal.map2 (fun newest jump -> newest, jump) newest (Signal.value jump)) in
+    let token = ref 0 in
+    let revision = own (Signal.map (fun _ -> incr token; !token) revision) in
+    let items = own (Signal.map (fun rows -> if rows = [] then [] else List.map Option.some rows @ [None]) rows) in
+    let row_id = Option.fold ~none:tail ~some:message_id in
+    let window = View_rows.windowed_keyed ~scroll_target:target ~scroll_revision:revision ~native_scroll_anchor:`bottom
+      ~identifier:"bots.messages" ~item_extent:80 ~style:`plain
+      ~on_visible_range:(fun _ last ->
+        let count = List.length (Signal.sample rows) in
+        at_end := count = 0 || last >= count;
+        Signal.set away (not !at_end))
+      ~source:items ~key:row_id ~cmp:String.compare
+      ~mount:(fun item ->
+        let key = row_id (Signal.sample item) in
+        if key = tail then list_item ~key ~height:1 ~padding:0 ~separator:`hidden [box ~height:1 []]
+        else list_item ~key ~padding:0 ~separator:`hidden
+          [reactive (function Some row -> render row | None -> box []) item]) () in
+    let list = match Lui_ui.host context with
       | KotlinHost -> virtual_list ~grow:1.0 ~accessibility_identifier:"bots.message-scroll" [window]
       | _ -> column ~grow:1.0 ~cross:`stretch [window] in
-    mount context ?parent content)
+    overlay ~grow:1.0 ~alignment:`bottom_trailing [
+      list;
+      if_ ~test:(Signal.value away)
+        (icon_button ~icon:(`app "chevron-down") ~label:(tr source "Jump to latest")
+          ~variant:`ghost ~width:44 ~height:44 ~padding:0 ~margin:6 ~corner_radius:22
+          ~background:"bots-chip" ~foreground:"bots-ink" ~accessibility_identifier:"bots.jump-latest"
+          ~on_press:(fun () ->
+            at_end := true;
+            Signal.set away false;
+            Signal.set jump (Signal.sample (Signal.value jump) + 1)) []);
+    ] |> mount context ?parent)
+
+let waiting source bots ~thread =
+  let working session = List.mem (Data.string "status" session) ["queued"; "running"] in
+  let visible = Signal.map (fun state ->
+    Chat.unsent state <> [] ||
+    if thread then working (Chat.session state)
+    else
+      match Chat.latest_send state with
+      | None -> false
+      | Some id -> List.exists (fun session ->
+          Data.string "root_message_id" session = id && working session) (Data.list "sessions" state.Chat.view)) bots
+      |> Signal.cutoff Bool.equal in
+  if_ ~test:visible (row ~gap:8 ~padding_horizontal:8 ~padding_vertical:4 ~cross:`center
+    ~accessibility_identifier:"bots.waiting" [
+      spinner ~width:14 ~height:14 ~foreground:"bots-muted" [];
+      text ~value:(tr source "Waiting for reply…") ~font_size:"13" ~foreground:"bots-muted" [];
+    ])
 
 let composer source send bots ~thread =
   let send_title = Signal.map (fun state ->
@@ -320,7 +371,7 @@ let conversation source send bots bot_id =
     overlay ~grow:1.0 ~alignment:`bottom_leading [
       column ~grow:1.0 ~gap:8 [
         older source send bots;
-        message_list bots rows (fun (message, session) ->
+        message_list source bots rows (fun (message, session) ->
           column [
             message_card source ~thread:false message;
             (match session with None -> box [] | Some row -> session_row ~compact:true source send bot_id row);
@@ -343,6 +394,7 @@ let conversation source send bots bot_id =
       ];
       mention_picker source send bots;
     ];
+    waiting source bots ~thread:false;
     composer source send bots ~thread:false;
   ]
 
@@ -351,10 +403,12 @@ let thread source send bots =
     let root = Data.field "root" state.Chat.view in
     let entries = if root = `Null then Chat.messages state else root :: Chat.messages state in
     List.map (fun message -> message, ()) entries) (message_view bots) in
-  let header = Signal.map Chat.session bots |> Signal.cutoff (=) in
+  let header = Signal.map (fun state -> Chat.session state, Data.list "participants" state.Chat.view) bots
+    |> Signal.cutoff (=) in
   column ~grow:1.0 ~gap:8 [
-    reactive (fun session ->
-      let agent = Chat.label (Data.string "agent" session) in
+    reactive (fun (session, participants) ->
+      let names = List.filter_map (function `String agent -> Some (Chat.label agent) | _ -> None) participants in
+      let agent = match names with [] -> Chat.label (Data.string "agent" session) | names -> String.concat ", " names in
       let url = Data.string "provider_url" session in
       row ~gap:12 ~cross:`center ~padding_vertical:8 [
         back source send;
@@ -372,10 +426,11 @@ let thread source send bots =
     overlay ~grow:1.0 ~alignment:`bottom_leading [
       column ~grow:1.0 ~gap:8 [
         older source send bots;
-        message_list bots rows (fun (message, ()) -> message_card source ~thread:true message);
+        message_list source bots rows (fun (message, ()) -> message_card source ~thread:true message);
       ];
       mention_picker source send bots;
     ];
+    waiting source bots ~thread:true;
     composer source send bots ~thread:true;
   ]
 

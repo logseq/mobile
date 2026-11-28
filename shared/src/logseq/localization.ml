@@ -6552,6 +6552,8 @@ let capture_dictionaries = [
   ]);
   ("zh-CN", [
     ("Agents", "执行 Agent");
+    ("Jump to latest", "回到最新消息");
+    ("Waiting for reply…", "正在等待回复…");
     ("No configured agents", "暂无已配置的 Agent");
     ("Mention a Bot or Agent", "提及 Bot 或 Agent");
     ("No matches", "没有匹配项");

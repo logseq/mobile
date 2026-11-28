@@ -140,7 +140,7 @@ let paged_keyed ~identifier ~item_extent ~count ~offset ~on_visible_range ~sourc
       [Lui_elements.keyed ~source:(reactive (fun offset rows viewport -> snd (window offset rows viewport))
         offset source (Signal.value viewport)) ~key ~cmp ~mount]))
 
-let windowed_keyed ?scroll_target ?native_scroll_anchor ?first_section ?reset_key
+let windowed_keyed ?scroll_target ?scroll_revision ?native_scroll_anchor ?first_section ?reset_key
     ?(window_size = 32) ?(identifier = "outliner.window") ?(item_extent = 32) ?style
     ?(on_visible_range = fun _ _ -> ()) ?(on_window = fun _ -> ())
     ?(on_prefetch = fun _ -> ()) ?(is_pinned = fun _ -> false)
@@ -171,12 +171,17 @@ let windowed_keyed ?scroll_target ?native_scroll_anchor ?first_section ?reset_ke
       | None -> None
       | Some uuid -> Option.map (fun index -> (uuid, index))
           (Array.find_index (fun item -> key item = uuid) items)) items target))) in
+    let scroll_request request =
+      match scroll_revision with
+      | None -> own (Signal.map (fun request -> request, 0) request)
+      | Some revision -> own (Signal.map2 (fun request revision -> request, revision) request revision) in
+    let target_request = scroll_request request in
     let applied_target = ref None in
-    ignore (Signal.own context.ui_scope (Signal.observe request (function
-      | Some (uuid, index) when !applied_target <> Some uuid ->
-        applied_target := Some uuid;
+    ignore (Signal.own context.ui_scope (Signal.observe target_request (function
+      | Some (uuid, index), revision when !applied_target <> Some (uuid, revision) ->
+        applied_target := Some (uuid, revision);
         Signal.set range (max 0 (index - min 8 (window_size / 2)), window_size)
-      | None -> applied_target := None
+      | None, _ -> applied_target := None
       | _ -> ())));
     let window = own (Signal.map2 (fun items (start, length) ->
       let count = Array.length items in
@@ -199,10 +204,14 @@ let windowed_keyed ?scroll_target ?native_scroll_anchor ?first_section ?reset_ke
         own (Signal.cutoff (=) (own (Signal.map2 (fun target key ->
           if key = "" then target else Some (key, 0)) request reset)))
       | _ -> request in
-    let metadata = own (Signal.cutoff (=) (own (Signal.map2 (fun metadata request ->
+    let native_request =
+      match reset_key with Some _ when Lui_ui.host context = Lui_protocol.KotlinHost -> scroll_request request
+      | _ -> target_request in
+    let metadata = own (Signal.cutoff (=) (own (Signal.map2 (fun metadata (request, revision) ->
       match request with None -> metadata | Some (uuid, index) ->
-        ("data-scroll-key", uuid) :: ("data-scroll-index", string_of_int index) :: metadata)
-      metadata_base request))) in
+        let key = if revision = 0 then uuid else uuid ^ ":" ^ string_of_int revision in
+        ("data-scroll-key", key) :: ("data-scroll-index", string_of_int index) :: metadata)
+      metadata_base native_request))) in
     let visible = own (Signal.cutoff list_equal (own (Signal.map (fun (items, start, length) ->
       let visible = Array.sub items start length |> Array.to_list in
       match Array.find_index is_pinned items with
@@ -220,8 +229,8 @@ let windowed_keyed ?scroll_target ?native_scroll_anchor ?first_section ?reset_ke
       match native_scroll_anchor, Lui_ui.host context with
       | Some _, Lui_protocol.SwiftUIHost ->
         let token = ref 0 in
-        let native = own (Signal.map (fun item ->
-          incr token; Option.fold ~none:"" ~some:fst item, !token) request) in
+        let native = own (Signal.map (fun (item, _) ->
+          incr token; Option.fold ~none:"" ~some:fst item, !token) native_request) in
         Some (own (Signal.map fst native)), Some (own (Signal.map snd native))
       | _ -> None, None in
     let content =
@@ -231,6 +240,12 @@ let windowed_keyed ?scroll_target ?native_scroll_anchor ?first_section ?reset_ke
           ?scroll_anchor:native_scroll_anchor ?scroll_target_signal ?scroll_token_signal
           ~on_visible_range:(function
             | Lui_elements.Range { first; last } ->
+              let items, start, length = Signal.sample window in
+              let first, last =
+                if native_scroll_anchor <> None && Lui_ui.host context = Lui_protocol.SwiftUIHost
+                   && first >= 0 && last >= first
+                then first + start, last + start
+                else first, last in
               (* The editor overlay owns its pinned row outside the window. If
                  its stale frame widens the native range, follow the other end
                  so the rows in the new viewport can still mount. *)
@@ -242,7 +257,6 @@ let windowed_keyed ?scroll_target ?native_scroll_anchor ?first_section ?reset_ke
                   else first, last
                 else first, last in
               on_visible_range first last;
-              let items, start, length = Signal.sample window in
               let count = Array.length items in
               if count > 0 && first >= 0 && last >= first then begin
                 let first = min first (count - 1) in

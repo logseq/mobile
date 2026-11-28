@@ -19,7 +19,8 @@ reply thread. Session histories can grow independently of the associated graph.
 - Create a Session when a manual dispatch contains an explicit Agent selection.
   Typing `@` and choosing the dispatch action both open the Agent picker. Rank
   the Bot's default Agent first. A normal main-conversation message is stored
-  with the Bot. A reply from inside a Session continues that Session.
+  with the Bot. A reply from inside a Session goes to its primary Agent. Mention
+  another configured Agent in the thread to give it a turn in the same Session.
 - Show automated Agent replies and meaningful status changes in the thread.
   Include the output or its link in the thread and show the latest activity on
   the main conversation's dispatch entry. Use a stable Bot and Session ID for
@@ -39,7 +40,8 @@ summaries, loaded messages and a durable outbox. [Mobile architecture](../../COD
 | Record | Contents |
 | --- | --- |
 | `bots` | Owner, name, default Agent and optional graph reference |
-| `sessions` | Bot, root message, selected Agent, upstream session ID and status |
+| `sessions` | Bot, root message, primary Agent and thread status |
+| `bot_thread_agents` | Upstream session identity and continuation cursor per Agent in a thread |
 | `messages` | Bot, optional Session, author, content and ordered ID |
 | `bot_runs` | Durable execution and continuation jobs, with results and failure state |
 | `bot_automations` | Bot, recurrence, time zone, task and Agent override |
@@ -53,8 +55,10 @@ open conversations and apply the server acknowledgement to the local outbox.
 Each dispatch atomically inserts the root message, Session and first execution
 job. Deduplicate resubmitted client messages with stable request IDs and
 Automation occurrences with their rule ID and scheduled time. Resolve the
-Agent when creating the Session. Serialize continuations within that Session
-and store upstream session IDs separately from Logseq Session IDs. If a
+primary Agent when creating the Session and record the recipient of each turn.
+Serialize turns within the Session. When a user brings another Agent into the
+thread, provide a bounded excerpt of the preceding conversation. Each Agent
+continues its own upstream session. If a
 provider's creation result is ambiguous, surface an actionable state and
 reconcile the upstream result before any retry.
 
@@ -72,6 +76,11 @@ back to the graph. Graph Sync retains its existing encryption boundary.
 [Graph sync](001-real-time-graph-sync.md)
 
 ## Local delivery
+
+The local Node server is a development setup. The intended product design routes
+cloud work through the hosted Logseq service. Users who enable Pi or Codex can
+pair a desktop Logseq installation to accept assignments in the background.
+Local tasks stay queued while that desktop is offline.
 
 Develop against the Node adapter from the local Logseq mainline and an isolated
 PostgreSQL database. Keep server and mobile commits local. Validate account

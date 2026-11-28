@@ -24,6 +24,7 @@ val paged_keyed : identifier:string -> item_extent:int -> count:int Signal.signa
   cmp:(string -> string -> int) -> mount:('a Signal.signal -> Lui_elements.t) -> Lui_elements.t
 val windowed_keyed :
   ?scroll_target:string option Signal.signal ->
+  ?scroll_revision:int Signal.signal ->
   ?native_scroll_anchor:Lui_elements.scroll_anchor ->
   ?first_section:int Signal.signal ->
   ?reset_key:string Signal.signal -> ?window_size:int -> ?identifier:string -> ?item_extent:int ->

@@ -161,7 +161,7 @@ let mention_token text start =
 
 let recipients state =
   let text = draft state in
-  let configured = match state.page with Main _ -> configured_agents state | _ -> [] in
+  let configured = match state.page with Main _ | Thread _ -> configured_agents state | _ -> [] in
   let candidates = mentionable_bots state in
   let preferred = List.assoc_opt (route state.page) state.bot_references in
   let find_bot token =
@@ -364,6 +364,7 @@ let update state action =
         (Option.bind target (fun id -> List.assoc_opt id (mentionable_bots state))) in
       let pending = `Assoc ["id", `String id; "author", `String "user"; "pending", `Bool true;
         "body", `String body; "handoff", handoff;
+        "requested_agent", Option.fold ~none:`Null ~some:(fun name -> `String name) agent;
         "attachments", `List (List.map (fun file -> `Assoc ["name", `String file.title]) files)] in
       let optimistic = (key, pending :: unsent state) :: List.remove_assoc key state.optimistic in
       let updated = set_attachments (set_draft "" {state with active_mention = None;
