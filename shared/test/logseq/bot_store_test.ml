@@ -147,9 +147,25 @@ let sending_is_visible_before_acknowledgement () =
   check_eq [] (Bot_chat.messages thread);
   check_eq None (Bot_chat.latest_send thread)
 
+let sessions_filter_by_title_within_scope () =
+  let session id status title = `Assoc ["id", `String id; "status", `String status;
+    "title", `String title; "agent", `String "Reviewer"] in
+  let sessions = [session "pending" "needs_input" "  Logseq [QA] 导航  ";
+    session "completed" "completed" "Logseq [QA] 导航";
+    session "other" "needs_input" "Graph 導航"] in
+  let matches ~needs query =
+    List.filter (Bot_chat.session_matches ~needs ~query) sessions |> List.map (Bot_store.string "id") in
+  check_eq ["pending"; "completed"] (matches ~needs:false "  [qa] 导  ");
+  check_eq ["pending"] (matches ~needs:true "  [qa] 导  ");
+  check_eq ["other"] (matches ~needs:true "導航");
+  check_eq [] (matches ~needs:true "Reviewer");
+  check_eq [] (matches ~needs:true "[qa] 導");
+  check_eq ["pending"; "other"] (matches ~needs:true " \t ")
+
 let cases =
   [case "offline send replays the same ID after reopening SQLite" offline_send_survives_reopen;
    case "dispatch uses an explicit Agent and thread replies use their session" dispatch_requires_an_explicit_agent;
    case "selecting an inline Agent replaces the query and preserves the rest of the draft" mentions_complete_inside_the_draft;
    case "handoffs and late attachment results stay in their own draft" bot_handoff_and_attachment_are_bound_to_the_draft;
-   case "outgoing messages render immediately and reconcile with a stable ID" sending_is_visible_before_acknowledgement]
+   case "outgoing messages render immediately and reconcile with a stable ID" sending_is_visible_before_acknowledgement;
+   case "session title search preserves the selected scope" sessions_filter_by_title_within_scope]

@@ -634,6 +634,31 @@ let rule_form source send bots =
     form_footer source send ~disabled "Create automation" "bots.rule.save" Chat.Save_automation;
   ]
 
+let sessions source send bots bot_id ~needs =
+  custom (fun context parent ->
+    let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
+    let query = Signal.state context.ui_scheduler "" in
+    let sessions = own (Signal.map (fun state ->
+      if state.Chat.view = `Null then None else Some (Data.list "sessions" state.Chat.view)) bots
+      |> Signal.cutoff (=)) in
+    let results = own (Signal.map2 (fun sessions query ->
+      match sessions with
+      | None -> `Empty "Loading sessions…"
+      | Some sessions ->
+        match List.filter (Chat.session_matches ~needs ~query) sessions with
+        | [] -> `Empty (if String.trim query = "" then "No sessions yet" else "No matching sessions")
+        | rows -> `Rows rows) sessions (Signal.value query) |> Signal.cutoff (=)) in
+    let search_label = tr source "Search by title" in
+    column ~gap:8 ~grow:1.0 ~cross:`stretch [
+      heading source send (tr source (if needs then "Needs you" else "Sessions")) [];
+      View_base.filter_search_field ~model_source:source ~text_signal:(Signal.value query)
+        ~placeholder:search_label ~label:search_label ~accessibility_identifier:"bots.sessions.search"
+        ~on_input:(Signal.set query) ();
+      scroll ~grow:1.0 [reactive (function
+        | `Empty label -> text ~value:(tr source label) ~foreground:"bots-muted" ~padding_vertical:24 []
+        | `Rows rows -> column ~gap:4 (List.map (session_row source send bot_id) rows)) results];
+    ] |> mount context ?parent)
+
 let screen ~bottom_spacing source send =
   let bots = chat source in
   let pages = Signal.cutoff (=) (Signal.map (fun state -> state.Chat.page) bots) in
@@ -649,17 +674,6 @@ let screen ~bottom_spacing source send =
       | Thread _ -> thread source send bots
       | Settings _ -> settings source send bots ~creating:false
       | Automation _ -> rule_form source send bots
-      | Sessions (id, needs) ->
-        column ~gap:8 ~grow:1.0 [
-          heading source send (tr source (if needs then "Needs you" else "Sessions")) [];
-          scroll ~grow:1.0 [reactive (fun state ->
-            let sessions = Data.list "sessions" state.Chat.view in
-            let sessions = if needs then List.filter (fun session ->
-              Data.string "status" session = "needs_input") sessions else sessions in
-            if sessions = [] then
-              text ~value:(tr source (if state.Chat.view = `Null then "Loading sessions…" else "No sessions yet"))
-                ~foreground:"bots-muted" ~padding_vertical:24 []
-            else column ~gap:4 (List.map (session_row source send id) sessions)) (coalesced_view bots)];
-        ]) pages;
+      | Sessions (id, needs) -> sessions source send bots id ~needs) pages;
     feedback source send bots;
   ])])

@@ -6557,6 +6557,8 @@ let capture_dictionaries = [
     ("No configured agents", "暂无已配置的 Agent");
     ("Mention a Bot or Agent", "提及 Bot 或 Agent");
     ("No matches", "没有匹配项");
+    ("Search by title", "按标题搜索");
+    ("No matching sessions", "没有匹配的会话");
     ("Send to {1}", "发送给 {1}");
     ("From {1}", "来自 {1}");
     ("To {1}", "发给 {1}");

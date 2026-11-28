@@ -83,6 +83,13 @@ let label agent = Option.value ~default:agent (List.assoc_opt agent labels)
 let selected_bot state = Data.field "bot" state.view
 let session state = Data.field "session" state.view
 
+let session_matches ~needs ~query =
+  let query = String.lowercase_ascii (String.trim query) in
+  fun session ->
+    (not needs || Data.string "status" session = "needs_input")
+    && (query = "" ||
+      Data.string "title" session |> String.trim |> String.lowercase_ascii |> String_kit.includes ~sub:query)
+
 let configured_agents state =
   Data.list "agents" state.view
   |> List.filter_map (fun row ->
