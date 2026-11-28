@@ -741,6 +741,7 @@ let authentication_screen_visible_ (current : Model.logseq_model) =
 let primary_sidebar_button_visible_ (current : Model.logseq_model) =
   current.pdf_workspace = None
   && (not (node_screen_visible_ current))
+  && (current.destination <> BotsDestination || current.bots.page = Bot_chat.Index)
   && (not (graph_loading_visible_ current))
   && (not (graph_picker_visible_ current))
   && (not current.search_open)
@@ -1544,11 +1545,18 @@ let node_route_model ~active (current : Model.logseq_model)
 let app_navigation_depth (current : Model.logseq_model) =
   navigation_path_depth current.app_navigation_path
 
+let bot_navigation_path (current : Model.logseq_model) =
+  if current.destination = BotsDestination then Bot_chat.navigation_path current.bots
+  else []
+
+let native_app_navigation_depth current =
+  app_navigation_depth current + List.length (bot_navigation_path current)
+
 (* Navigation levels platform back should settle: pushed routes plus one
    extra for editing, selection, or a non-journal pane so shell-edge back
    reaches BackAppNavigation instead of leaving the app. *)
 let app_back_depth (current : Model.logseq_model) =
-  let depth = app_navigation_depth current in
+  let depth = native_app_navigation_depth current in
   if (depth = 0 && current.destination <> JournalsDestination)
      || current.outliner_selected_block_ids <> []
      || current.outliner_editing <> None

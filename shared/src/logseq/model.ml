@@ -3203,12 +3203,18 @@ let rec update (current : logseq_model) action =
           remove_node_projection updated.app_navigation_previews uuid;
       }
   | BackAppNavigation count ->
-    if current.destination = BotsDestination && current.bots.page <> Bot_chat.Index then
-      update current (BotsAction Bot_chat.Back)
+    let bot_page = current.destination = BotsDestination && current.bots.page <> Bot_chat.Index in
+    let node_depth = List.length current.app_navigation_path in
+    if bot_page && node_depth = 0 then
+      update current (BotsAction (Bot_chat.Back_steps (max 1 count)))
     else if current.outliner_selected_block_ids <> [] then
       let id = current.next_effect_id in
       enqueue_effect current (OutlinerToolbarEffect (id, "unselect"))
-    else back_app_navigation current count
+    else
+      let updated = back_app_navigation current count in
+      if bot_page && count > node_depth then
+        update updated (BotsAction (Bot_chat.Back_steps (count - node_depth)))
+      else updated
   | RequestSearchResult uuid
   | RequestSearchNode uuid ->
     let path = current.search_navigation_path in
@@ -3247,6 +3253,7 @@ let rec update (current : logseq_model) action =
       enqueue_effect current (LoadOlderJournalsEffect id)
     end
   | ApplyViewportWidth width -> { current with viewport_width = max 0 width }
+  | OpenSidebar when current.destination = BotsDestination && current.bots.page <> Bot_chat.Index -> current
   | OpenSidebar ->
     let updated = { (update current DismissComposer) with sidebar_open = true } in
     if current.sidebar_open || current.outliner_editing = None then updated

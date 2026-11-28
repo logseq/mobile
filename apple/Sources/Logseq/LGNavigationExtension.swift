@@ -989,7 +989,9 @@ private struct LGNavigationContent: View {
                         )
                         .background(routeBackground), active: path.last == childID)
                         .toolbar {
-                            trailingToolbar(searchPage: searchPage)
+                            if !showsContentHeader {
+                                trailingToolbar(searchPage: searchPage)
+                            }
                             if !verticalToolbar, let destinationSearch, destinationSearch.isVisible {
                                 ToolbarItem(placement: .principal) {
                                     searchStatusTitle(destinationSearch.statusTitle)
@@ -1049,7 +1051,6 @@ private struct LGNavigationContent: View {
         .background(routeBackground.ignoresSafeArea())
         #if os(iOS)
         .tint(navigationBarTint)
-        .toolbar(showsContentHeader ? .hidden : .visible, for: .navigationBar)
         .scrollDismissesKeyboard(showsContentHeader ? .interactively : .automatic)
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
             if showsContentHeader && !composerDismissalEnabled {

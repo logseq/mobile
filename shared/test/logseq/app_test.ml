@@ -5020,7 +5020,7 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
     (App.model application).selected_task_status None
 
 let bot_detail_owns_the_bottom_composer () =
-  List.iter (fun (backend, bottom_slot) ->
+  List.iter (fun (backend, bottom_slot, pushes_destinations) ->
     let application = App.create (backend ()) in
     start application;
     let apply action =
@@ -5032,29 +5032,55 @@ let bot_detail_owns_the_bottom_composer () =
     let root = Lui_app.root_node application in
     let scoped id name = descendant_with_identifier renderer id name in
     let navigation = extension_node application "native-navigation-stack" in
+    let sidebar = extension_node application "sidebar-overlay" in
     let chrome = List.nth (children renderer navigation) bottom_slot in
     let dock () = scoped chrome "row.bottom.capture" in
     let open_page page = apply (Model.BotsAction (Bot_chat.Open page)) in
+    let destinations () =
+      List.filter (fun id ->
+        Hashtbl.find_opt renderer.Lui_runtime.runtime_extension_nodes id
+        = Some "native-navigation-title") (children renderer navigation) in
+    let check_navigation depth =
+      check_eq ~msg:"pushed Bot pages contribute to native navigation depth"
+        (extension_property application navigation "depth") (Some (IntValue depth));
+      if pushes_destinations then
+        check_eq ~msg:"each pushed Bot page supplies a native destination"
+          (List.length (destinations ())) depth;
+      check_eq ~msg:"the sidebar gesture is available only at the Bots root"
+        (extension_property application sidebar "enabled") (Some (BoolValue (depth = 0))) in
+    let back () =
+      dispatch application (ExtensionEvent (navigation, "native-navigation-stack", "back",
+        Lui_protocol.String_map.singleton "count" (Lui_protocol.IntValue 1)));
+      flush application in
     let check_composer () =
       check_eq ~msg:"Bot details hide the global bottom dock" (dock ()) (-1);
-      let composer = scoped root "surface.bots.composer" in
+      let active = if pushes_destinations then List.hd (List.rev (destinations ())) else root in
+      let composer = scoped active "surface.bots.composer" in
       check ~msg:"the Bot composer uses the shared composer controls"
         (scoped composer "row.composer.controls" <> -1);
       check (scoped composer "bots.composer" <> -1);
       check (scoped composer "bots.send" <> -1) in
     check ~msg:"the Bots list retains the global bottom dock" (dock () <> -1);
+    check_navigation 0;
     open_page (Bot_chat.Main "bot");
+    check_navigation 1;
     check_composer ();
+    open_page (Bot_chat.Sessions ("bot", false));
     open_page (Bot_chat.Thread ("bot", "thread"));
+    check_navigation 3;
     check_composer ();
-    apply (Model.BackAppNavigation 0);
+    back ();
+    check_eq (App.model application).bots.page (Bot_chat.Sessions ("bot", false));
+    check_navigation 2;
+    back ();
     check_eq (App.model application).bots.page (Bot_chat.Main "bot");
     check_composer ();
-    apply (Model.BotsAction Bot_chat.Back);
+    back ();
     check_eq (App.model application).bots.page Bot_chat.Index;
+    check_navigation 0;
     check ~msg:"returning to the Bots list restores the original dock"
       (scoped (dock ()) "button.search" <> -1 && scoped (dock ()) "button.composer.expand" <> -1))
-    [ios_backend, 5; kotlin_backend, 1]
+    [ios_backend, 5, true; kotlin_backend, 1, false]
 
 let composer_dismissal_preserves_an_unsent_draft () =
   let expanded = Model.update (Model.initial ()) Model.ExpandComposer in

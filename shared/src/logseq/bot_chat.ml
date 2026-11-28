@@ -41,7 +41,7 @@ type t =
   }
 
 type action =
-  | Open of page | Back | Reload of int64 option | Retry | Older | Receive of J.t
+  | Open of page | Back | Back_steps of int | Reload of int64 option | Retry | Older | Receive of J.t
   | Draft of string | Pick_agent | Select_agent of string | Select_bot of string | Dismiss_mentions
   | Share_graph of bool
   | Stage_attachment of string * attachment | Remove_attachment of string
@@ -52,6 +52,19 @@ type action =
 let empty = {page = Index; view = `Null; sync_queue = []; drafts = []; optimistic = []; last_send = None; bot_references = []; graph_ids = []; graph_id = None; shareable_graphs = []; shared_graph = None; attachments = []; active_mention = None; focus_request = false;
   name = ""; repository = ""; graph_target = ""; default_agent = ""; proposal = `Null;
   thread_origin = None}
+
+let parent_page state = function
+  | Index -> None
+  | Create | Main _ -> Some Index
+  | Settings id | Sessions (id, _) | Automation id -> Some (Main id)
+  | Thread (id, _) -> Some (Option.value ~default:(Main id) state.thread_origin)
+
+let navigation_path state =
+  let rec collect page path =
+    match parent_page state page with
+    | None -> path
+    | Some parent -> collect parent (page :: path) in
+  collect state.page []
 
 let bot_path id = "/bots/" ^ id
 let route = function
@@ -300,7 +313,11 @@ let update ?selected_graph state action =
   let stay state = state, None in
   let open_page page =
     let same = route state.page = route page in
-    let thread_origin = match page with Thread _ -> Some state.page | _ -> None in
+    let thread_origin = match page, state.page with
+      | Thread (id, _), Thread (previous, _) when id = previous -> state.thread_origin
+      | Thread _, Thread _ -> None
+      | Thread _, origin -> Some origin
+      | _ -> None in
     let updated = {state with page; view = (if same then state.view else `Null); thread_origin;
       active_mention = None; focus_request = false} in
     if same && page <> Index && state.view <> `Null then stay updated else updated, request updated in
@@ -327,11 +344,14 @@ let update ?selected_graph state action =
     stay {state with page; graph_id; shared_graph; default_agent = Data.string "default_agent" bot; active_mention = None; focus_request = false}
   | Open (Settings _) -> stay state
   | Open page -> open_page page
-  | Back ->
-    (match state.page with
-    | Index | Create | Main _ -> open_page Index
-    | Thread (id, _) -> open_page (Option.value ~default:(Main id) state.thread_origin)
-    | Settings id | Sessions (id, _) | Automation id -> open_page (Main id))
+  | Back | Back_steps _ ->
+    let count = match action with Back_steps count -> count | _ -> 1 in
+    let rec target page count =
+      if count <= 0 then page
+      else match parent_page state page with
+      | None -> page
+      | Some parent -> target parent (count - 1) in
+    open_page (target state.page count)
   | Reload before -> state, request ?before ~history_fetched:true state
   | Retry -> stay (receive state (`Assoc ["route", `String (route state.page); "feedback", `Null]))
   | Older ->

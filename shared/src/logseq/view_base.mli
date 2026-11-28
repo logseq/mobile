@@ -363,6 +363,8 @@ val journal_navigation_model : Model.logseq_model -> Model.logseq_model
 val node_route_model :
   active:bool -> Model.logseq_model -> Model.node_projection -> Model.logseq_model
 val app_navigation_depth : Model.logseq_model -> int
+val bot_navigation_path : Model.logseq_model -> Bot_chat.page list
+val native_app_navigation_depth : Model.logseq_model -> int
 val app_back_depth : Model.logseq_model -> int
 val search_navigation_depth : Model.logseq_model -> int
 val search_node_routes : Model.logseq_model -> Model.node_projection list

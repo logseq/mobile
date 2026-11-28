@@ -4,7 +4,8 @@ module Data = Bot_store
 
 let dispatch send action = ignore (send (Model.BotsAction action))
 let tr source value = View_base.tr (Signal.sample source) value
-let chat source = Signal.map (fun (current : Model.logseq_model) -> current.bots) source
+let chat source =
+  Signal.map (fun (current : Model.logseq_model) -> current.bots) source |> Signal.cutoff (==)
 
 let colors =
   let adaptive light dark = Lui_ui.Adaptive {light; dark} in
@@ -56,18 +57,15 @@ let icon_control source send image label id event =
     ~label:(tr source label) ~accessibility_identifier:id
     ~on_press:(fun () -> dispatch send event) []
 
-let back source send = icon_control source send "navigation-back" "Back" "bots.back" Chat.Back
-
 let action source send ?(variant = `outline) title id event =
   button ~text:(tr source title) ~size:`sm ~variant ~min_height:40 ~accessibility_identifier:id
     ~on_press:(fun () -> dispatch send event) []
 
-let heading source send title controls =
-  row ~cross:`center ~gap:12 ~padding_vertical:8 ([
-    back source send;
+let heading ~back title =
+  row ~cross:`center ~gap:12 ~padding_vertical:8 (back @ [
     text ~value:title ~grow:1.0 ~min_width:96 ~foreground:"bots-ink"
       ~font_size:"21" ~font_weight:700 ~truncate:true [];
-  ] @ controls)
+  ])
 
 let mention_row source send ?selected ?caption ~identifier ~id title event =
   button ~text:"" ~label:title ~variant:`ghost ~padding:0 ~min_height:47
@@ -352,7 +350,7 @@ let bot_list source send bots =
           ]) rows)) (coalesced_view bots)];
   ]
 
-let conversation source send bots bot_id =
+let conversation ~back source send bots bot_id =
   let rows = Signal.map (fun state ->
     let sessions = Data.list "sessions" state.Chat.view in
     let by_root = Hashtbl.create (List.length sessions) in
@@ -366,8 +364,7 @@ let conversation source send bots bot_id =
       count + (if Data.string "status" session = "needs_input" then 1 else 0))
       0 (Data.list "sessions" state.Chat.view)) bots |> Signal.cutoff Int.equal in
   column ~grow:1.0 ~gap:8 [
-    row ~gap:10 ~cross:`center ~padding_vertical:6 [
-      back source send;
+    row ~gap:10 ~cross:`center ~padding_vertical:6 (back @ [
       reactive (fun name ->
         column ~grow:1.0 ~gap:6 ~cross:`center [
           avatar 40 ~id:bot_id name;
@@ -376,7 +373,7 @@ let conversation source send bots bot_id =
         ]) name;
       if_ ~test:(Signal.map (fun state -> Data.field "canManage" state.Chat.view = `Bool true) bots)
         (icon_control source send "more-horiz" "Bot settings" "bots.settings" (Chat.Open (Chat.Settings bot_id)));
-    ];
+    ]);
     overlay ~grow:1.0 ~alignment:`bottom_leading [
       column ~grow:1.0 ~gap:8 [
         older source send bots;
@@ -407,7 +404,7 @@ let conversation source send bots bot_id =
     composer source send bots ~thread:false;
   ]
 
-let thread source send bots =
+let thread ~back source send bots =
   let rows = Signal.map (fun state ->
     let root = Data.field "root" state.Chat.view in
     let entries = if root = `Null then Chat.messages state else root :: Chat.messages state in
@@ -419,8 +416,7 @@ let thread source send bots =
       let names = List.filter_map (function `String agent -> Some (Chat.label agent) | _ -> None) participants in
       let agent = match names with [] -> Chat.label (Data.string "agent" session) | names -> String.concat ", " names in
       let url = Data.string "provider_url" session in
-      row ~gap:12 ~cross:`center ~padding_vertical:8 [
-        back source send;
+      row ~gap:12 ~cross:`center ~padding_vertical:8 (back @ [
         column ~grow:1.0 ~gap:3 [
           text ~value:(tr source "Thread") ~font_size:"21" ~font_weight:700 ~foreground:"bots-ink" [];
           (if agent = "" then box [] else text ~value:(agent ^ " · " ^ tr source (status session))
@@ -431,7 +427,7 @@ let thread source send bots =
             ~background:"bots-chip" ~foreground:"bots-ink" ~corner_radius:22 ~label:(tr source "Open run")
             ~on_press:(fun () -> ignore (send (Model.OpenExternalURL url))) []
          else box []);
-      ]) header;
+      ])) header;
     overlay ~grow:1.0 ~alignment:`bottom_leading [
       column ~grow:1.0 ~gap:8 [
         older source send bots;
@@ -539,7 +535,7 @@ let share_bot source send bots =
       ~font_size:"13" ~padding_horizontal:12 ~padding_vertical:8 ~foreground:"bots-muted" [];
   ])
 
-let settings source send bots ~creating =
+let settings ~back source send bots ~creating =
   let form ?placeholder id label get action_ =
     form_field source ~bots ?placeholder id label get (fun value -> dispatch send (action_ value)) in
   let graphs = Signal.map (fun (model : Model.logseq_model) -> model.graphs) source |> Signal.cutoff (=) in
@@ -559,7 +555,7 @@ let settings source send bots ~creating =
       not (Option.fold ~none:false ~some:(fun id -> List.mem id state.Chat.graph_ids) state.Chat.graph_id)))
     || (state.Chat.default_agent <> "" && not (Chat.is_configured state state.Chat.default_agent))) bots in
   column ~grow:1.0 ~gap:10 ~cross:`stretch [
-    heading source send (tr source (if creating then "New Bot" else "Bot Settings")) [];
+    heading ~back (tr source (if creating then "New Bot" else "Bot Settings"));
     scroll ~grow:1.0 [column ~gap:20 ~cross:`stretch [
       (if creating then form_section (tr source "Bot") [
          form "bots.name" "Name" (fun state -> state.Chat.name) (fun name -> Chat.Name name);
@@ -585,7 +581,7 @@ let settings source send bots ~creating =
       "bots.save" Chat.Save_bot;
   ]
 
-let rule_form source send bots =
+let rule_form ~back source send bots =
   let rule state = state.Chat.proposal in
   let string key state = Data.string key (rule state) in
   let numeric key state = match Data.field key (rule state) with
@@ -603,7 +599,7 @@ let rule_form source send bots =
     || not (Chat.is_configured state (Chat.automation_agent state))
     || not (valid "weekday" 6 && valid "hour" 23 && valid "minute" 59)) bots in
   column ~grow:1.0 ~gap:10 ~cross:`stretch [
-    heading source send (tr source "New Automation") [];
+    heading ~back (tr source "New Automation");
     scroll ~grow:1.0 [column ~gap:20 ~cross:`stretch [
       form_section (tr source "Task") [
         textarea ~text_signal:(Signal.map (string "prompt") bots) ~label:(tr source "Task")
@@ -651,7 +647,7 @@ let rule_form source send bots =
     form_footer source send ~disabled "Create automation" "bots.rule.save" Chat.Save_automation;
   ]
 
-let sessions source send bots bot_id ~needs =
+let sessions ~back source send bots bot_id ~needs =
   custom (fun context parent ->
     let own signal = Signal.own_signal context.Lui_ui.ui_scope signal in
     let query = Signal.state context.ui_scheduler "" in
@@ -667,7 +663,7 @@ let sessions source send bots bot_id ~needs =
         | rows -> `Rows rows) sessions (Signal.value query) |> Signal.cutoff (=)) in
     let search_label = tr source "Search by title" in
     column ~gap:8 ~grow:1.0 ~cross:`stretch [
-      heading source send (tr source (if needs then "Needs you" else "Sessions")) [];
+      heading ~back (tr source (if needs then "Needs you" else "Sessions"));
       View_base.filter_search_field ~model_source:source ~text_signal:(Signal.value query)
         ~placeholder:search_label ~label:search_label ~accessibility_identifier:"bots.sessions.search"
         ~on_input:(Signal.set query) ();
@@ -676,21 +672,41 @@ let sessions source send bots bot_id ~needs =
         | `Rows rows -> column ~gap:4 (List.map (session_row source send bot_id) rows)) results];
     ] |> mount context ?parent)
 
-let screen ~bottom_spacing source send =
-  let bots = chat source in
-  let pages = Signal.cutoff (=) (Signal.map (fun state -> state.Chat.page) bots) in
-  let spacing = Signal.map (fun page -> if Chat.is_bot_page page then 8 else bottom_spacing) pages in
-  themed ~tokens:colors (
-  column ~grow:1.0 ~background:"bots-wall" ~accessibility_identifier:"bots.screen" [
-  View_base.with_int_prop_signal Lui_protocol.MarginBottom spacing
-  (column ~grow:1.0 ~gap:8 ~padding_horizontal:18 ~margin_top:6 [
-    dyn (function
+let screen ?page ~bottom_spacing source send =
+  custom (fun context parent ->
+    let bots = chat source in
+    let render_page ~back bots = function
       | Chat.Index -> bot_list source send bots
-      | Create -> settings source send bots ~creating:true
-      | Main id -> conversation source send bots id
-      | Thread _ -> thread source send bots
-      | Settings _ -> settings source send bots ~creating:false
-      | Automation _ -> rule_form source send bots
-      | Sessions (id, needs) -> sessions source send bots id ~needs) pages;
-    feedback source send bots;
-  ])])
+      | Create -> settings ~back source send bots ~creating:true
+      | Main id -> conversation ~back source send bots id
+      | Thread _ -> thread ~back source send bots
+      | Settings _ -> settings ~back source send bots ~creating:false
+      | Automation _ -> rule_form ~back source send bots
+      | Sessions (id, needs) -> sessions ~back source send bots id ~needs in
+    let spacing page = if Chat.is_bot_page page then 8 else bottom_spacing in
+    let content pages bots screen =
+      View_base.with_int_prop_signal Lui_protocol.MarginBottom (Signal.map spacing pages)
+        (column ~grow:1.0 ~gap:8 ~padding_horizontal:18 ~margin_top:6 [
+          screen; feedback source send bots;
+        ]) in
+    let body = match page with
+      | None ->
+        let pages = Signal.cutoff (=) (Signal.map (fun state -> state.Chat.page) bots) in
+        let back = [icon_control source send "navigation-back" "Back" "bots.back" Chat.Back] in
+        content pages bots (dyn (render_page ~back bots) pages)
+      | Some page ->
+        (* Keep each covered native destination on its own content during transitions. *)
+        let initial = Signal.sample bots in
+        let retained = Signal.state context.ui_scheduler
+          (if initial.Chat.page = page then initial else {Chat.empty with page}) in
+        ignore (Signal.own context.ui_scope (Signal.subscribe ~emit_initial:false bots (fun state ->
+          if state.Chat.page = page then Signal.set retained state
+          else
+            let cached = Signal.get_state retained in
+            if cached.active_mention <> None || cached.focus_request then
+              Signal.set retained {cached with active_mention = None; focus_request = false})));
+        let retained = Signal.value retained in
+        content (Signal.constant context.ui_scheduler page) retained (render_page ~back:[] retained page) in
+    themed ~tokens:colors (
+      column ~grow:1.0 ~background:"bots-wall" ~accessibility_identifier:"bots.screen" [body])
+    |> mount context ?parent)

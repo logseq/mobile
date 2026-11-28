@@ -618,7 +618,9 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
            ~bottom_spacing:(if uses_ios_native_header context then 64 else 88)
            shell_model send);
       if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.destination = Model.BotsDestination) shell_model)
-        (View_bots.screen ~bottom_spacing:76 shell_model send);
+        (View_bots.screen
+           ?page:(if uses_ios_native_header context then Some Bot_chat.Index else None)
+           ~bottom_spacing:76 shell_model send);
       View_collaboration.notification_screen
         ~bottom_spacing:(if uses_ios_native_header context then 72 else 80) shell_model send;
       if_
@@ -919,7 +921,7 @@ let main_header_connection model_source send : t = custom @@ fun context parent 
     mount context ?parent (reactive (fun selecting ->
       if selecting then selection_done model_source send else controls) selecting)
 
-let native_node_destination ~source:title_source content : t =
+let native_navigation_destination ~source:title_source content : t =
  custom @@ fun context parent ->
    let node = Lui_ui.platform_tweak context "native-navigation-title" in
    Lui_ui.extension_property_signal context node "title" title_source;
@@ -941,7 +943,7 @@ let native_node_screen (context : Lui_ui.ui_context) model_source
          (box ~background:"background"
             [ View_outliner.node_screen context route_model_source send ]))
   else
-    native_node_destination
+    native_navigation_destination
       ~source:
         (reactive
            (fun current -> StringValue
@@ -1096,7 +1098,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
    let shell_model = Signal.own_signal context.ui_scope
      (Signal.cutoff non_outliner_model_equal model_source) in
    let depth_source =
-     Signal.map View_base.app_navigation_depth shell_model
+     Signal.map View_base.native_app_navigation_depth shell_model
    in
    let back_depth_source =
      Signal.map View_base.app_back_depth shell_model
@@ -1198,6 +1200,14 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
        (mount context ~parent:node (main_header_connection model_source send));
      ignore
        (mount context ~parent:node (main_bottom_chrome context model_source send));
+     if uses_ios_native_header context then
+       ignore (mount context ~parent:node
+         (keyed ~source:(Signal.cutoff (=) (Signal.map View_base.bot_navigation_path shell_model))
+            ~key:Fun.id ~cmp:compare ~mount:(fun page_source ->
+              let page = Signal.sample page_source in
+              native_navigation_destination
+                ~source:(Signal.constant context.ui_scheduler (StringValue ""))
+                (View_bots.screen ~page ~bottom_spacing:76 shell_model send))));
      ignore
        (mount context ~parent:node (native_node_stack context model_source
            ~source:(reactive Model.app_node_routes model_source) send));
