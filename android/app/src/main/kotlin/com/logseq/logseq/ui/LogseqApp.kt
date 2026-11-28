@@ -102,7 +102,9 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
         typography = LogseqTheme.typography,
     ) {
         val imeDismissal = remember { ImeDismissalSignal() }
-        val hostView = LocalView.current
+        // Compose owns insets callbacks on its owner view, so listen at the
+        // window root where the IME animation callback remains registered.
+        val hostView = LocalView.current.rootView
         DisposableEffect(hostView, imeDismissal) {
             val callback = object : WindowInsetsAnimationCompat.Callback(
                 WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE,
