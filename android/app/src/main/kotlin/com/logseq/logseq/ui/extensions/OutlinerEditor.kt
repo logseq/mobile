@@ -9,7 +9,7 @@ import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -53,6 +53,7 @@ import androidx.compose.foundation.text.contextmenu.builder.item
 import androidx.compose.foundation.text.contextmenu.modifier.appendTextContextMenuComponents
 import androidx.compose.foundation.text.contextmenu.modifier.filterTextContextMenuComponents
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.platform.PlatformTextInputInterceptor
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
@@ -328,20 +329,53 @@ internal fun OutlinerEditor(
     }
     // When the system dismisses the IME while this editor still owns focus,
     // end the editing session so the editor toolbar doesn't stay orphaned.
-    // Only fire after the IME was actually shown for this editor — with a
-    // hardware keyboard it is never visible.
-    val imeVisible = WindowInsets.isImeVisible
-    var imeWasVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(focusEnabled, imeVisible) {
-        if (imeVisible) {
-            imeWasVisible = true
-            return@LaunchedEffect
+    // The root host signals IME hide animations as they start. Keep an inset
+    // watcher as a fallback for hosts/tests without that signal: visibility
+    // itself clears too late, while the animated inset starts shrinking in the
+    // first frames. Debounce input-connection flicker briefly, but keep the
+    // bottom chrome transition inside the IME animation. Only fire after the
+    // IME was actually shown for this editor — with a hardware keyboard it is
+    // never visible.
+    val ime = WindowInsets.ime
+    val density = LocalDensity.current
+    var dismissalEmitted by remember { mutableStateOf(false) }
+    val dismissalSignal = LocalImeDismissalSignal.current
+    LaunchedEffect(focusEnabled, dismissalSignal) {
+        if (!focusEnabled || dismissalSignal == null) return@LaunchedEffect
+        dismissalSignal.started.collect {
+            if (!dismissalEmitted) {
+                dismissalEmitted = true
+                context.emit("ime-dismissed")
+            }
         }
-        if (!focusEnabled || !imeWasVisible) return@LaunchedEffect
-        delay(300)
-        if (imeWasVisible) {
-            imeWasVisible = false
-            context.emit("ime-dismissed")
+    }
+    LaunchedEffect(focusEnabled, ime, density) {
+        var imeWasVisible = false
+        var shownBottom = 0
+        var dismissalPending = false
+        snapshotFlow { ime.getBottom(density) }.collect { bottom ->
+            val hiding = imeWasVisible && bottom < shownBottom - 4
+            if (bottom > 0 && !hiding) {
+                imeWasVisible = true
+                shownBottom = maxOf(shownBottom, bottom)
+                dismissalPending = false
+                dismissalEmitted = false
+                return@collect
+            }
+            if (!hiding) return@collect
+            if (dismissalPending) return@collect
+            dismissalPending = true
+            launch {
+                delay(32)
+                if (dismissalPending) {
+                    imeWasVisible = false
+                    shownBottom = 0
+                    if (!dismissalEmitted) {
+                        dismissalEmitted = true
+                        context.emit("ime-dismissed")
+                    }
+                }
+            }
         }
     }
     val inputOwner = remember { Any() }

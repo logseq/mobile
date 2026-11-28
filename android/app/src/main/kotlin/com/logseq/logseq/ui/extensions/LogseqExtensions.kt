@@ -409,7 +409,6 @@ private fun NavigationBoundary(context: LuiExtensionContext) {
     // route; count=0 asks the core to settle instead of popping.
     val backDepth = context.int("back-depth") ?: depth
     val dismissesComposer = context.flag("composer-dismissal-enabled")
-    val occupies = context.flag("bottom-occupies-layout-space")
     BackHandler(enabled = !LocalSidebarBlocksMain.current && (backDepth > 0 || dismissesComposer)) {
         if (dismissesComposer) {
             context.emit("dismiss-composer")
@@ -431,26 +430,20 @@ private fun NavigationBoundary(context: LuiExtensionContext) {
             if (childIds.size == 2) {
                 // Second child is the bottom chrome. Hoist it out of the content
                 // column like iOS's safeAreaInset/overlay so the composer's
-                // internal `grow` props can't starve the journal. Unbounded
-                // height keeps it at natural size without querying intrinsic
-                // measurements unsupported by subcomposed LUI layouts.
-                if (occupies) {
-                    Column(Modifier.fillMaxSize()) {
-                        Box(Modifier.weight(1f)) { NavigationContent(context, childIds[0], dismissesComposer) }
-                        Box(Modifier.wrapContentHeight(unbounded = true)) {
-                            context.child(childIds[1])
-                        }
-                    }
-                } else {
-                    Box(Modifier.fillMaxSize()) {
-                        Column(Modifier.fillMaxSize()) { NavigationContent(context, childIds[0], dismissesComposer) }
-                        Box(
-                            Modifier
-                                .align(Alignment.BottomCenter)
-                                .wrapContentHeight(unbounded = true),
-                        ) {
-                            context.child(childIds[1])
-                        }
+                // internal `grow` props can't starve the journal. Keep the
+                // content viewport full-size even when the core reserves space
+                // for editor chrome; resizing it during IME dismissal moves the
+                // edited block while the keyboard is still animating. Unbounded
+                // height keeps the chrome at natural size without querying
+                // intrinsic measurements unsupported by subcomposed LUI layouts.
+                Box(Modifier.fillMaxSize()) {
+                    Column(Modifier.fillMaxSize()) { NavigationContent(context, childIds[0], dismissesComposer) }
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .wrapContentHeight(unbounded = true),
+                    ) {
+                        context.child(childIds[1])
                     }
                 }
             } else {

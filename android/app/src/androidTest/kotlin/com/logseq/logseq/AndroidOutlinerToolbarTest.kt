@@ -54,10 +54,16 @@ class AndroidOutlinerToolbarTest {
 
     @After fun closeBridge() { bridge?.let { ui.runOnIdle { it.close() } } }
 
-    private fun snapshot(editing: Boolean, caret: Int = title.length, taskSelected: Boolean = false): String {
+    private fun snapshot(
+        editing: Boolean,
+        caret: Int = title.length,
+        taskSelected: Boolean = false,
+        selected: Boolean = !editing,
+    ): String {
         val state = if (editing) JSONObject().put("editing", JSONObject().put("uuid", "toolbar-block")
             .put("title", title).put("caretUTF16Offset", caret))
-        else JSONObject().put("selectedBlockIds", org.json.JSONArray().put("toolbar-block"))
+        else if (selected) JSONObject().put("selectedBlockIds", org.json.JSONArray().put("toolbar-block"))
+        else JSONObject()
         if (taskSelected) state.put("selectedTaskBlockIds", org.json.JSONArray().put("toolbar-block"))
         return JSONObject().put("ok", true).put("result", JSONObject()
             .put("graphName", "Toolbar test").put("selectedGraphId", "toolbar-test")
@@ -91,6 +97,18 @@ class AndroidOutlinerToolbarTest {
         ui.onNodeWithTag("toolbar.outliner.editor").assertHeightIsAtLeast(64.dp)
         ui.onNodeWithTag("field.outliner.block.toolbar-block").assertIsFocused()
         capture("editor-toolbar")
+    }
+
+    @Test fun editorChromeDoesNotResizeTheOutlinerViewport() {
+        toolbar()
+        val outliner = ui.onNodeWithTag("list.outliner").assertIsDisplayed()
+        val editingHeight = outliner.fetchSemanticsNode().boundsInRoot.height
+        ui.runOnIdle {
+            filter.applyJson(requireNotNull(bridge).applySnapshot(snapshot(editing = false, selected = false)))
+        }
+        ui.waitForIdle()
+        ui.onNodeWithTag("toolbar.outliner.editor").assertDoesNotExist()
+        assertEquals(editingHeight, outliner.fetchSemanticsNode().boundsInRoot.height, 1f)
     }
 
     @Test fun blockSelectionUsesTheNativeFloatingToolbarContainer() {
