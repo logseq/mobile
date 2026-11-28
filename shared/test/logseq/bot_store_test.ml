@@ -166,10 +166,27 @@ let sessions_filter_by_title_within_scope () =
   check_eq [] (matches ~needs:true "[qa] 導");
   check_eq ["pending"; "other"] (matches ~needs:true " \t ")
 
+let bot_creation_uses_the_current_graph () =
+  let open Bot_chat in
+  let graph = "28934400-6a74-7d92-8b2d-06508fff7207" in
+  let other = "28934400-6a75-7f11-9d01-0fc9b117c92c" in
+  let index, _ = update empty (Receive (`Assoc ["route", `String "/bots";
+    "graphIds", `List [`String graph; `String other]; "shareableGraphs", `List [`String graph]])) in
+  let form, _ = update ~selected_graph:graph index (Open Create) in
+  let form, _ = update form (Name "Mobile") in
+  check_eq None (snd (update form Save_bot));
+  check_eq None (snd (update ~selected_graph:other form Save_bot));
+  let form, _ = update form (Share_graph true) in
+  let request = snd (update ~selected_graph:graph form Save_bot) |> Option.get |> Yojson.Basic.from_string in
+  let body = Bot_store.field "body" request in
+  check_eq graph (Bot_store.string "graphId" body);
+  check_eq graph (Bot_store.string "sharedGraphId" body)
+
 let cases =
   [case "offline send replays the same ID after reopening SQLite" offline_send_survives_reopen;
    case "dispatch uses an explicit Agent and thread replies use their session" dispatch_requires_an_explicit_agent;
    case "selecting an inline Agent replaces the query and preserves the rest of the draft" mentions_complete_inside_the_draft;
    case "handoffs and late attachment results stay in their own draft" bot_handoff_and_attachment_are_bound_to_the_draft;
    case "outgoing messages render immediately and reconcile with a stable ID" sending_is_visible_before_acknowledgement;
-   case "session title search preserves the selected scope" sessions_filter_by_title_within_scope]
+   case "session title search preserves the selected scope" sessions_filter_by_title_within_scope;
+   case "creating a Bot binds it to the current Graph" bot_creation_uses_the_current_graph]

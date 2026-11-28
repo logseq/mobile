@@ -66,6 +66,7 @@ internal class AndroidGraphEventsSync(
     private val onChangesApplied: suspend () -> Unit,
     private val isCancelled: () -> Boolean,
     private val stopAfterFirstPull: Boolean = false,
+    private val accountEvents: AndroidAccountEvents? = null,
 ) {
     data class Connection(val graphId: String, val baseUrl: String, val accessToken: String)
 
@@ -124,7 +125,10 @@ internal class AndroidGraphEventsSync(
                         "connect" -> {
                             val request = Request.Builder().url(command.getString("url"))
                                 .header("Authorization", "Bearer ${connection.accessToken}").build()
-                            socket = openSocket(client, request, frames, isCancelled)
+                            socket = accountEvents?.subscribe(request, graphId,
+                                { frames.trySend(Frame.Text(it)) },
+                                { frames.trySend(Frame.Failure(it)) })
+                                ?: openSocket(client, request, frames, isCancelled)
                             submissionSocket = AndroidPendingWebSocket(socket, command.getString("url"))
                             transport = event("opened")
                             enqueue(transport)

@@ -456,6 +456,7 @@ private struct CreateSyncGraphPayload: Encodable {
     public private(set) var graphEventsRetryDelayMilliseconds = 0
     private var syncTransport: LogseqSyncTransport?
     private var pendingWebSocket: LogseqPendingWebSocket?
+    @ObservationIgnored public let accountEvents = LogseqAccountEvents()
     public private(set) var isRefreshing = false
     @ObservationIgnored public var graphDownloadProgressChanged: (@MainActor (LogseqGraphDownloadProgress?) -> Void)?
     private var graphDownloadProgress: LogseqGraphDownloadProgress?
@@ -792,7 +793,7 @@ private struct CreateSyncGraphPayload: Encodable {
 
     public func runGraphEventsOnce(
         graphID: String, baseURL: String, accessToken: String,
-        stopAfterFirstFrame: Bool = false
+        stopAfterFirstFrame: Bool = false, useAccountEvents: Bool = false
     ) async -> Bool {
         _ = baseURL
         graphEventsRetryDelayMilliseconds = 0
@@ -808,6 +809,8 @@ private struct CreateSyncGraphPayload: Encodable {
         let generation = initial.generation
         let startedAt = Date()
         var socket: URLSessionWebSocketTask?
+        var accountGraph: LogseqAccountEvents.Graph?
+        var sendFrame: ((String) async throws -> Void)?
         var uploadSocket: LogseqPendingWebSocket?
         var receiver: Task<Void, Never>?
         let (stream, continuation) = AsyncThrowingStream<LogseqSyncTransport.Command, Error>.makeStream()
@@ -833,6 +836,7 @@ private struct CreateSyncGraphPayload: Encodable {
                     continuation.finish()
                     uploadSocket?.close()
                     if pendingWebSocket === uploadSocket { pendingWebSocket = nil }
+                    accountGraph?.close()
                     socket?.cancel(with: .goingAway, reason: nil)
                 }
                 for try await command in stream {
@@ -842,40 +846,60 @@ private struct CreateSyncGraphPayload: Encodable {
                         guard let address = command.url, let url = URL(string: address) else {
                             throw URLError(.badURL)
                         }
-                        var request = URLRequest(url: url)
-                        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-                        let task = URLSession.shared.webSocketTask(with: request)
-                        task.maximumMessageSize = 64 * 1024 * 1024
-                        socket = task
-                        cancellation.install(task)
-                        task.resume()
-                        let uploads = LogseqPendingWebSocket(socket: task, url: address)
+                        let graph = try await useAccountEvents ? accountEvents.subscribe(graphID: graphID) : nil
+                        let task: URLSessionWebSocketTask?
+                        let send: (String) async throws -> Void
+                        let close: () -> Void
+                        if let graph {
+                            accountGraph = graph
+                            task = nil
+                            send = { try await graph.send($0) }
+                            close = { graph.close() }
+                        } else {
+                            var request = URLRequest(url: url)
+                            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+                            let connection = URLSession.shared.webSocketTask(with: request)
+                            connection.maximumMessageSize = 64 * 1024 * 1024
+                            socket = connection
+                            task = connection
+                            cancellation.install(connection)
+                            connection.resume()
+                            send = { try await connection.send(.string($0)) }
+                            close = { connection.cancel(with: .goingAway, reason: nil) }
+                        }
+                        sendFrame = send
+                        let uploads = LogseqPendingWebSocket(url: address, sendFrame: send, close: close)
                         uploadSocket = uploads
                         pendingWebSocket = uploads
                         receiver = Task {
                             do {
-                                while !Task.isCancelled {
-                                    let message = try await task.receive()
-                                    let text: String
-                                    switch message {
-                                    case .string(let value): text = value
-                                    case .data(let data):
-                                        guard let value = String(data: data, encoding: .utf8) else { throw URLError(.cannotDecodeContentData) }
-                                        text = value
-                                    @unknown default: throw URLError(.cannotParseResponse)
-                                    }
+                                @MainActor func receive(_ text: String) async throws {
                                     let next = await event("frame", body: text)
                                     if next.contains(where: { $0.type == "sync-pending" }) { receivedFrame = true }
                                     for command in next {
                                         if command.type == "pending-result", let id = command.id, let body = command.body {
                                             uploads.complete(id: id, body: body)
                                         } else if command.type == "send", let body = command.body {
-                                            try await task.send(.string(body))
+                                            try await send(body)
                                         } else if command.type == "close" {
                                             uploads.close()
                                             if pendingWebSocket === uploads { pendingWebSocket = nil }
                                             continuation.yield(command)
                                         } else { continuation.yield(command) }
+                                    }
+                                }
+                                if let graph {
+                                    for try await text in graph.frames { try await receive(text) }
+                                    continuation.finish(throwing: URLError(.networkConnectionLost))
+                                } else if let task {
+                                    while !Task.isCancelled {
+                                        switch try await task.receive() {
+                                        case .string(let text): try await receive(text)
+                                        case .data(let data):
+                                            guard let text = String(data: data, encoding: .utf8) else { throw URLError(.cannotDecodeContentData) }
+                                            try await receive(text)
+                                        @unknown default: throw URLError(.cannotParseResponse)
+                                        }
                                     }
                                 }
                             } catch {
@@ -886,9 +910,12 @@ private struct CreateSyncGraphPayload: Encodable {
                         for command in await event("opened") { continuation.yield(command) }
                         syncError = nil
                     case "send":
-                        guard let socket, let body = command.body else { throw URLError(.cannotParseResponse) }
-                        try await socket.send(.string(body))
+                        guard let sendFrame, let body = command.body else { throw URLError(.cannotParseResponse) }
+                        try await sendFrame(body)
                     case "close":
+                        accountGraph?.close()
+                        accountGraph = nil
+                        sendFrame = nil
                         socket?.cancel(with: .goingAway, reason: nil)
                         socket = nil
                     case "retry":

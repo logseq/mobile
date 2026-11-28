@@ -184,10 +184,11 @@ internal class LogseqRuntime(
     private var pendingSyncJob: kotlinx.coroutines.Job? = null
     @Volatile private var graphEventsSync: AndroidGraphEventsSync? = null
     private var journalDayJob: kotlinx.coroutines.Job? = null
-    private var botsRefreshJob: kotlinx.coroutines.Job? = null
     private var refreshedJournalDay: String? = null
     private var audioRecordingJob: kotlinx.coroutines.Job? = null
     private val graphEventsSession = AndroidForegroundSyncSession(scope)
+    private val accountEventsSession = AndroidForegroundSyncSession(scope)
+    private val accountEvents = AndroidAccountEvents()
     private var graphLifecycle: AndroidGraphLifecycle? = null
     private var activeBootstrap: kotlinx.coroutines.Job? = null
     private var activeBootstrapHadSession = false
@@ -366,13 +367,6 @@ internal class LogseqRuntime(
                 hostUpdate("push-preference", discussionPush.preferences.json().toString())
             }
         }
-        botsRefreshJob?.cancel()
-        botsRefreshJob = if (resumed) scope.launch {
-            while (isActive) {
-                kotlinx.coroutines.delay(3_000)
-                hostUpdate("bots-refresh", "null")
-            }
-        } else null
         journalDayJob?.cancel()
         journalDayJob = if (resumed) scope.launch {
             while (true) {
@@ -570,6 +564,12 @@ internal class LogseqRuntime(
     }
 
     private fun ensureGraphEventsSync() {
+        accountEventsSession.update(storageBaseUrl.takeIf { hasAuthenticatedSession && it.isNotEmpty() },
+            appIsForeground) { baseUrl ->
+            accountEvents.run(baseUrl, accessToken = {
+                restoreCoreAccessToken()
+            }, refreshBots = { hostUpdate("bots-changed", it) })
+        }
         Log.d(
             "GraphEvents",
             "ensure open=$hasOpenGraph graph=$selectedGraphId " +
@@ -601,6 +601,7 @@ internal class LogseqRuntime(
                     applyResponse = ::finishAppliedCoreResponse,
                     onChangesApplied = { requestSyncNow() },
                     isCancelled = { !isActive },
+                    accountEvents = accountEvents,
                 )
                 val outcome = try {
                     graphEventsSync = sync
@@ -826,6 +827,7 @@ internal class LogseqRuntime(
         }
         if (effect.kind == "sign-out" && resolution.succeeded) {
             hasAuthenticatedSession = false
+            accountEventsSession.cancel()
             graphCatalogAutoRefresh?.stopPeriodic()
             graphEventsSession.cancel()
             pendingSyncJob?.cancel()

@@ -219,7 +219,7 @@ let run ?(upload = Http.upload_file) db ~(config : Api.api_config) ~send ~fresh_
         cache db scope view;
         (match field "agents" view with
         | `List _ ->
-          let config = List.map (fun key -> key, field key view) ["agents"; "shareableGraphs"; "canManage"; "participants"] in
+          let config = List.map (fun key -> key, field key view) ["agents"; "graphIds"; "shareableGraphs"; "canManage"; "participants"] in
           exec db "INSERT INTO bot_route_config VALUES(?,?,?) ON CONFLICT(scope,route) DO UPDATE SET value=excluded.value"
             [text scope; text route; text (to_json (`Assoc config))]
         | _ -> ());
@@ -250,7 +250,7 @@ let run ?(upload = Http.upload_file) db ~(config : Api.api_config) ~send ~fresh_
           "attachments", `List (List.map (fun file -> `Assoc ["name", field "name" file])
             (list "attachments" request))])
       else None) in
-    Ok (`Assoc (["route", `String route; "older", `Bool (before <> None);
+    Ok (`Assoc (["route", `String route; "older", `Bool (before <> None); "newer", `Bool (after <> None);
       "pending", `List drafts; "rejected", `List (List.rev !rejected);
       "acknowledged", `List (List.rev !acknowledged);
       "feedback", Option.fold ~none:`Null ~some:(fun value -> `String value) !error] @ state))

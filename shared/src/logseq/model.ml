@@ -3082,6 +3082,9 @@ let rec update (current : logseq_model) action =
            let ready = cancel_outliner_autosave resolved in
            enqueue_effect ready (SaveOutlinerEditingEffect (ready.next_effect_id, uuid))
          | _ -> resolved in
+       let saved = match eff with
+         | BotsEffect _ when saved.bots.refresh_needed -> update saved (BotsAction Bot_chat.Refresh)
+         | _ -> saved in
        let needs_sync = succeeded && (saved.has_pending_semantic_operations || saved.has_pending_sync_request)
          && (match eff with SyncNowEffect _ | SyncPendingEffect _ -> false | _ -> true)
          && not (List.exists (function SyncNowEffect _ | SyncPendingEffect _ -> true | _ -> false)
@@ -3396,11 +3399,12 @@ let rec update (current : logseq_model) action =
       composer_expanded = false; tasks_selection_mode = false } in
     update updated (BotsAction (Bot_chat.Open Bot_chat.Index))
   | BotsAction Bot_chat.Refresh when current.destination <> BotsDestination
-      || current.authentication_state <> "signedIn"
-      || List.exists (function BotsEffect _ -> true | _ -> false)
-           (current.pending_effects @ current.in_flight_effects) -> current
+      || current.authentication_state <> "signedIn" -> current
+  | BotsAction Bot_chat.Refresh when List.exists (function BotsEffect _ -> true | _ -> false)
+      (current.pending_effects @ current.in_flight_effects) ->
+    {current with bots = {current.bots with refresh_needed = true}}
   | BotsAction action ->
-    let bots, request = Bot_chat.update current.bots action in
+    let bots, request = Bot_chat.update ?selected_graph:current.selected_graph_id current.bots action in
     let updated = {current with bots} in
     Option.fold ~none:updated ~some:(fun payload ->
       enqueue_effect updated (BotsEffect (updated.next_effect_id, payload))) request

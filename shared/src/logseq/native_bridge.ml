@@ -230,7 +230,18 @@ let host_action (update : Host_update.host_update) =
     Model.ResolveAssetPreview (title, path)
 
 let apply_host_update kind payload =
-  if kind = "bots-refresh" then flush_action (Model.BotsAction Bot_chat.Refresh)
+  if kind = "bots-changed" then
+    let refresh = try
+      let event = Yojson.Basic.from_string payload in
+      let model = Lui_app.model (app ()) in
+      let bot = Bot_store.string "botId" event and thread = Bot_store.string "sessionId" event in
+      match model.Model.bots.page with
+      | Bot_chat.Index -> true
+      | Bot_chat.Main id | Bot_chat.Sessions (id, _) -> bot = "" || bot = id
+      | Bot_chat.Thread (id, target) -> (bot = "" || bot = id) && (thread = "" || thread = target)
+      | Bot_chat.Create | Bot_chat.Settings _ | Bot_chat.Automation _ -> false
+    with Yojson.Json_error _ -> false in
+    if refresh then flush_action (Model.BotsAction Bot_chat.Refresh) else take_patch ()
   else flush_action
     (match Host_update.decode kind payload with
      | Ok update -> host_action update

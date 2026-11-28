@@ -521,18 +521,15 @@ let automation_list source send bots =
             ~on_press:(fun () -> dispatch send (Chat.Toggle_automation (id, not enabled))) [];
         ]) rules)) rules
 
-let share_bot source send bots graph =
-  let graph_id = Option.map (fun (graph : Model.graph) -> graph.id) graph in
+let share_bot source send bots =
   let enabled = Signal.map (fun state -> state.Chat.shared_graph <> None) bots in
   let can_share = Signal.map (fun state ->
     state.Chat.shared_graph <> None ||
-    Option.fold ~none:false ~some:(fun id -> List.mem id state.Chat.shareable_graphs) graph_id) bots in
+    Option.fold ~none:false ~some:(fun id -> List.mem id state.Chat.shareable_graphs) state.Chat.graph_id) bots in
   if_ ~test:can_share (form_section (tr source "Sharing") [
     custom (fun context parent ->
-      let text = match graph with
-        | Some graph -> View_base.tr_named (Signal.sample source) "Share with {1}" graph.Model.name
-        | None -> tr source "Share with the Graph team" in
-      let on_toggle checked = dispatch send (Chat.Share_graph (if checked then graph_id else None)) in
+      let text = tr source "Share with the Graph team" in
+      let on_toggle checked = dispatch send (Chat.Share_graph checked) in
       let id = "bots.share" in
       let control = if Lui_ui.host context = KotlinHost
         then switch_ ~text ~checked_signal:enabled ~on_toggle ~accessibility_identifier:id ~min_height:48 []
@@ -545,13 +542,21 @@ let share_bot source send bots graph =
 let settings source send bots ~creating =
   let form ?placeholder id label get action_ =
     form_field source ~bots ?placeholder id label get (fun value -> dispatch send (action_ value)) in
-  let model = (Signal.sample source : Model.logseq_model) in
-  let graph = model.selected_graph_id in
-  let shared = (Signal.sample bots).Chat.shared_graph in
-  let share_graph = Option.bind (Option.fold ~none:graph ~some:Option.some shared)
-    (fun id -> List.find_opt (fun (graph : Model.graph) -> graph.id = id) model.graphs) in
+  let graphs = Signal.map (fun (model : Model.logseq_model) -> model.graphs) source |> Signal.cutoff (=) in
+  let selected = Signal.map (fun state -> state.Chat.graph_id) bots |> Signal.cutoff (=) in
+  let graph_title = Signal.map2 (fun graphs id ->
+    Option.bind id (fun id -> List.find_opt (fun (graph : Model.graph) -> graph.id = id) graphs)
+    |> Option.map (fun (graph : Model.graph) -> graph.name)) graphs selected |> Signal.cutoff (=) in
+  let eligible = Signal.map (fun state ->
+    Option.fold ~none:false ~some:(fun id -> List.mem id state.Chat.graph_ids) state.Chat.graph_id) bots in
+  let graph_control = reactive (function
+    | _, false when creating -> text ~value:(tr source "Open a synced Graph to create a Bot.")
+        ~font_size:"14" ~padding:12 ~foreground:"bots-muted" []
+    | Some value, _ -> text ~value ~padding:12 ~font_size:"15" ~foreground:"bots-ink" []
+    | None, _ -> box []) (Signal.map2 (fun title eligible -> title, eligible) graph_title eligible) in
   let disabled = Signal.map (fun state ->
-    (creating && String.trim state.Chat.name = "")
+    (creating && (String.trim state.Chat.name = "" ||
+      not (Option.fold ~none:false ~some:(fun id -> List.mem id state.Chat.graph_ids) state.Chat.graph_id)))
     || (state.Chat.default_agent <> "" && not (Chat.is_configured state state.Chat.default_agent))) bots in
   column ~grow:1.0 ~gap:10 ~cross:`stretch [
     heading source send (tr source (if creating then "New Bot" else "Bot Settings")) [];
@@ -560,9 +565,12 @@ let settings source send bots ~creating =
          form "bots.name" "Name" (fun state -> state.Chat.name) (fun name -> Chat.Name name);
          form ~placeholder:"owner/repo" "bots.repository" "GitHub repository" (fun state -> state.Chat.repository)
            (fun repository -> Chat.Repository repository);
-         (if graph = None then box [] else form "bots.graph-target" "Result block UUID (optional)"
-           (fun state -> state.Chat.graph_target) (fun target -> Chat.Graph_target target));
        ] else box []);
+      form_section (tr source "Graph") [graph_control;
+        (if creating then if_ ~test:eligible
+          (form "bots.graph-target" "Result block UUID (optional)"
+            (fun state -> state.Chat.graph_target) (fun target -> Chat.Graph_target target))
+         else box [])];
       form_section (tr source "Default Agent") [
         button ~text:(tr source "None") ~variant:`ghost ~min_height:44
           ~selected_signal:(Signal.map (fun state -> state.Chat.default_agent = "") bots)
@@ -570,11 +578,11 @@ let settings source send bots ~creating =
         agent_list source send bots ~selected:(Signal.map (fun state -> state.Chat.default_agent) bots)
           (fun agent -> Chat.Default_agent agent);
       ];
-      share_bot source send bots share_graph;
+      share_bot source send bots;
       (if creating then box [] else automation_list source send bots);
     ]];
     form_footer source send ~disabled (if creating then "Create Bot" else "Save")
-      "bots.save" (Chat.Save_bot graph);
+      "bots.save" Chat.Save_bot;
   ]
 
 let rule_form source send bots =

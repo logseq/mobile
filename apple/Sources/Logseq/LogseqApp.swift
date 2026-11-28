@@ -43,6 +43,7 @@ public struct LogseqRootView : View {
     @AppStorage("logseq.appearance") private var appearance = "system"
     @AppStorage(LogseqDarkTheme.storageKey) private var darkTheme = LogseqDarkTheme.defaultTheme
     @AppStorage("logseq.language") private var language = "system"
+    @AppStorage("logseq.baseURL") private var eventsBaseURL = LogseqSettingsPolicy.defaultBaseURL
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
 
@@ -118,12 +119,15 @@ public struct LogseqRootView : View {
                     do { try await Task.sleep(for: .seconds(30)) } catch { return }
                 }
             }
-            .task(id: scenePhase) {
-                guard scenePhase == .active else { return }
-                while !Task.isCancelled {
-                    do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            .task(id: "\(scenePhase)-\(runtime.authentication.state)-\(eventsBaseURL)") {
+                guard scenePhase == .active, runtime.authentication.state == .signedIn else { return }
+                await runtime.store.accountEvents.run(baseURL: LogseqSettingsPolicy.storedBaseURL()) {
+                    guard let token = try? await runtime.authentication.apiToken(), !Task.isCancelled else { return nil }
+                    await runtime.store.updateAccessToken(token)
+                    return token
+                } refreshBots: { payload in
                     if runtime.lgRuntime.isStarted {
-                        try? runtime.lgRuntime.applyHostUpdate(kind: "bots-refresh", payload: "null")
+                        try? runtime.lgRuntime.applyHostUpdate(kind: "bots-changed", payload: payload)
                     }
                 }
             }

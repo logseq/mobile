@@ -33,14 +33,16 @@ func pendingSyncErrorIsOffline(_ message: String) -> Bool {
 }
 
 @MainActor final class LogseqPendingWebSocket {
-    private let socket: URLSessionWebSocketTask
+    private let sendFrame: (String) async throws -> Void
+    private let closeSocket: () -> Void
     private let url: String
     private var active: (id: Int, attempt: UUID, continuation: CheckedContinuation<LogseqPendingSyncResult, Never>)?
     private var timeout: Task<Void, Never>?
     private var closed = false
 
-    init(socket: URLSessionWebSocketTask, url: String) {
-        self.socket = socket
+    init(url: String, sendFrame: @escaping (String) async throws -> Void, close: @escaping () -> Void) {
+        self.sendFrame = sendFrame
+        closeSocket = close
         self.url = url
     }
 
@@ -58,7 +60,7 @@ func pendingSyncErrorIsOffline(_ message: String) -> Bool {
                     close()
                 }
                 Task {
-                    do { try await socket.send(.string(body)) }
+                    do { try await sendFrame(body) }
                     catch {
                         guard active?.attempt == attempt else { return }
                         close(pendingSyncConnectionError(error) ?? error.localizedDescription)
@@ -80,8 +82,9 @@ func pendingSyncErrorIsOffline(_ message: String) -> Bool {
     }
 
     func close(_ message: String = pendingSyncNetworkUnavailable) {
+        guard !closed else { return }
         closed = true
-        socket.cancel(with: .goingAway, reason: nil)
+        closeSocket()
         finish(LogseqPendingSyncResult(status: nil, body: nil, error: message))
     }
 

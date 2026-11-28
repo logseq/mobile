@@ -20,10 +20,13 @@ type attachment =
 type t =
   { page : page
   ; view : J.t
+  ; refresh_needed : bool
   ; drafts : (string * string) list
   ; optimistic : (string * J.t list) list
   ; last_send : (string * string) option
   ; bot_references : (string * (string * string)) list
+  ; graph_ids : string list
+  ; graph_id : string option
   ; shareable_graphs : string list
   ; shared_graph : string option
   ; attachments : (string * attachment list) list
@@ -40,13 +43,13 @@ type t =
 type action =
   | Open of page | Back | Refresh | Older | Receive of J.t
   | Draft of string | Pick_agent | Select_agent of string | Select_bot of string | Dismiss_mentions
-  | Share_graph of string option
+  | Share_graph of bool
   | Stage_attachment of string * attachment | Remove_attachment of string
   | Send | Name of string | Repository of string | Graph_target of string | Default_agent of string
-  | Save_bot of string option | Edit_automation of J.t | Rule_field of string * J.t
+  | Save_bot | Edit_automation of J.t | Rule_field of string * J.t
   | Save_automation | Toggle_automation of string * bool
 
-let empty = {page = Index; view = `Null; drafts = []; optimistic = []; last_send = None; bot_references = []; shareable_graphs = []; shared_graph = None; attachments = []; active_mention = None; focus_request = false;
+let empty = {page = Index; view = `Null; refresh_needed = false; drafts = []; optimistic = []; last_send = None; bot_references = []; graph_ids = []; graph_id = None; shareable_graphs = []; shared_graph = None; attachments = []; active_mention = None; focus_request = false;
   name = ""; repository = ""; graph_target = ""; default_agent = ""; proposal = `Null;
   thread_origin = None}
 
@@ -275,13 +278,18 @@ let receive state json =
         set_attachments (set_draft (bot_prefix ^ agent_prefix ^ Data.string "body" rejected) state)
           (route state.page) files
       | _ -> state in
-    let shareable_graphs = match Data.field "shareableGraphs" json with
+    let graph_list field fallback = match Data.field field json with
       | `List graphs -> List.filter_map (function `String graph -> Some graph | _ -> None) graphs
-      | _ -> state.shareable_graphs in
-    {state with shareable_graphs; view = `Assoc (["messages", `List merged; "more", more]
+      | _ -> fallback in
+    let graph_ids = graph_list "graphIds" state.graph_ids in
+    let more_new = Data.field "newer" json = `Bool true && Data.field "more" json = `Bool true
+      && Data.list "messages" json <> [] in
+    {state with graph_ids; refresh_needed = state.refresh_needed || more_new;
+      shareable_graphs = graph_list "shareableGraphs" state.shareable_graphs;
+      view = `Assoc (["messages", `List merged; "more", more]
       @ List.remove_assoc "messages" (List.remove_assoc "more" (fields @ keep)))}
 
-let update state action =
+let update ?selected_graph state action =
   let stay state = state, None in
   let open_page page =
     let same = route state.page = route page in
@@ -298,14 +306,18 @@ let update state action =
       let separator = if after = "" || not (space after.[0]) then " " else "" in
       set_draft (before ^ "@" ^ token ^ separator ^ after) {state with active_mention = None} in
   match action with
-  | Open Create -> stay {state with page = Create; name = ""; repository = ""; shared_graph = None;
+  | Open Create ->
+    let graph_id = selected_graph in
+    let updated = {state with page = Create; name = ""; repository = ""; graph_id; shared_graph = None;
       graph_target = ""; default_agent = (match configured_agents state with
         | names when List.mem "devin" names -> "devin"
-        | name :: _ -> name | [] -> ""); active_mention = None; focus_request = false}
+        | name :: _ -> name | [] -> ""); active_mention = None; focus_request = false} in
+    updated, request updated
   | Open (Settings _ as page) when Data.field "canManage" state.view = `Bool true ->
     let bot = selected_bot state in
     let shared_graph = match Data.field "shared_graph_id" bot with `String id -> Some id | _ -> None in
-    stay {state with page; shared_graph; default_agent = Data.string "default_agent" bot; active_mention = None; focus_request = false}
+    let graph_id = match Data.field "graph_id" bot with `String graph -> Some graph | _ -> None in
+    stay {state with page; graph_id; shared_graph; default_agent = Data.string "default_agent" bot; active_mention = None; focus_request = false}
   | Open (Settings _) -> stay state
   | Open page -> open_page page
   | Back ->
@@ -314,6 +326,7 @@ let update state action =
     | Thread (id, _) -> open_page (Option.value ~default:(Main id) state.thread_origin)
     | Settings id | Sessions (id, _) | Automation id -> open_page (Main id))
   | Refresh ->
+    let state = {state with refresh_needed = false} in
     (match state.page with Create | Settings _ | Automation _ -> stay state
     | _ ->
       let after = List.fold_left (fun latest row -> max latest (seq row)) None (Data.list "messages" state.view) in
@@ -353,8 +366,9 @@ let update state action =
       let references = (key, (String.lowercase_ascii name, id)) :: List.remove_assoc key state.bot_references in
       stay (select_mention {state with bot_references = references} (J.to_string (`String name)))
     | _ -> stay state)
-  | Share_graph graph when Option.fold ~none:true ~some:(fun id -> List.mem id state.shareable_graphs) graph ->
-    stay {state with shared_graph = graph}
+  | Share_graph false -> stay {state with shared_graph = None}
+  | Share_graph true when Option.fold ~none:false ~some:(fun graph -> List.mem graph state.shareable_graphs) state.graph_id ->
+    stay {state with shared_graph = state.graph_id}
   | Share_graph _ -> stay state
   | Stage_attachment (key, attachment) ->
     let items = attachments_for state key in
@@ -395,20 +409,18 @@ let update state action =
   | Default_agent default_agent when default_agent = "" || is_configured state default_agent ->
     stay {state with default_agent}
   | Default_agent _ -> stay state
-  | Save_bot graph ->
+  | Save_bot ->
     let shared = "sharedGraphId", Option.fold ~none:`Null ~some:(fun id -> `String id) state.shared_graph in
-    (match state.page with
-    | Create when String.trim state.name <> ""
+    (match state.page, state.graph_id with
+    | Create, Some graph when selected_graph = Some graph && String.trim state.name <> "" && List.mem graph state.graph_ids
         && (state.default_agent = "" || is_configured state state.default_agent) ->
-      let graph_fields = match graph with
-        | Some graph when String.trim state.graph_target <> "" ->
-          ["graphId", `String graph; "graphBlockId", `String (String.trim state.graph_target)]
-        | _ -> [] in
-      let body = `Assoc ([shared; "name", `String state.name; "repository", `String state.repository;
+      let graph_fields = match String.trim state.graph_target with
+        | "" -> [] | target -> ["graphBlockId", `String target] in
+      let body = `Assoc ([shared; "graphId", `String graph; "name", `String state.name; "repository", `String state.repository;
         "defaultAgent", `String state.default_agent] @ graph_fields) in
       let index = {state with page = Index} in
       index, request ~method_:"POST" ~body index
-    | Settings id when state.default_agent = "" || is_configured state state.default_agent ->
+    | Settings id, _ when state.default_agent = "" || is_configured state state.default_agent ->
       let main = {state with page = Main id} in
       main, request ~method_:"PATCH" ~body:(`Assoc [shared; "defaultAgent", `String state.default_agent]) main
     | _ -> stay state)

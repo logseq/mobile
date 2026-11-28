@@ -255,7 +255,7 @@ final class LGGraphLifecycle {
                 while !Task.isCancelled && authentication.state == .signedIn {
                     guard let accessToken = try? await authentication.apiToken() else { return }
                     let snapshotRequired = await store.runGraphEventsOnce(
-                        graphID: graphID, baseURL: baseURL, accessToken: accessToken
+                        graphID: graphID, baseURL: baseURL, accessToken: accessToken, useAccountEvents: true
                     )
                     if snapshotRequired {
                         guard let refreshedToken = try? await authentication.apiToken() else { return }

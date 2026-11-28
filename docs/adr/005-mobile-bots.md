@@ -13,6 +13,9 @@ reply thread. Session histories can grow independently of the associated graph.
 
 - Put **Bots** in primary mobile navigation. Show each Bot's name and latest
   activity, with an action to create a Bot and choose its default Agent.
+- Create a Bot in the current synced Graph. Keep it private to its creator
+  until they choose to share it with that Graph's team. An optional result
+  block belongs to the same Graph.
 - Open a Bot directly into its main conversation. Put **Sessions** and pending
   decisions near the composer. A dispatch appears in the conversation with its
   Agent, status and reply count. Opening that entry shows the Session thread.
@@ -90,7 +93,7 @@ Devin use their cloud APIs.
 The Node adapter runs a background loop. The Worker uses invocation-scoped
 PostgreSQL connections and one scheduler Durable Object per environment.
 The scheduler keeps a single alarm for the nearest eligible provider poll,
-Automation, lease expiry or Graph export. Concurrent signals preserve the
+Automation, lease expiry, Graph export or pending notification. Concurrent signals preserve the
 earliest wakeup. An idle queue has no alarm, and empty device claims leave the
 scheduler idle. The hourly Cron Trigger repairs missed wakeups for overdue
 work. The hosted database schema is applied before deployment. If a server
@@ -98,11 +101,19 @@ invocation loses its lease, a provider status poll can be repeated. An
 unconfirmed start is marked for attention to avoid spawning a second upstream
 session.
 
-The scheduler uses short internal calls and persisted alarms. Graph Sync uses
-hibernatable WebSockets in its own Durable Objects. Connection attachments
-restore the graph ID and presence, and automatic ping/pong allows idle
-connections to stay asleep. Future Bots push connections should use the
-WebSocket Hibernation API.
+Mobile uses one authenticated account WebSocket while in the foreground.
+Opening or switching a Graph replaces the Graph subscription on that connection.
+Graph pull and transaction frames go through the existing Graph handlers. The
+connection delivers Bots updates even when no Graph is open. Both services
+check Graph access before returning data. Bot events carry identifiers and a
+revision after the PostgreSQL transaction commits. The visible conversation
+refreshes with its existing cursor and catches up after a reconnect.
+
+Cloudflare uses the WebSocket Hibernation API. Connection attachments hold the
+current Graph subscription. The Graph Durable Object relays changes using RPC
+to the account Durable Object. Graph Sync retains the direct connection for
+background sync and older clients. The Node adapter serves the same account
+event protocol without Durable Objects.
 
 In Desktop Logseq, **Settings → AI → Local Bot Agents** pairs a device through
 its signed-in account. The user selects a workspace and opts in to Codex and
