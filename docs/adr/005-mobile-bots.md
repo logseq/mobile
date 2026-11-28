@@ -21,6 +21,10 @@ reply thread. Session histories can grow independently of the associated graph.
   the Bot's default Agent first. A normal main-conversation message is stored
   with the Bot. A reply from inside a Session goes to its primary Agent. Mention
   another configured Agent in the thread to give it a turn in the same Session.
+- To run a workflow, mention multiple configured Agents in the order they
+  should work and send once. The Logseq worker dispatches each Agent in the same
+  thread after the preceding Agent succeeds. Each turn has the original request
+  and recent replies. A failed step or a request for input stops the sequence.
 - Show automated Agent replies and meaningful status changes in the thread.
   Include the output or its link in the thread and show the latest activity on
   the main conversation's dispatch entry. Use a stable Bot and Session ID for
@@ -58,7 +62,9 @@ Automation occurrences with their rule ID and scheduled time. Resolve the
 primary Agent when creating the Session and record the recipient of each turn.
 Serialize turns within the Session. When a user brings another Agent into the
 thread, provide a bounded excerpt of the preceding conversation. Each Agent
-continues its own upstream session. If a
+continues its own upstream session. Store the remaining workflow participants on
+the active run. Atomically save a successful reply and enqueue the next
+participant before the worker can claim it. If a
 provider's creation result is ambiguous, surface an actionable state and
 reconcile the upstream result before any retry.
 

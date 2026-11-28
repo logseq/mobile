@@ -124,9 +124,15 @@ let message_card source ~thread message =
   let handoff = Data.field "handoff" message in
   let format label name = View_base.tr_named (Signal.sample source) label name in
   let recipient = Data.string "requested_agent" message in
+  let ordered_agents = List.filter_map (function
+    | `String name -> Some (Chat.label name) | _ -> None) (Data.list "requested_agents" message) in
+  let auto_handoff = sender = "bot" && recipient <> "" && Data.string "body" message = ""
+    && Data.list "attachments" message = [] in
   let attribution =
     if Data.string "source_name" handoff <> "" then Some (format "From {1}" (Data.string "source_name" handoff))
     else if Data.string "target_name" handoff <> "" then Some (format "To {1}" (Data.string "target_name" handoff))
+    else if ordered_agents <> [] then Some (String.concat " → " ordered_agents)
+    else if auto_handoff then Some (format "To {1}" (Chat.label recipient))
     else if thread && outgoing && recipient <> "" then Some (format "To {1}" (Chat.label recipient))
     else if thread && not outgoing && sender <> "bot" then Some (Chat.label sender)
     else None in
@@ -148,7 +154,9 @@ let message_card source ~thread message =
       | _ -> total) 0 line in
   let longest = String.split_on_char '\n' body |> List.fold_left (fun width line -> max width (units line)) 0 in
   let bubble_width = min max_bubble (max 48 (longest + 26)) in
-  row ~main:(if outgoing then `end_ else `start) ~padding_vertical:3 [
+  if auto_handoff then row ~padding_vertical:8 ~padding_horizontal:8 [
+    text ~value:(Option.value ~default:"" status) ~foreground:"bots-muted" ~font_size:"12" ~font_weight:600 [];
+  ] else row ~main:(if outgoing then `end_ else `start) ~padding_vertical:3 [
     column ~cross:(if outgoing then `end_ else `start) ~gap:4 ~width:bubble_width [
       (match status with None -> box [] | Some label ->
         text ~value:label ~foreground:"bots-muted" ~font_size:"12" ~font_weight:600 ~padding_horizontal:6 []);
@@ -291,11 +299,12 @@ let waiting source bots ~thread =
 
 let composer source send bots ~thread =
   let send_title = Signal.map (fun state ->
-    let agent, target, _ = Chat.recipients state in
-    match Option.bind target (fun id -> List.assoc_opt id (Chat.mentionable_bots state)), agent with
+    let agents, target, _ = Chat.recipients state in
+    match Option.bind target (fun id -> List.assoc_opt id (Chat.mentionable_bots state)), agents with
     | Some name, _ -> View_base.tr_named (Signal.sample source) "Send to {1}" name
-    | None, Some name -> View_base.tr_named (Signal.sample source) "Send to {1}" (Chat.label name)
-    | None, None -> tr source (if thread then "Reply" else "Send")) bots in
+    | None, [] -> tr source (if thread then "Reply" else "Send")
+    | None, names -> View_base.tr_named (Signal.sample source) "Send to {1}"
+        (String.concat " → " (List.map Chat.label names))) bots in
   let placeholder = Signal.cutoff String.equal (Signal.map (fun state ->
     if thread then tr source "Reply in thread"
     else match Data.string "name" (Chat.selected_bot state) with

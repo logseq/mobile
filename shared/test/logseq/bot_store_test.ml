@@ -66,6 +66,10 @@ let dispatch_requires_an_explicit_agent () =
   let request = send main "@Pi triage; @codex Fix navigation" in
   check_eq "@Pi triage; Fix navigation" (Bot_store.string "body" (Bot_store.field "body" request));
   check_eq "codex" (Bot_store.string "agent" (Bot_store.field "body" request));
+  let workflow = Bot_store.field "body" (send main "@Codex @Devin @codex Review navigation") in
+  check_eq [`String "codex"; `String "devin"] (Bot_store.list "agents" workflow);
+  check_eq "Review navigation" (Bot_store.string "body" workflow);
+  check_eq "codex" (Bot_store.string "agent" workflow);
   let thread, _ = Bot_chat.update main (Bot_chat.Open (Bot_chat.Thread (bot_id, message_id))) in
   let reply = send thread "Check Android as well" in
   check_eq (route ^ "/sessions/" ^ message_id ^ "/messages") (Bot_store.string "path" reply);
@@ -112,7 +116,7 @@ let bot_handoff_and_attachment_are_bound_to_the_draft () =
     "mentionableBots", `List [`Assoc ["id", `String target; "name", `String "Logseq QA"]]])) in
   let main = apply (apply main (Draft "@Log")) (Select_bot target) in
   let main = apply main (Draft (draft main ^ "@codex Check this file")) in
-  check_eq (Some "codex", Some target, "Check this file") (recipients main);
+  check_eq (["codex"], Some target, "Check this file") (recipients main);
   let thread_page = Thread (bot_id, message_id) in
   let file = {uuid = message_id; title = "demo.txt"; local_path = "/tmp/demo.txt"; payload = "{}"} in
   let thread = apply (apply main (Open thread_page)) (Stage_attachment (main_route, file)) in

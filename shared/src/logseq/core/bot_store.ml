@@ -246,6 +246,7 @@ let run ?(upload = Http.upload_file) db ~(config : Api.api_config) ~send ~fresh_
         let request = J.from_string body in
         Some (`Assoc ["id", `String id; "author", `String "user"; "pending", `Bool true;
           "body", field "body" request; "requested_agent", field "agent" request;
+          "requested_agents", field "agents" request;
           "attachments", `List (List.map (fun file -> `Assoc ["name", field "name" file])
             (list "attachments" request))])
       else None) in

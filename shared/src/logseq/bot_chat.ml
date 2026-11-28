@@ -177,32 +177,31 @@ let recipients state =
     | Some (name, id), _ when name = token && List.mem_assoc id matches -> Some id
     | _, [(id, _)] -> Some id
     | _ -> None in
-  let rec scan from agent target ranges =
+  let rec scan from agents target ranges =
     match String.index_from_opt text from '@' with
-    | None -> agent, target, ranges
+    | None -> List.rev agents, target, ranges
     | Some start when mention_boundary text start ->
       let stop, token, quoted = mention_token text start in
       let token = String.lowercase_ascii token in
       if not quoted && List.mem token configured then
-        (match agent with
-        | None -> scan stop (Some token) target ((start, stop) :: ranges)
-        | Some _ -> scan stop agent target ranges)
+        let agents = if List.mem token agents then agents else token :: agents in
+        scan stop agents target ((start, stop) :: ranges)
       else (match if target = None then find_bot token else None with
-        | Some id -> scan stop agent (Some id) ((start, stop) :: ranges)
-        | None -> scan stop agent target ranges)
-    | Some start -> scan (start + 1) agent target ranges in
-  let agent, target, ranges = scan 0 None None [] in
+        | Some id -> scan stop agents (Some id) ((start, stop) :: ranges)
+        | None -> scan stop agents target ranges)
+    | Some start -> scan (start + 1) agents target ranges in
+  let agents, target, ranges = scan 0 [] None [] in
   let remove value (start, stop) =
     let before = String.sub value 0 start and after = String.sub value stop (String.length value - stop) in
     let before = if after <> "" && space after.[0] && before <> ""
       && space before.[String.length before - 1] then String.sub before 0 (String.length before - 1)
       else before in
     before ^ after in
-  agent, target, String.trim (List.fold_left remove text ranges)
+  agents, target, String.trim (List.fold_left remove text ranges)
 
 let mentions state =
-  let agent, _, body = recipients state in
-  agent, body
+  let agents, _, body = recipients state in
+  List.nth_opt agents 0, body
 
 let unsent state = Option.value ~default:[] (List.assoc_opt (route state.page) state.optimistic)
 
@@ -265,8 +264,11 @@ let receive state json =
         let target = Data.string "targetBotId" rejected in
         let bot_prefix = match List.assoc_opt target (mentionable_bots state) with
           | Some name -> "@" ^ J.to_string (`String name) ^ " " | None -> "" in
-        let agent = Data.string "agent" rejected in
-        let agent_prefix = if agent = "" then "" else "@" ^ label agent ^ " " in
+        let agents = match Data.list "agents" rejected with
+          | [] -> (match Data.string "agent" rejected with "" -> [] | name -> [`String name])
+          | names -> names in
+        let agent_prefix = agents |> List.filter_map (function
+          | `String name -> Some ("@" ^ label name ^ " ") | _ -> None) |> String.concat "" in
         let files = Data.list "attachments" rejected |> List.map (fun file -> {
           uuid = Data.string "id" file; title = Data.string "name" file;
           local_path = Data.string "localPath" file; payload = Data.string "payload" file }) in
@@ -361,17 +363,21 @@ let update state action =
   | Remove_attachment uuid ->
     stay (set_attachments state (route state.page) (List.filter (fun item -> item.uuid <> uuid) (attachments state)))
   | Send when (match state.page with Main _ | Thread _ -> true | _ -> false) ->
-    let agent, target, body = recipients state in
+    let agents, target, body = recipients state in
     let files = attachments state in
     if body = "" && files = [] then stay state
     else
       let key = route state.page in
       let id = Session_types.fresh_squuid () in
+      let agent = match agents with [] -> `Null | name :: _ -> `String name in
+      let workflow = match agents with
+        | _ :: _ :: _ -> `List (List.map (fun name -> `String name) agents)
+        | _ -> `Null in
       let handoff = Option.fold ~none:`Null ~some:(fun name -> `Assoc ["target_name", `String name])
         (Option.bind target (fun id -> List.assoc_opt id (mentionable_bots state))) in
       let pending = `Assoc ["id", `String id; "author", `String "user"; "pending", `Bool true;
         "body", `String body; "handoff", handoff;
-        "requested_agent", Option.fold ~none:`Null ~some:(fun name -> `String name) agent;
+        "requested_agent", agent; "requested_agents", workflow;
         "attachments", `List (List.map (fun file -> `Assoc ["name", `String file.title]) files)] in
       let optimistic = (key, pending :: unsent state) :: List.remove_assoc key state.optimistic in
       let updated = set_attachments (set_draft "" {state with active_mention = None;
@@ -380,7 +386,7 @@ let update state action =
       let body = `Assoc ["id", `String id;
         "targetBotId", Option.fold ~none:`Null ~some:(fun id -> `String id) target;
         "body", `String body; "attachments", `List (List.map attachment_json files);
-        "agent", Option.fold ~none:`Null ~some:(fun name -> `String name) agent] in
+        "agent", agent; "agents", workflow] in
       updated, request ~path:(key ^ "/messages") ~method_:"POST" ~body state
   | Send -> stay state
   | Name name -> stay {state with name}
