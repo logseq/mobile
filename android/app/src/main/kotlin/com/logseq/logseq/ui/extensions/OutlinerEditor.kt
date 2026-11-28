@@ -341,8 +341,10 @@ internal fun OutlinerEditor(
     var dismissalEmitted by remember { mutableStateOf(false) }
     val dismissalSignal = LocalImeDismissalSignal.current
     fun emitImeDismissed() {
-        cancelDebounce()
-        publishInput(value, composing = false)
+        // Use the same guarded flush as toolbar presses: while a split handoff
+        // is awaiting acknowledgement, the visible suffix must not overwrite
+        // the pre-split block in the core.
+        NativeEditorInput.flush()
         context.emit("ime-dismissed")
     }
     LaunchedEffect(focusEnabled, dismissalSignal) {
