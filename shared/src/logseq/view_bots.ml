@@ -212,7 +212,7 @@ let feedback source send bots =
     | "" -> box []
     | message -> row ~gap:8 ~cross:`center [
         text ~value:(tr source message) ~grow:1.0 ~font_size:"13" ~foreground:"bots-warning" [];
-        action source send "Retry" "bots.retry" Chat.Refresh;
+        action source send "Retry" "bots.retry" Chat.Retry;
       ])
     (Signal.cutoff (fun a b -> Data.string "feedback" a.Chat.view = Data.string "feedback" b.Chat.view) bots)
 

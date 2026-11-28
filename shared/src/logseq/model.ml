@@ -340,6 +340,7 @@ type composer_submission =
 
 type logseq_effect =
   | BotsEffect of int * string
+  | BotsSyncEffect of int * Bot_store.sync
   | PresentAccountProfileEffect of int
   | PushPreferenceEffect of int * push_preferences
   | CollaborationEffect of int * string
@@ -681,6 +682,8 @@ type logseq_action =
   | ShowBots
   | ChooseBotAttachment of string
   | BotsAction of Bot_chat.action
+  | SyncBots of Bot_store.sync
+  | BotsSyncProgress of string
   | ToggleRecentNotifications
   | SetPushPreference of push_preferences
   | ApplyPushPreference of push_preferences
@@ -1106,7 +1109,7 @@ let effect_id eff =
   | CopyRuntimeLogEffect (id, _) -> id
   | ReportErrorEffect (id, _) -> id
   | SignInEffect (id, _) -> id
-  | BotsEffect (id, _) -> id
+  | BotsEffect (id, _) | BotsSyncEffect (id, _) -> id
   | SignOutEffect id -> id
 
 let effect_with_id effects target =
@@ -3047,7 +3050,8 @@ let rec update (current : logseq_model) action =
                :: List.filter (fun (view, _, _) -> view <> uuid) current.result_view_feedback
            | _ -> resolved_current.result_view_feedback);
          effect_error =
-           (if succeeded || (match eff with
+           (if (match eff with BotsSyncEffect _ -> true | _ -> false) then current.effect_error
+            else if succeeded || (match eff with
              | SignInEffect _ | PushPreferenceEffect _ | LoadResultRowsEffect _ | LoadPropertyValuesEffect _
              | ResultViewEffect _ | NodePropertyEffect _ -> true
              | CollaborationEffect (_, payload) ->
@@ -3057,7 +3061,7 @@ let rec update (current : logseq_model) action =
               | _ -> false)
             then None else Some message);
          last_core_response =
-           (if (match eff with SignInEffect _ -> true | _ -> false) then current.last_core_response
+           (if (match eff with SignInEffect _ | BotsSyncEffect _ -> true | _ -> false) then current.last_core_response
             else if succeeded then Some message else current.last_core_response);
        } in
        let resolved = match succeeded, eff, resolved.sync_state, resolved.outliner_editing with
@@ -3083,7 +3087,37 @@ let rec update (current : logseq_model) action =
            enqueue_effect ready (SaveOutlinerEditingEffect (ready.next_effect_id, uuid))
          | _ -> resolved in
        let saved = match eff with
-         | BotsEffect _ when saved.bots.refresh_needed -> update saved (BotsAction Bot_chat.Refresh)
+         | BotsEffect (_, payload) when succeeded ->
+           let command = Yojson.Basic.from_string payload in
+           if Bot_store.string "method" command = "GET" then saved else
+             let route = Bot_store.string "route" command in
+             let reason = match Bot_store.parse_route route with
+               | Some (Bot_store.Main bot) -> Bot_store.Changed (bot, None)
+               | Some (Bot_store.Thread (bot, thread)) -> Bot_store.Changed (bot, Some thread)
+               | _ -> Bot_store.Account in
+             update saved (SyncBots reason)
+         | BotsSyncEffect (_, reason) when saved.authentication_state = "signedIn" ->
+           let result =
+             if succeeded then
+               (try Bot_store.field "result" (Yojson.Basic.from_string message) with Yojson.Json_error _ -> `Null)
+             else `Null in
+           let route = Bot_chat.route saved.bots.page in
+           let reports = Bot_store.list "reports" result in
+           let bots = List.fold_left (fun bots report -> Bot_chat.receive bots report) saved.bots reports in
+           let saved = {saved with bots} in
+           let saved =
+             if saved.destination <> BotsDestination then saved else
+             match reason with
+             | Bot_store.History (target, cursor) when target = route ->
+               update saved (BotsAction (Bot_chat.Reload (Some cursor)))
+             | _ -> update saved (BotsAction (Bot_chat.Reload None)) in
+           let saved = if Bot_store.field "morePending" result = `Bool true
+             then update saved (SyncBots Bot_store.Account) else saved in
+           (match saved.bots.sync_queue with
+            | [] -> saved
+            | next :: rest ->
+              let ready = {saved with bots = {saved.bots with sync_queue = rest}} in
+              update ready (SyncBots next))
          | _ -> saved in
        let needs_sync = succeeded && (saved.has_pending_semantic_operations || saved.has_pending_sync_request)
          && (match eff with SyncNowEffect _ | SyncPendingEffect _ -> false | _ -> true)
@@ -3398,11 +3432,41 @@ let rec update (current : logseq_model) action =
       destination = BotsDestination; sidebar_open = false; graph_menu_open = false;
       composer_expanded = false; tasks_selection_mode = false } in
     update updated (BotsAction (Bot_chat.Open Bot_chat.Index))
-  | BotsAction Bot_chat.Refresh when current.destination <> BotsDestination
-      || current.authentication_state <> "signedIn" -> current
-  | BotsAction Bot_chat.Refresh when List.exists (function BotsEffect _ -> true | _ -> false)
-      (current.pending_effects @ current.in_flight_effects) ->
-    {current with bots = {current.bots with refresh_needed = true}}
+  | SyncBots _ when current.authentication_state <> "signedIn" -> current
+  | SyncBots reason ->
+    let active = List.find_map (function BotsSyncEffect (_, job) -> Some job | _ -> None)
+      (current.pending_effects @ current.in_flight_effects) in
+    (match active with
+    | None -> enqueue_effect current (BotsSyncEffect (current.next_effect_id, reason))
+    | Some (Bot_store.History _ as job) when job = reason -> current
+    | Some _ ->
+      let queue = current.bots.sync_queue in
+      let queue =
+        if List.mem reason queue then queue
+        else match reason with
+          | Bot_store.History _ -> reason :: queue
+          | Bot_store.Account ->
+            List.filter (function Bot_store.Changed (_, None) -> false | _ -> true) queue @ [reason]
+          | Bot_store.Changed (_, None) when List.mem Bot_store.Account queue -> queue
+          | Bot_store.Changed _ -> queue @ [reason] in
+      {current with bots = {current.bots with sync_queue = queue}})
+  | BotsSyncProgress route ->
+    if current.authentication_state = "signedIn" && current.destination = BotsDestination
+       && route = Bot_chat.route current.bots.page
+    then update current (BotsAction (Bot_chat.Reload None))
+    else current
+  | BotsAction Bot_chat.Retry ->
+    let bots, _ = Bot_chat.update current.bots Bot_chat.Retry in
+    update {current with bots} (SyncBots Bot_store.Account)
+  | BotsAction (Bot_chat.Receive _) when current.authentication_state = "signedOut" -> current
+  | BotsAction (Bot_chat.Receive json) ->
+    let bots = Bot_chat.receive current.bots json in
+    let updated = {current with bots} in
+    let route = Bot_store.string "route" json in
+    (match Bot_store.seq "fetchOlder" json with
+     | Some cursor when route = Bot_chat.route bots.page ->
+       update updated (SyncBots (Bot_store.History (route, cursor)))
+     | _ -> updated)
   | BotsAction action ->
     let bots, request = Bot_chat.update ?selected_graph:current.selected_graph_id current.bots action in
     let updated = {current with bots} in
@@ -3557,6 +3621,7 @@ let rec update (current : logseq_model) action =
           current with
           authentication_state = state;
           authentication_error = error;
+          bots = (if state = "signedOut" then Bot_chat.empty else current.bots);
         }
     else current
   | SignIn ->
@@ -3579,6 +3644,7 @@ let rec update (current : logseq_model) action =
       auto_correction = settings.auto_correction;
       base_url = settings.base_url;
       base_url_draft = settings.base_url;
+      bots = (if current.base_url = settings.base_url then current.bots else Bot_chat.empty);
       version = settings.version;
       revision = settings.revision;
     }
@@ -3739,11 +3805,13 @@ let rec update (current : logseq_model) action =
   | ChangeBaseURL value -> { current with base_url_draft = value }
   | ApplySettings ->
     if valid_base_url_ current.base_url_draft then begin
+      let base_url = String.trim current.base_url_draft in
       let applied =
         {
           current with
-          base_url = String.trim current.base_url_draft;
-          base_url_draft = String.trim current.base_url_draft;
+          base_url;
+          base_url_draft = base_url;
+          bots = (if current.base_url = base_url then current.bots else Bot_chat.empty);
         }
       in
       let id = applied.next_effect_id in

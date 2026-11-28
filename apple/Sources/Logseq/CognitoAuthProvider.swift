@@ -22,6 +22,14 @@ enum CognitoAuthProviderError: Error, LocalizedError {
     }
 }
 
+private func cognitoClaims(_ token: String?) -> [String: Any]? {
+    guard let payload = token?.split(separator: ".").dropFirst().first else { return nil }
+    let encoded = payload.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+    let padded = encoded + String(repeating: "=", count: (4 - encoded.count % 4) % 4)
+    guard let data = Data(base64Encoded: padded) else { return nil }
+    return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+}
+
 struct CognitoTokenStore: Sendable {
     private let service: String
 
@@ -42,6 +50,11 @@ struct CognitoTokenStore: Sendable {
             throw CognitoAuthProviderError.secureStorage(status)
         }
         return try JSONDecoder().decode(CognitoStoredTokens.self, from: data)
+    }
+
+    func accountID() -> String? {
+        guard let tokens = try? load(), !tokens.refreshToken.isEmpty else { return nil }
+        return cognitoClaims(tokens.idToken)?["sub"] as? String
     }
 
     func save(_ tokens: CognitoStoredTokens) throws {
@@ -117,12 +130,8 @@ struct CognitoTokenStore: Sendable {
     func readProfile() async throws -> LogseqAccountProfile {
         do { return try await fetchProfile() }
         catch {
-            guard !Task.isCancelled, let token = try? tokenStore.load()?.idToken,
-                  let payload = token.split(separator: ".").dropFirst().first else { throw error }
-            let encoded = payload.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-            let padded = encoded + String(repeating: "=", count: (4 - encoded.count % 4) % 4)
-            guard let data = Data(base64Encoded: padded),
-                  let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw error }
+            guard !Task.isCancelled, let claims = cognitoClaims(try? tokenStore.load()?.idToken)
+            else { throw error }
             return LogseqAccountProfile(fullName: claims["name"] as? String ?? "",
                                        photo: (claims["picture"] as? String).flatMap(URL.init(string:)))
         }

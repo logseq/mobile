@@ -1,10 +1,14 @@
 (** Mobile session host: wires the graph/database/keyring hosts into an RPC
     session and registers the `logseq_mobile_call` callback. *)
 
+type bot_sync
+
 type mobile_session =
   { database : Mobile_database.mobile_database
   ; keyring : E2ee_keyring.e2ee_keyring
   ; session : Session_types.session ref
+  ; bot_sync : bot_sync option ref
+  ; bot_account : string option ref
   }
 
 val graph_catalog_address : string

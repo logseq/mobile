@@ -1,6 +1,9 @@
 package com.logseq.logseq.runtime
 
 import com.logseq.logseq.NETWORK_UNAVAILABLE
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 // Kotlin port of the former core_effect_executor.dart.
@@ -33,6 +36,36 @@ internal class CoreEffectExecutor(
                 resolved
             }
         } catch (error: Throwable) {
+            NativeEffectResolution.Failure(error.toString())
+        }
+    }
+
+    suspend fun executeBotSync(effect: NativeEffect, didChange: suspend (String) -> Unit): NativeEffectResolution {
+        suspend fun call(action: String, payload: String) = callCore(JSONObject()
+            .put("apiVersion", 1).put("method", "dispatch")
+            .put("params", JSONObject().put("action", action).put("payload", payload))
+            .toString())
+
+        return try {
+            var response = call("startBotSync", effect.text)
+            while (true) {
+                val result = JSONObject(response).optJSONObject("result")
+                val request = result?.optJSONObject("request") ?: break
+                val changed = result.optJSONArray("changedRoutes")
+                if (changed != null) {
+                    for (index in 0 until changed.length()) didChange(changed.getString(index))
+                }
+                val pending = AndroidPendingSyncRequest.fromJson(request)
+                val reply = withContext(Dispatchers.IO) { AndroidPendingSyncTransport.send(pending) }
+                response = call("continueBotSync", JSONObject()
+                    .put("id", pending.id).put("status", reply.status ?: 0).put("body", reply.body ?: "")
+                    .toString())
+            }
+            val resolved = resolution(response)
+            NativeEffectResolution.Discard(resolved.succeeded, resolved.message)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
             NativeEffectResolution.Failure(error.toString())
         }
     }

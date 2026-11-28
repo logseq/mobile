@@ -306,7 +306,10 @@ public struct LogseqRootView : View {
             },
             runtimeLog: .shared,
             copyText: { text in Self.copyText(text) },
-            signIn: { request in try await authentication.authenticate(request) },
+            signIn: { request in
+                _ = await LogseqCore.callAsync(.init(method: "dispatch", params: .init(action: "setBotAccount")))
+                return try await authentication.authenticate(request)
+            },
             signOut: {
                 await syncCoordinator.cancelBackground()
                 await syncCoordinator.stopForeground()
@@ -316,6 +319,7 @@ public struct LogseqRootView : View {
                     try? await LGDiscussionPush.shared.setPreferences(preference, sessionToken: token)
                 }
                 await authentication.signOut()
+                _ = await LogseqCore.callAsync(.init(method: "dispatch", params: .init(action: "setBotAccount")))
                 await store.configureAndSelectGraph(
                     baseURL: LogseqSettingsPolicy.storedBaseURL(),
                     token: "",
@@ -785,6 +789,10 @@ public struct LogseqRootView : View {
                     params: LogseqRPCParams(action: nil, path: databasePath)
                 )
             )
+            _ = LogseqStore.callForLaunch(.init(
+                method: "dispatch",
+                params: .init(action: "setBotAccount", payload: CognitoTokenStore().accountID())
+            ))
             configureGraph()
             let catalog = catalogResponse.data(using: .utf8).flatMap {
                 try? JSONDecoder().decode(LogseqRPCResponse.self, from: $0)

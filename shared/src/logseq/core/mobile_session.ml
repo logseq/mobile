@@ -9,10 +9,20 @@ module Types = Session_types
 module Sqlite = Sqlite
 module Http = Http
 
+type bot_sync =
+  { id : int
+  ; scope : string
+  ; db : Sqlite.session
+  ; changed : string list ref
+  ; resume : Api.api_response option -> Yojson.Basic.t Bot_store.step
+  }
+
 type mobile_session =
   { database : Database.mobile_database
   ; keyring : Keyring.e2ee_keyring
   ; session : Types.session ref
+  ; bot_sync : bot_sync option ref
+  ; bot_account : string option ref
   }
 
 let graph_catalog_address = "logseq/graph-catalog/v1"
@@ -169,7 +179,7 @@ let create ?show_journal_tasks ?task_lookback ?show_notifications crypto_call =
   let session = create_rpc_session ?show_journal_tasks ?task_lookback ?show_notifications database ring None in
   session.Types.state :=
     { !(session.Types.state) with Types.sidebar_deferred = true };
-  { database; keyring = ring; session = ref session }
+  { database; keyring = ring; session = ref session; bot_sync = ref None; bot_account = ref None }
 
 let shortcut_graphs catalog =
   match Sqlite.restore_string catalog graph_catalog_address with
@@ -232,9 +242,63 @@ let shortcut_action host action payload =
              then capture session else opened in
            Ok response))
 
+let bot_sync_response host db scope id changed step =
+  let routes = `List (List.rev_map (fun route -> `String route) !changed) in
+  changed := [];
+  match step with
+  | Bot_store.Done result ->
+    host.bot_sync := None;
+    Rpc_wire.success (`Assoc (("changedRoutes", routes) :: Bot_store.object_fields result))
+  | Bot_store.Send (request, file, resume) ->
+    host.bot_sync := Some {id; scope; db; changed; resume};
+    let content_type = if file = None then "application/json" else "application/octet-stream" in
+    Rpc_wire.success (`Assoc ["changedRoutes", routes;
+      "request", Rpc_wire.request_json id request file content_type []])
+
+let start_bot_sync host session payload =
+  let json = Yojson.Basic.from_string (Option.value ~default:"{}" payload) in
+  match !(host.database.catalog), (Types.state session).config, Bot_store.field "id" json with
+  | Some db, Some config, `Int id ->
+    (match Bot_store.scope config with
+     | None -> Rpc_wire.success (`Assoc [])
+     | Some scope ->
+       let reason =
+         let bot = Bot_store.string "botId" json and thread = Bot_store.string "sessionId" json in
+         let route = Bot_store.string "route" json in
+         match Bot_store.parse_route route, Bot_store.seq "before" json with
+         | Some (Bot_store.Main _ | Bot_store.Thread _), Some cursor -> Bot_store.History (route, cursor)
+         | _ when Ref_text.is_uuid bot ->
+           Bot_store.Changed (bot, if Ref_text.is_uuid thread then Some thread else None)
+         | _ -> Bot_store.Account in
+       host.bot_sync := None;
+       let changed = ref [] in
+       let notify route = match reason with
+         | Bot_store.History _ -> ()
+         | _ -> if not (List.mem route !changed) then changed := route :: !changed in
+       bot_sync_response host db scope id changed (Bot_store.sync db ~config scope reason ~changed:notify))
+  | _ -> Rpc_wire.success (`Assoc [])
+
+let continue_bot_sync host session payload =
+  let json = Yojson.Basic.from_string (Option.value ~default:"{}" payload) in
+  match !(host.bot_sync), Bot_store.field "id" json with
+  | Some {id; scope; db; changed; resume}, `Int response_id when id = response_id ->
+    host.bot_sync := None;
+    let active_config = (Types.state session).config in
+    if Option.bind active_config Bot_store.scope <> Some scope
+       || not (Option.exists (fun current -> current == db) !(host.database.catalog))
+    then Rpc_wire.success (`Assoc [])
+    else
+      let reply = match Bot_store.field "status" json with
+        | `Int status when status > 0 -> Some (Api.response status (Bot_store.string "body" json))
+        | _ -> None in
+      bot_sync_response host db scope id changed (resume reply)
+  | _ -> Rpc_wire.success (`Assoc [])
+
 let call (host : mobile_session) request =
   match Payload.database_open_path request with
   | Some path ->
+    host.bot_sync := None;
+    host.bot_account := None;
     let catalog = Database.open_catalog host.database path in
     let options = Types.host !(host.session) in
     let session = create_rpc_session ?show_journal_tasks:options.show_journal_tasks
@@ -249,13 +313,21 @@ let call (host : mobile_session) request =
     Rpc_wire.call (fun () -> Rpc.snapshot_visible session)
       (fun action payload ->
         match action with
+        | "setBotAccount" ->
+          (* The authenticated native host restores the subject from secure storage. *)
+          host.bot_account := (match payload with
+            | Some id when Ref_text.is_uuid id -> Some (String.lowercase_ascii id)
+            | _ -> None);
+          Rpc_wire.success (`Assoc [])
+        | "startBotSync" -> start_bot_sync host session payload
+        | "continueBotSync" -> continue_bot_sync host session payload
         | "executeEffect" ->
           (match Core_effect.request ~now:Api.epoch_ms ~fresh_id:Types.fresh_squuid payload with
           | Ok ("bots", Some command) ->
             (match !(host.database.catalog), (Types.state session).config with
             | Some db, Some config ->
               let args = Yojson.Basic.from_string command in
-              (match Bot_store.run db ~config ~send:Http.send ~fresh_id:Types.fresh_squuid args with
+              (match Bot_store.run ?account:!(host.bot_account) db ~config ~fresh_id:Types.fresh_squuid args with
               | Ok view -> Rpc_wire.success (`Assoc ["bots", view])
               | Error error -> Rpc_wire.success (`Assoc ["bots", `Assoc
                   ["route", `String (Bot_store.string "route" args); "feedback", `String error]]))

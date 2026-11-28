@@ -76,7 +76,7 @@ let update current action =
 let ui_silent_resolved_effect = function
   | Model.SyncPendingEffect _ | Model.PersistUISessionEffect _
   | Model.HydrateOutlinerRowsEffect _ | Model.MoveOutlinerCaretEffect _
-  | Model.SaveOutlinerEditingEffect _ | Model.MaintainSearchIndexEffect _ -> true
+  | Model.SaveOutlinerEditingEffect _ | Model.MaintainSearchIndexEffect _ | Model.BotsSyncEffect _ -> true
   | _ -> false
 
 let make_app backend initial_model =

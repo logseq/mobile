@@ -1,5 +1,6 @@
 package com.logseq.logseq.runtime
 
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 // Kotlin port of the former native_effect_drain.dart.
@@ -52,9 +53,11 @@ internal class NativeEffectDrain(
     private val onError: (Throwable) -> Unit = {},
     private val trace: (String) -> Unit = {},
     private val afterCoreResponseApplied: (suspend (String) -> Unit)? = null,
+    private val executeBotSync: (suspend (NativeEffect, suspend (String) -> Unit) -> NativeEffectResolution)? = null,
 ) {
     @Volatile private var disposed = false
 
+    private var botSyncJob: kotlinx.coroutines.Job? = null
     private var activeDrain: kotlinx.coroutines.Job? = null
     private var queryWake: kotlinx.coroutines.CompletableDeferred<Unit>? = null
     // Counts drain requests. Core calls are asynchronous, so an in-flight
@@ -74,14 +77,14 @@ internal class NativeEffectDrain(
         val job = kotlinx.coroutines.Job(scope.coroutineContext[kotlinx.coroutines.Job])
         activeDrain = job
         try {
-            kotlinx.coroutines.withContext(job) { run() }
+            kotlinx.coroutines.withContext(job) { run(scope) }
         } finally {
             job.complete()
             if (activeDrain === job) activeDrain = null
         }
     }
 
-    private suspend fun run() {
+    private suspend fun run(scope: kotlinx.coroutines.CoroutineScope) {
         while (!disposed) {
             val seen = requests
             val encoded = runtime.takeEffect()
@@ -107,6 +110,17 @@ internal class NativeEffectDrain(
             }
 
             apply(dispatch.patch, "dispatch kind=${dispatch.effect.kind}")
+            if (dispatch.effect.kind == "bots-sync" && executeBotSync != null) {
+                botSyncJob = scope.launch {
+                    val resolution = executeBotSync.invoke(dispatch.effect) { route ->
+                        apply(runtime.applyHostUpdate("bots-sync-progress", route), "bots-sync-progress")
+                        drain(scope)
+                    }
+                    apply(runtime.resolveEffect(dispatch.effect.id, resolution.succeeded, resolution.message), "bots-sync")
+                    drain(scope)
+                }
+                continue
+            }
             trace("start id=${dispatch.effect.id} kind=${dispatch.effect.kind}")
             val resolution = execute.execute(dispatch.effect)
             trace(
@@ -147,6 +161,7 @@ internal class NativeEffectDrain(
     fun dispose() {
         disposed = true
         activeDrain?.cancel()
+        botSyncJob?.cancel()
         queryWake?.complete(Unit)
         queryWake = null
     }

@@ -20,7 +20,7 @@ type attachment =
 type t =
   { page : page
   ; view : J.t
-  ; refresh_needed : bool
+  ; sync_queue : Data.sync list
   ; drafts : (string * string) list
   ; optimistic : (string * J.t list) list
   ; last_send : (string * string) option
@@ -41,7 +41,7 @@ type t =
   }
 
 type action =
-  | Open of page | Back | Refresh | Older | Receive of J.t
+  | Open of page | Back | Reload of int64 option | Retry | Older | Receive of J.t
   | Draft of string | Pick_agent | Select_agent of string | Select_bot of string | Dismiss_mentions
   | Share_graph of bool
   | Stage_attachment of string * attachment | Remove_attachment of string
@@ -49,7 +49,7 @@ type action =
   | Save_bot | Edit_automation of J.t | Rule_field of string * J.t
   | Save_automation | Toggle_automation of string * bool
 
-let empty = {page = Index; view = `Null; refresh_needed = false; drafts = []; optimistic = []; last_send = None; bot_references = []; graph_ids = []; graph_id = None; shareable_graphs = []; shared_graph = None; attachments = []; active_mention = None; focus_request = false;
+let empty = {page = Index; view = `Null; sync_queue = []; drafts = []; optimistic = []; last_send = None; bot_references = []; graph_ids = []; graph_id = None; shareable_graphs = []; shared_graph = None; attachments = []; active_mention = None; focus_request = false;
   name = ""; repository = ""; graph_target = ""; default_agent = ""; proposal = `Null;
   thread_origin = None}
 
@@ -59,12 +59,12 @@ let route = function
   | Main id | Sessions (id, _) | Settings id | Automation id -> bot_path id
   | Thread (id, thread) -> bot_path id ^ "/sessions/" ^ thread
 
-let request ?before ?after ?path ?(method_ = "GET") ?(body = `Null) state =
+let request ?before ?(history_fetched = false) ?path ?(method_ = "GET") ?(body = `Null) state =
   let route = route state.page in
   let fields = ["route", `String route; "path", `String (Option.value ~default:route path);
     "method", `String method_; "body", body] in
   let cursor key = function None -> [] | Some value -> [key, `String (Int64.to_string value)] in
-  Some (J.to_string (`Assoc (fields @ cursor "before" before @ cursor "after" after)))
+  Some (J.to_string (`Assoc (fields @ cursor "before" before @ ["historyFetched", `Bool history_fetched])))
 
 let draft state = Option.value ~default:"" (List.assoc_opt (route state.page) state.drafts)
 let set_draft text state =
@@ -254,12 +254,21 @@ let receive state json =
     let current = if Data.field "unavailable" json = `Bool true then `Null else state.view in
     let fields = match json with `Assoc fields -> List.remove_assoc "acknowledged" fields | _ -> [] in
     let prior = Data.list "messages" current in
+    let fresh = Data.list "messages" json in
     let older = Data.field "older" json = `Bool true in
-    let old_more = Data.field "more" current in
-    let more = if older || prior = [] then Data.field "more" json else old_more in
-    let merged = match acknowledged @ Data.list "messages" json with
-      | [] -> prior
-      | fresh -> merge_messages fresh prior in
+    let retains_history = match prior, fresh with
+      | first :: _, new_first :: _ when seq first < seq new_first ->
+        List.exists (fun message -> seq message >= seq new_first) prior
+      | _ -> false in
+    let more = match Data.field "more" json with
+      | `Null -> Data.field "more" current
+      | _ when retains_history && not older -> Data.field "more" current
+      | value -> value in
+    let merged = match Data.field "messages" json with
+      | `List _ when older || retains_history -> merge_messages fresh prior
+      | `List _ -> merge_messages acknowledged fresh
+      | _ when acknowledged <> [] -> merge_messages acknowledged prior
+      | _ -> prior in
     let previous = match current with `Assoc fields -> fields | _ -> [] in
     let keep = List.filter (fun (key, _) -> not (List.mem_assoc key fields)) previous in
     let state = match Data.list "rejected" json with
@@ -282,9 +291,7 @@ let receive state json =
       | `List graphs -> List.filter_map (function `String graph -> Some graph | _ -> None) graphs
       | _ -> fallback in
     let graph_ids = graph_list "graphIds" state.graph_ids in
-    let more_new = Data.field "newer" json = `Bool true && Data.field "more" json = `Bool true
-      && Data.list "messages" json <> [] in
-    {state with graph_ids; refresh_needed = state.refresh_needed || more_new;
+    {state with graph_ids;
       shareable_graphs = graph_list "shareableGraphs" state.shareable_graphs;
       view = `Assoc (["messages", `List merged; "more", more]
       @ List.remove_assoc "messages" (List.remove_assoc "more" (fields @ keep)))}
@@ -296,7 +303,7 @@ let update ?selected_graph state action =
     let thread_origin = match page with Thread _ -> Some state.page | _ -> None in
     let updated = {state with page; view = (if same then state.view else `Null); thread_origin;
       active_mention = None; focus_request = false} in
-    updated, request updated in
+    if same && page <> Index && state.view <> `Null then stay updated else updated, request updated in
   let select_mention state token =
     match state.active_mention with
     | None -> state
@@ -325,12 +332,8 @@ let update ?selected_graph state action =
     | Index | Create | Main _ -> open_page Index
     | Thread (id, _) -> open_page (Option.value ~default:(Main id) state.thread_origin)
     | Settings id | Sessions (id, _) | Automation id -> open_page (Main id))
-  | Refresh ->
-    let state = {state with refresh_needed = false} in
-    (match state.page with Create | Settings _ | Automation _ -> stay state
-    | _ ->
-      let after = List.fold_left (fun latest row -> max latest (seq row)) None (Data.list "messages" state.view) in
-      state, request ?after state)
+  | Reload before -> state, request ?before ~history_fetched:true state
+  | Retry -> stay (receive state (`Assoc ["route", `String (route state.page); "feedback", `Null]))
   | Older ->
     (match List.find_map seq (Data.list "messages" state.view) with
     | Some cursor -> state, request ~before:cursor state

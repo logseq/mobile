@@ -77,9 +77,9 @@ public final class LogseqAccountEvents {
             }
         }
 
-        refreshBots("null")
         var retrySeconds = 1
         var checked = false
+        var nextFallbackRefresh = ContinuousClock.now
         while !Task.isCancelled && generation == current {
             if !checked {
                 var request = URLRequest(url: probe)
@@ -91,6 +91,7 @@ public final class LogseqAccountEvents {
                     unsupported = status == 404
                 }
             }
+            var receivedReady = false
             if checked, !unsupported, let token = await accessToken(), !Task.isCancelled && generation == current {
                 var request = URLRequest(url: address)
                 request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -98,7 +99,7 @@ public final class LogseqAccountEvents {
                 connection.maximumMessageSize = 64 * 1024 * 1024
                 socket = connection
                 connection.resume()
-                let receivedReady = await listen(connection, refreshBots: refreshBots)
+                receivedReady = await listen(connection, refreshBots: refreshBots)
                 connection.cancel(with: .goingAway, reason: nil)
                 guard generation == current, !Task.isCancelled else { return }
                 if let status = (connection.response as? HTTPURLResponse)?.statusCode {
@@ -110,8 +111,12 @@ public final class LogseqAccountEvents {
                 graph = nil
                 if receivedReady { retrySeconds = 1 }
             }
-            refreshBots("null")
-            let waitSeconds = unsupported ? 3 : retrySeconds
+            if !receivedReady, ContinuousClock.now >= nextFallbackRefresh, await accessToken() != nil,
+               generation == current, !Task.isCancelled {
+                nextFallbackRefresh = ContinuousClock.now + .seconds(30)
+                refreshBots("null")
+            }
+            let waitSeconds = unsupported ? 30 : retrySeconds
             do { try await Task.sleep(for: .seconds(waitSeconds)) } catch { return }
             retrySeconds = min(30, retrySeconds * 2)
         }

@@ -231,17 +231,15 @@ let host_action (update : Host_update.host_update) =
 
 let apply_host_update kind payload =
   if kind = "bots-changed" then
-    let refresh = try
-      let event = Yojson.Basic.from_string payload in
-      let model = Lui_app.model (app ()) in
-      let bot = Bot_store.string "botId" event and thread = Bot_store.string "sessionId" event in
-      match model.Model.bots.page with
-      | Bot_chat.Index -> true
-      | Bot_chat.Main id | Bot_chat.Sessions (id, _) -> bot = "" || bot = id
-      | Bot_chat.Thread (id, target) -> (bot = "" || bot = id) && (thread = "" || thread = target)
-      | Bot_chat.Create | Bot_chat.Settings _ | Bot_chat.Automation _ -> false
-    with Yojson.Json_error _ -> false in
-    if refresh then flush_action (Model.BotsAction Bot_chat.Refresh) else take_patch ()
+    (try
+       let event = Yojson.Basic.from_string payload in
+       let bot = Bot_store.string "botId" event and thread = Bot_store.string "sessionId" event in
+       let reason = if Ref_text.is_uuid bot
+         then Bot_store.Changed (bot, if Ref_text.is_uuid thread then Some thread else None)
+         else Bot_store.Account in
+       flush_action (Model.SyncBots reason)
+     with Yojson.Json_error _ -> take_patch ())
+  else if kind = "bots-sync-progress" then flush_action (Model.BotsSyncProgress payload)
   else flush_action
     (match Host_update.decode kind payload with
      | Ok update -> host_action update
@@ -421,6 +419,14 @@ let encode_effect ?(model : Model.logseq_model option) (eff : Model.logseq_effec
       "text", `String payload])
   | BotsEffect (id, payload) ->
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "bots"; "text", `String payload])
+  | BotsSyncEffect (id, reason) ->
+    let fields = match reason with
+      | Bot_store.Account -> []
+      | Bot_store.Changed (bot, thread) ->
+        ["botId", `String bot; "sessionId", Option.fold ~none:`Null ~some:(fun id -> `String id) thread]
+      | Bot_store.History (route, cursor) -> ["route", `String route; "before", Bot_store.seq_json cursor] in
+    let payload = Yojson.Basic.to_string (`Assoc (("id", `Int id) :: fields)) in
+    Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "bots-sync"; "text", `String payload])
   | CollaborationEffect (id, payload) ->
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "collaboration"; "text", `String payload])
   | PdfAnnotationEffect (id, payload) ->
@@ -623,7 +629,7 @@ let take_effect () =
       | _ -> () in
   let effects = (App.model (app ())).pending_effects in
   let independent = function
-    | Model.HydrateOutlinerRowsEffect _ | Model.PersistUISessionEffect _ -> true
+    | Model.HydrateOutlinerRowsEffect _ | Model.PersistUISessionEffect _ | Model.BotsSyncEffect _ -> true
     | _ -> false in
   let urgent = List.exists (fun eff ->
     not (independent eff) && not (debounced_query eff)
@@ -635,7 +641,7 @@ let take_effect () =
       (Hashtbl.find_opt effect_deadlines (Model.effect_id eff)) -. now)
     else 0. in
   let background = function
-    | Model.SyncPendingEffect _ -> true
+    | Model.SyncPendingEffect _ | Model.BotsSyncEffect _ -> true
     | _ -> false in
   let ready eff = remaining eff <= 0. in
   match effects with

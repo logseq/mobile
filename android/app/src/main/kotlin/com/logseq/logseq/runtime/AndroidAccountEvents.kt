@@ -36,7 +36,7 @@ internal class AndroidAccountEvents {
         synchronized(this) { unsupported = false }
         var reconnectDelay = 1_000L
         var checked = false
-        refreshBots("null")
+        var nextFallbackRefresh = 0L
         while (currentCoroutineContext().isActive) {
             val token = try {
                 accessToken()
@@ -58,12 +58,19 @@ internal class AndroidAccountEvents {
                 checked = status == 426 || status == 404
                 synchronized(this) { unsupported = status == 404 }
             }
+            var receivedReady = false
             if (token != null && checked && !synchronized(this) { unsupported }) {
                 val request = Request.Builder().url(endpoint).header("Authorization", "Bearer $token").build()
-                if (listen(request, refreshBots)) reconnectDelay = 1_000L
+                receivedReady = listen(request, refreshBots)
+                if (receivedReady) reconnectDelay = 1_000L
             }
-            refreshBots("null")
-            delay(if (synchronized(this) { unsupported }) 3_000L else reconnectDelay)
+            val fallback = synchronized(this) { unsupported }
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (!receivedReady && token != null && now >= nextFallbackRefresh) {
+                nextFallbackRefresh = now + 30_000L
+                refreshBots("null")
+            }
+            delay(if (fallback) 30_000L else reconnectDelay)
             reconnectDelay = (reconnectDelay * 2).coerceAtMost(30_000L)
         }
     }

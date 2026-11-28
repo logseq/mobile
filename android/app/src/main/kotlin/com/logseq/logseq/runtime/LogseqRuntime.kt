@@ -301,6 +301,7 @@ internal class LogseqRuntime(
                             onCore { deliverPatch(bridge.applyHostUpdate(kind, payload)); "" }
                     },
                     execute = NativeEffectExecutor(::executeEffect),
+                    executeBotSync = executor::executeBotSync,
                     applyPatch = { patch -> if (patch.isNotEmpty()) mainHandler.post { applyPatch(patch) } },
                     onError = { error -> mainHandler.post { reportError(error) } },
                     trace = ::traceNativeEffect,
@@ -844,6 +845,7 @@ internal class LogseqRuntime(
                 .put("apiVersion", 1).put("method", "dispatch")
                 .put("params", JSONObject().put("action", "configure").put("payload", payload))
                 .toString())
+            setLocalBotAccount(null)
             configuredAccessToken = ""
             applyCoreResponse(cleared)
         }
@@ -879,6 +881,13 @@ internal class LogseqRuntime(
                 reportError(error)
             }
         }
+    }
+
+    private suspend fun setLocalBotAccount(accountId: String?) {
+        bridge.callCore(JSONObject()
+            .put("apiVersion", 1).put("method", "dispatch")
+            .put("params", JSONObject().put("action", "setBotAccount").put("payload", accountId))
+            .toString())
     }
 
     private fun restoreCore(hasStoredSession: Boolean, storage: AndroidStorageState? = null) {
@@ -925,6 +934,10 @@ internal class LogseqRuntime(
                 callCore = bridge::callCore,
                 trace = { traceGraphLifecycle("bootstrap $it") },
             ).restore(state)
+            if (restoredAuthentication.unavailable) {
+                val accountId = withContext(Dispatchers.IO) { authentication.cachedAccountId() }
+                setLocalBotAccount(accountId)
+            }
             configuredAccessToken = restoredAuthentication.accessToken
             applyCoreResponse(restored.catalogResponse)
             graphCatalogAutoRefresh?.rememberCatalog(restored.catalogResponse)

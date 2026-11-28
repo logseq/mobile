@@ -414,6 +414,32 @@ public protocol LGPlatformCommandHandling: AnyObject {
 @MainActor
 public protocol LGEffectExecuting {
     func execute(_ effect: LGEffect) async -> LGEffectResolution
+    func executeBotSync(
+        _ effect: LGEffect, didChange: (String) async -> Void
+    ) async -> LGEffectResolution
+}
+
+extension LGEffectExecuting {
+    public func executeBotSync(
+        _ effect: LGEffect, didChange: (String) async -> Void
+    ) async -> LGEffectResolution {
+        await execute(effect)
+    }
+}
+
+private struct LGBotSyncStep: Decodable {
+    struct Result: Decodable {
+        let request: LogseqPendingSyncRequest?
+        let changedRoutes: [String]?
+    }
+
+    let result: Result?
+}
+
+private struct LGBotSyncReply: Encodable {
+    let id: Int
+    let status: Int?
+    let body: String?
 }
 
 
@@ -472,6 +498,37 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
                 return LGEffectResolution(succeeded: true, message: resolution.message, output: .discard)
             }
             return resolution
+        } catch {
+            return LGEffectResolution(succeeded: false, message: String(describing: error))
+        }
+    }
+
+    public func executeBotSync(
+        _ effect: LGEffect, didChange: (String) async -> Void
+    ) async -> LGEffectResolution {
+        func call(_ action: String, _ payload: String) async -> String {
+            await callCore(LogseqRPCRequest(method: "dispatch", params: LogseqRPCParams(action: action, payload: payload)))
+        }
+
+        do {
+            var response = await call("startBotSync", effect.text)
+            while !Task.isCancelled {
+                let step = try JSONDecoder().decode(LGBotSyncStep.self, from: Data(response.utf8))
+                guard let request = step.result?.request else {
+                    let resolved = await Self.resolution(from: response)
+                    return LGEffectResolution(succeeded: resolved.succeeded, message: resolved.message, output: .discard)
+                }
+                for route in step.result?.changedRoutes ?? [] {
+                    await didChange(route)
+                }
+                let reply = await LogseqPendingSyncHTTPTransport.send(request)
+                try Task.checkCancellation()
+                let payload = try JSONEncoder().encode(LGBotSyncReply(id: request.id, status: reply.status, body: reply.body))
+                response = await call("continueBotSync", String(decoding: payload, as: UTF8.self))
+            }
+            return LGEffectResolution(succeeded: true, message: "{}", output: .discard)
+        } catch is CancellationError {
+            return LGEffectResolution(succeeded: true, message: "{}", output: .discard)
         } catch {
             return LGEffectResolution(succeeded: false, message: String(describing: error))
         }

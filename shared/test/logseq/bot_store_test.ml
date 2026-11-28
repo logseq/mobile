@@ -13,43 +13,138 @@ let open_bot () =
   fst (Bot_chat.update main (Bot_chat.Receive (`Assoc ["route", `String route; "agents", agents])))
 
 
-let offline_send_survives_reopen () =
+let config : Api.api_config =
+  {base_url = "http://local.example"; graph_id = ""; graph_name = None;
+   token = "x.eyJzdWIiOiJiMThmNDIwMy0xNmYwLTQzYjUtYWJjMC0zZWVhYzllYzczMmMifQ.x"}
+
+let with_store test =
   let store = Filename.temp_file "logseq-bots" ".sqlite" in
-  Fun.protect ~finally:(fun () -> Sys.remove store) (fun () ->
-    let config : Api.api_config =
-      {base_url = "http://local.example"; graph_id = ""; graph_name = None;
-       token = "x.eyJzdWIiOiJiMThmNDIwMy0xNmYwLTQzYjUtYWJjMC0zZWVhYzllYzczMmMifQ.x"} in
-    let run config method_ path body send =
-      let db = Sqlite.open_session store in
-      Fun.protect ~finally:(fun () -> Sqlite.close db) (fun () ->
-        let command = `Assoc ["route", `String route; "method", `String method_;
-          "path", `String path; "body", body] in
-        match Bot_store.run db ~config ~send ~fresh_id:(fun () -> message_id) command with
-        | Ok view -> view | Error error -> Alcotest.fail error) in
-    let offline _ = Error "offline" in
-    let draft = run config "POST" (route ^ "/messages")
-      (`Assoc ["body", `String "Fix navigation"; "agent", `String "codex"]) offline in
+  Fun.protect ~finally:(fun () -> Sys.remove store) (fun () -> test store)
+
+let with_db store f =
+  let db = Sqlite.open_session store in
+  Fun.protect ~finally:(fun () -> Sqlite.close db) (fun () -> f db)
+
+let command ?account ?before ?(method_ = "GET") ?path ?(body = `Null) db config route =
+  let fields = ["route", `String route; "method", `String method_;
+    "path", `String (Option.value ~default:route path); "body", body] in
+  let fields = match before with None -> fields | Some cursor -> ("before", `String cursor) :: fields in
+  match Bot_store.run ?account db ~config ~fresh_id:(fun () -> message_id) (`Assoc fields) with
+  | Ok view -> view
+  | Error error -> Alcotest.fail error
+
+let sync db config reason send =
+  let rec respond = function
+    | Bot_store.Done result -> result
+    | Bot_store.Send (request, _, resume) -> respond (resume (send request)) in
+  respond (Bot_store.sync db ~config (Bot_store.scope config |> Option.get) reason ~changed:ignore)
+
+let reply view = Some (Api.response 200 (Yojson.Basic.to_string (`Assoc view)))
+
+let bot = `Assoc ["id", `String bot_id; "name", `String "Logseq"]
+
+let offline_send_survives_reopen () =
+  with_store (fun store ->
+    let other_server = {config with base_url = "https://api-staging.logseq.io"} in
+    let draft = with_db store (fun db -> command ~method_:"POST" ~path:(route ^ "/messages")
+      ~body:(`Assoc ["body", `String "Fix navigation"; "agent", `String "codex"]) db config route) in
     check_eq [message_id]
       (List.map (Bot_store.string "id") (Bot_store.list "pending" draft));
-    let other_server = {config with base_url = "http://another.example"} in
-    check_eq [] (Bot_store.list "pending" (run other_server "GET" route `Null offline));
+    with_db store (fun db ->
+      check_eq [] (Bot_store.list "pending" (command db other_server route));
+      ignore (sync db config Bot_store.Account (fun _ -> None));
+      check_eq [message_id] (List.map (Bot_store.string "id") (Bot_store.list "pending" (command db config route))));
     let delivered = ref [] in
     let stored = `Assoc ["id", `String message_id; "bot_id", `String bot_id;
       "seq", `String "12"; "body", `String "Fix navigation"] in
-    let online (request : Api.api_request) =
-      let body = match request.body with
+    with_db store (fun db ->
+      ignore (sync db config Bot_store.Account (fun (request : Api.api_request) ->
+        match request.body with
         | Some json ->
-          delivered := [Bot_store.string "id" (Yojson.Basic.from_string json)];
-          `Assoc ["message", stored]
-        | None -> `Assoc ["messages", `List [stored]; "more", `Bool false; "agents", agents] in
-      Ok (Api.response 200 (Yojson.Basic.to_string body)) in
-    let synced = run config "GET" route `Null online in
+          delivered := Bot_store.string "id" (Yojson.Basic.from_string json) :: !delivered;
+          reply ["message", stored]
+        | None when request.url = config.base_url ^ "/bots" -> reply ["bots", `List [bot]; "agents", agents]
+        | None -> reply ["bot", bot; "messages", `List [stored]; "more", `Bool false; "agents", agents])));
     check_eq [message_id] !delivered;
-    check_eq [] (Bot_store.list "pending" synced);
-    let cached = run config "GET" route `Null offline in
-    check_eq agents (Bot_store.field "agents" cached);
-    check_eq [stored] (Bot_store.list "messages" cached);
-    check_eq `Null (Bot_store.field "agents" (run other_server "GET" route `Null offline)))
+    with_db store (fun db ->
+      let cached = command db config route in
+      check_eq [] (Bot_store.list "pending" cached);
+      check_eq agents (Bot_store.field "agents" cached);
+      check_eq [stored] (Bot_store.list "messages" cached);
+      let offline = {config with token = ""} in
+      let account = (Created_by.of_token config.token |> Option.get).uuid in
+      check_eq [stored] (Bot_store.list "messages" (command ~account db offline route));
+      let unrelated_account = "cea54979-0963-4697-beb2-747ddc18fa0e" in
+      check_eq [] (Bot_store.list "messages" (command ~account:unrelated_account db offline route));
+      check_eq `Null (Bot_store.field "agents" (command db other_server route))))
+
+let account_sync_populates_unopened_routes () =
+  let session_id = "aa3551f5-1a5f-4138-a52e-124a1fb59fce" in
+  let thread = route ^ "/sessions/" ^ session_id in
+  let session count = `Assoc ["id", `String session_id; "bot_id", `String bot_id;
+    "root_message_id", `String message_id; "reply_count", `Int count] in
+  let message id seq fields =
+    `Assoc (["id", `String id; "bot_id", `String bot_id; "seq", `String seq] @ fields) in
+  let root = message message_id "1" ["body", `String "Run the checks"] in
+  let child seq = message seq seq ["session_id", `String session_id] in
+  let assert_sync db reason responses =
+    let remaining = ref responses in
+    ignore (sync db config reason (fun (request : Api.api_request) ->
+      match !remaining with
+      | [] -> Alcotest.fail ("Unexpected request " ^ request.url)
+      | (path, result) :: rest ->
+        check_eq (config.base_url ^ path) request.url;
+        remaining := rest;
+        result));
+    check_eq [] !remaining in
+  with_store (fun store ->
+    with_db store (fun db ->
+      assert_sync db Bot_store.Account
+        ["/bots", reply ["bots", `List [bot]; "agents", agents];
+         route, reply ["bot", bot; "sessions", `List [session 1]; "messages", `List [root]];
+         thread, reply ["session", session 1; "root", root; "messages", `List [child "4"]; "more", `Bool true]]);
+    with_db store (fun db ->
+      check_eq [bot] (Bot_store.list "bots" (command db config "/bots"));
+      check_eq [session 1] (Bot_store.list "sessions" (command db config route));
+      let cached = command db config thread in
+      check_eq root (Bot_store.field "root" cached);
+      check_eq [child "4"] (Bot_store.list "messages" cached);
+      check_eq (`String "4") (Bot_store.field "fetchOlder" (command ~before:"4" db config thread));
+      assert_sync db (Bot_store.History (thread, 4L))
+        [thread ^ "?before=4", reply ["session", session 1; "root", root; "messages", `List [child "3"]]];
+      check_eq [child "3"] (Bot_store.list "messages" (command ~before:"4" db config thread));
+      assert_sync db Bot_store.Account
+        ["/bots", reply ["bots", `List [bot]];
+         route ^ "?after=1", reply ["bot", bot; "sessions", `List [session 1]; "messages", `List []]];
+      assert_sync db (Bot_store.Changed (bot_id, Some session_id))
+        ["/bots", reply ["bots", `List [bot]];
+         route ^ "?after=1", reply ["bot", bot; "sessions", `List [session 2]; "messages", `List []];
+         thread ^ "?after=4", reply ["session", session 2; "root", root; "messages", `List [child "5"]]];
+      check_eq [child "3"; child "4"; child "5"] (Bot_store.list "messages" (command db config thread));
+      assert_sync db Bot_store.Account ["/bots", reply ["bots", `List []]];
+      check_eq [] (Bot_store.list "bots" (command db config "/bots"));
+      check_eq [] (Bot_store.list "sessions" (command db config route));
+      check_eq [] (Bot_store.list "messages" (command db config thread))))
+
+let navigation_uses_only_local_effects () =
+  let open Model in
+  let initial = update (initial ()) (ApplyAuthentication ("signedIn", None)) in
+  let syncing = update initial (SyncBots Bot_store.Account) in
+  check_eq true (List.exists (function BotsSyncEffect _ -> true | _ -> false) syncing.pending_effects);
+  let assert_local state =
+    check_eq [`String "GET"] (List.filter_map (function
+      | BotsEffect (_, payload) -> Some (Bot_store.field "method" (Yojson.Basic.from_string payload))
+      | BotsSyncEffect _ -> Alcotest.fail "Navigation enqueued network sync"
+      | _ -> None) state.pending_effects) in
+  assert_local (update initial ShowBots);
+  let cached_index = update initial (BotsAction (Bot_chat.Receive
+    (`Assoc ["route", `String "/bots"; "bots", `List [bot]]))) in
+  assert_local (update cached_index ShowBots);
+  assert_local (update initial (BotsAction (Bot_chat.Open (Bot_chat.Main bot_id))));
+  assert_local (update initial (BotsAction (Bot_chat.Open (Bot_chat.Thread (bot_id, message_id)))));
+  let main = open_bot () in
+  let _, request = Bot_chat.update main (Bot_chat.Open (Bot_chat.Sessions (bot_id, false))) in
+  check_eq None request
 
 let dispatch_requires_an_explicit_agent () =
   let send state draft =
@@ -184,6 +279,8 @@ let bot_creation_uses_the_current_graph () =
 
 let cases =
   [case "offline send replays the same ID after reopening SQLite" offline_send_survives_reopen;
+   case "account sync fills unopened routes and keeps earlier messages in SQLite" account_sync_populates_unopened_routes;
+   case "Bot, Session and thread navigation uses local data" navigation_uses_only_local_effects;
    case "dispatch uses an explicit Agent and thread replies use their session" dispatch_requires_an_explicit_agent;
    case "selecting an inline Agent replaces the query and preserves the rest of the draft" mentions_complete_inside_the_draft;
    case "handoffs and late attachment results stay in their own draft" bot_handoff_and_attachment_are_bound_to_the_draft;

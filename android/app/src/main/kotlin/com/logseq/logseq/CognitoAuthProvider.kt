@@ -31,6 +31,16 @@ internal class CognitoAuthProvider(context: Context, transport: CognitoUserPool?
 
     suspend fun apiToken(): String? = sessionTokens()?.idToken
 
+    private fun cachedClaims(): JSONObject? {
+        val tokens = loadTokens()?.takeIf { it.refreshToken.isNotBlank() } ?: return null
+        val payload = tokens.idToken?.split('.')?.getOrNull(1) ?: return null
+        return runCatching {
+            JSONObject(String(Base64.decode(payload, Base64.URL_SAFE or Base64.NO_WRAP), StandardCharsets.UTF_8))
+        }.getOrNull()
+    }
+
+    fun cachedAccountId(): String? = cachedClaims()?.optString("sub")?.takeIf { it.isNotBlank() }
+
     private suspend fun sessionTokens(refresh: Boolean = false, needsAccess: Boolean = false): StoredTokens? {
         val current = loadTokens() ?: return null
         if (current.refreshToken.isBlank()) { clearTokens(); return null }
@@ -60,10 +70,7 @@ internal class CognitoAuthProvider(context: Context, transport: CognitoUserPool?
     } catch (cancelled: kotlinx.coroutines.CancellationException) {
         throw cancelled
     } catch (failure: Exception) {
-        val payload = loadTokens()?.idToken?.split('.')?.getOrNull(1) ?: throw failure
-        val claims = runCatching {
-            JSONObject(String(Base64.decode(payload, Base64.URL_SAFE or Base64.NO_WRAP), StandardCharsets.UTF_8))
-        }.getOrElse { throw failure }
+        val claims = cachedClaims() ?: throw failure
         AccountProfile(claims.optString("name"), claims.optString("picture").takeIf { it.isNotBlank() })
     }
 

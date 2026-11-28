@@ -325,6 +325,7 @@ type composer_submission =
 
 type logseq_effect =
   | BotsEffect of int * string
+  | BotsSyncEffect of int * Bot_store.sync
   | PresentAccountProfileEffect of int
   | PushPreferenceEffect of int * push_preferences
   | CollaborationEffect of int * string
@@ -666,6 +667,8 @@ type logseq_action =
   | ShowBots
   | ChooseBotAttachment of string
   | BotsAction of Bot_chat.action
+  | SyncBots of Bot_store.sync
+  | BotsSyncProgress of string
   | ToggleRecentNotifications
   | SetPushPreference of push_preferences
   | ApplyPushPreference of push_preferences

@@ -106,8 +106,11 @@ Opening or switching a Graph replaces the Graph subscription on that connection.
 Graph pull and transaction frames go through the existing Graph handlers. The
 connection delivers Bots updates even when no Graph is open. Both services
 check Graph access before returning data. Bot events carry identifiers and a
-revision after the PostgreSQL transaction commits. The visible conversation
-refreshes with its existing cursor and catches up after a reconnect.
+revision after the PostgreSQL transaction commits. The mobile client uses these events and reconnects to
+refresh account-scoped SQLite data for open and offscreen conversations.
+Navigation reads SQLite. The client downloads the latest message
+window for new conversations, applies incremental updates using stored cursors,
+and saves older pages when the user loads them.
 
 Cloudflare uses the WebSocket Hibernation API. Connection attachments hold the
 current Graph subscription. The Graph Durable Object relays changes using RPC

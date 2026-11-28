@@ -121,6 +121,9 @@ public final class LGRuntime {
     @ObservationIgnored
     private var patchApplyEpoch = 0
 
+    @ObservationIgnored
+    private var botSyncTask: Task<Void, Never>?
+
     public init(
         native: any LGNativeCalling,
         effectExecutor: any LGEffectExecuting = LGCoreEffectExecutor(),
@@ -186,6 +189,8 @@ public final class LGRuntime {
         guard isStarted else { return }
         queryWait?.cancel()
         queryWait = nil
+        botSyncTask?.cancel()
+        botSyncTask = nil
         invalidatePendingPatchApplies()
         do {
             try apply(native.dispose())
@@ -513,6 +518,19 @@ public final class LGRuntime {
             } catch {
                 reportRuntimeError("Invalid LG effect: \(String(describing: error))")
                 return
+            }
+
+            if effect.kind == "bots-sync" {
+                botSyncTask = Task { [weak self] in
+                    guard let self else { return }
+                    let resolution = await self.effectExecutor.executeBotSync(effect) { route in
+                        guard !Task.isCancelled, epoch == self.patchApplyEpoch else { return }
+                        _ = await self.enqueueNative(.hostUpdate("bots-sync-progress", route)).value
+                    }
+                    guard !Task.isCancelled, epoch == self.patchApplyEpoch else { return }
+                    _ = await self.enqueueNative(.resolveEffect(effect.id, resolution.succeeded, resolution.message)).value
+                }
+                continue
             }
 
             Self.log.notice("effect start id=\(effect.id, privacy: .public) kind=\(effect.kind, privacy: .public)")
