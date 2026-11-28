@@ -221,7 +221,6 @@ internal val logseqAppIcons: Map<String, ImageVector> = mapOf(
     "tab-tasks-selected" to Icons.Filled.CheckBox,
     "tasks-today" to Icons.Outlined.WbSunny,
     "tab-notifications" to Icons.Outlined.Notifications,
-    "tab-bots" to Icons.Outlined.Terminal,
     "bots-thread" to Icons.Outlined.ChatBubbleOutline,
     "bots-sessions" to Icons.Outlined.List,
     "bots-next" to Icons.AutoMirrored.Filled.KeyboardArrowRight,

@@ -197,4 +197,15 @@ internal val masterIcons: Map<String, ImageVector> = mapOf(
             strokeLineCap = StrokeCap.Butt, strokeLineJoin = StrokeJoin.Miter, pathFillType = PathFillType.NonZero,
         )
     }.build(),
+    "tab-bots" to ImageVector.Builder(
+        name = "tab_bots", defaultWidth = 24.dp, defaultHeight = 24.dp,
+        viewportWidth = 24.0f, viewportHeight = 24.0f,
+    ).apply {
+        addPath(
+            pathData = PathParser().parsePathString("M11 5.5V4.6a1 1 0 0 1 2 0v.9h3.4a5.15 5.15 0 0 1 5.05 4.15c.65.16 1.05.77 1.05 1.45v3.1c0 .69-.44 1.27-1.08 1.45a5.2 5.2 0 0 1-5.12 4.3H7.7a5.2 5.2 0 0 1-5.12-4.3A1.5 1.5 0 0 1 1.5 14.2v-3.1c0-.68.4-1.29 1.05-1.45A5.15 5.15 0 0 1 7.6 5.5H11ZM9 10.65c-.63 0-1.15.51-1.15 1.15v1.35a1.15 1.15 0 0 0 2.3 0V11.8c0-.64-.52-1.15-1.15-1.15Zm6 0c-.63 0-1.15.51-1.15 1.15v1.35a1.15 1.15 0 0 0 2.3 0V11.8c0-.64-.52-1.15-1.15-1.15Z").toNodes(),
+            fill = SolidColor(Color.Black), fillAlpha = 1.0f,
+            stroke = null, strokeAlpha = 1.0f, strokeLineWidth = 1.0f,
+            strokeLineCap = StrokeCap.Butt, strokeLineJoin = StrokeJoin.Miter, pathFillType = PathFillType.EvenOdd,
+        )
+    }.build(),
 )

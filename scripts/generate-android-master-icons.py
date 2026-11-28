@@ -9,7 +9,7 @@ repo = Path(__file__).resolve().parent.parent
 assets = repo / 'apple/Sources/Logseq/Resources/Icons.xcassets'
 names = ['task_backlog', 'task_todo', 'task_doing', 'task_review', 'task_done',
          'task_canceled', 'priority_urgent', 'priority_high', 'priority_medium',
-         'priority_low', 'outliner_bullet', 'outliner_bullet_closed']
+         'priority_low', 'outliner_bullet', 'outliner_bullet_closed', 'tab_bots']
 
 def path_data(node, attrs):
     kind = node.tag.rsplit('}', 1)[-1]
