@@ -21,6 +21,8 @@ type t =
   { page : page
   ; view : J.t
   ; drafts : (string * string) list
+  ; optimistic : (string * J.t list) list
+  ; last_send : (string * string) option
   ; bot_references : (string * (string * string)) list
   ; shareable_graphs : string list
   ; shared_graph : string option
@@ -44,7 +46,7 @@ type action =
   | Save_bot of string option | Edit_automation of J.t | Rule_field of string * J.t
   | Save_automation | Toggle_automation of string * bool
 
-let empty = {page = Index; view = `Null; drafts = []; bot_references = []; shareable_graphs = []; shared_graph = None; attachments = []; active_mention = None; focus_request = false;
+let empty = {page = Index; view = `Null; drafts = []; optimistic = []; last_send = None; bot_references = []; shareable_graphs = []; shared_graph = None; attachments = []; active_mention = None; focus_request = false;
   name = ""; repository = ""; graph_target = ""; default_agent = ""; proposal = `Null;
   thread_origin = None}
 
@@ -195,7 +197,26 @@ let mentions state =
   let agent, _, body = recipients state in
   agent, body
 
-let messages state = Data.list "messages" state.view @ Data.list "pending" state.view
+let unsent state = Option.value ~default:[] (List.assoc_opt (route state.page) state.optimistic)
+
+let latest_send state =
+  match state.last_send with
+  | Some (key, id) when key = route state.page -> Some id
+  | _ -> None
+
+let messages state =
+  let saved = Data.list "messages" state.view in
+  let queued = Data.list "pending" state.view in
+  match queued, unsent state with
+  | [], [] -> saved
+  | queued, local ->
+    let seen = Hashtbl.create (List.length saved) in
+    let add message =
+      let id = Data.string "id" message in
+      if Hashtbl.mem seen id then false
+      else (Hashtbl.add seen id (); true) in
+    List.iter (fun message -> ignore (add message)) saved;
+    saved @ List.filter add (queued @ List.rev local)
 let seq message = match Data.field "seq" message with
   | `String raw -> Int64.of_string_opt raw | `Int n -> Some (Int64.of_int n) | _ -> None
 
@@ -206,15 +227,28 @@ let merge_messages fresh prior =
   Hashtbl.to_seq_values seen |> List.of_seq |> List.sort (fun a b -> compare (seq a) (seq b))
 
 let receive state json =
-  if Data.string "route" json <> route state.page then state
+  let key = Data.string "route" json in
+  let acknowledged = Data.list "acknowledged" json in
+  let state = match List.assoc_opt key state.optimistic with
+    | None -> state
+    | Some entries ->
+      let settled = Hashtbl.create (List.length entries) in
+      let settle message = Hashtbl.replace settled (Data.string "id" message) () in
+      List.iter (fun key -> List.iter settle (Data.list key json)) ["messages"; "pending"; "rejected"];
+      List.iter settle acknowledged;
+      let pending = List.filter (fun message -> not (Hashtbl.mem settled (Data.string "id" message))) entries in
+      if pending = entries then state else
+        let routes = List.remove_assoc key state.optimistic in
+        {state with optimistic = if pending = [] then routes else (key, pending) :: routes} in
+  if key <> route state.page then state
   else
     let current = if Data.field "unavailable" json = `Bool true then `Null else state.view in
-    let fields = match json with `Assoc fields -> fields | _ -> [] in
+    let fields = match json with `Assoc fields -> List.remove_assoc "acknowledged" fields | _ -> [] in
     let prior = Data.list "messages" current in
     let older = Data.field "older" json = `Bool true in
     let old_more = Data.field "more" current in
     let more = if older || prior = [] then Data.field "more" json else old_more in
-    let merged = match Data.list "messages" json with
+    let merged = match acknowledged @ Data.list "messages" json with
       | [] -> prior
       | fresh -> merge_messages fresh prior in
     let previous = match current with `Assoc fields -> fields | _ -> [] in
@@ -319,17 +353,28 @@ let update state action =
     else stay (set_attachments state key (items @ [attachment]))
   | Remove_attachment uuid ->
     stay (set_attachments state (route state.page) (List.filter (fun item -> item.uuid <> uuid) (attachments state)))
-  | Send ->
+  | Send when (match state.page with Main _ | Thread _ -> true | _ -> false) ->
     let agent, target, body = recipients state in
     let files = attachments state in
     if body = "" && files = [] then stay state
     else
       let key = route state.page in
+      let id = Session_types.fresh_squuid () in
+      let handoff = Option.fold ~none:`Null ~some:(fun name -> `Assoc ["target_name", `String name])
+        (Option.bind target (fun id -> List.assoc_opt id (mentionable_bots state))) in
+      let pending = `Assoc ["id", `String id; "author", `String "user"; "pending", `Bool true;
+        "body", `String body; "handoff", handoff;
+        "attachments", `List (List.map (fun file -> `Assoc ["name", `String file.title]) files)] in
+      let optimistic = (key, pending :: unsent state) :: List.remove_assoc key state.optimistic in
       let updated = set_attachments (set_draft "" {state with active_mention = None;
+        optimistic; last_send = Some (key, id);
         bot_references = List.remove_assoc key state.bot_references}) key [] in
-      let body = `Assoc ["targetBotId", Option.fold ~none:`Null ~some:(fun id -> `String id) target; "body", `String body; "attachments", `List (List.map attachment_json files);
+      let body = `Assoc ["id", `String id;
+        "targetBotId", Option.fold ~none:`Null ~some:(fun id -> `String id) target;
+        "body", `String body; "attachments", `List (List.map attachment_json files);
         "agent", Option.fold ~none:`Null ~some:(fun name -> `String name) agent] in
-      updated, request ~path:(route state.page ^ "/messages") ~method_:"POST" ~body state
+      updated, request ~path:(key ^ "/messages") ~method_:"POST" ~body state
+  | Send -> stay state
   | Name name -> stay {state with name}
   | Repository repository -> stay {state with repository}
   | Graph_target graph_target -> stay {state with graph_target}

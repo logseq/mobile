@@ -141,7 +141,7 @@ let run ?(upload = Http.upload_file) db ~(config : Api.api_config) ~send ~fresh_
       let id = match field "id" supplied with
         | `String id when Ref_text.is_uuid id -> id | _ -> fresh_id () in
       let data = to_json (`Assoc (("id", `String id) :: List.remove_assoc "id" fields)) in
-      exec db "INSERT INTO bot_outbox VALUES(?,?,?,?,?)"
+      exec db "INSERT INTO bot_outbox VALUES(?,?,?,?,?) ON CONFLICT(scope,id) DO NOTHING"
         [text scope; text id; text method_; text path; text data]);
     let call method_ path body =
       match send (Api.request config method_ path body) with
@@ -187,14 +187,18 @@ let run ?(upload = Http.upload_file) db ~(config : Api.api_config) ~send ~fresh_
         let fields = match latest with `Assoc fields -> fields | _ -> [] in
         Ok (to_json (`Assoc (("attachments", `List (List.rev uploaded)) :: List.remove_assoc "attachments" fields))) in
     let error = ref None in
-    let rejected = ref [] in
+    let rejected = ref [] and acknowledged = ref [] in
     let rec flush = function
       | [] -> ()
       | (id, method_, path, body) :: rest ->
         (match Result.bind (upload_attachments path body) (fun body -> call method_ path (Some body)) with
         | Ok result ->
           cache db scope result;
-          (match field "message" result with `Assoc _ as message -> save_message db scope message | _ -> ());
+          (match field "message" result with
+          | `Assoc _ as message ->
+            save_message db scope message;
+            if path = route ^ "/messages" then acknowledged := message :: !acknowledged
+          | _ -> ());
           exec db "DELETE FROM bot_outbox WHERE scope=? AND id=?" [text scope; text id];
           flush rest
         | Error (true, message) ->
@@ -246,5 +250,6 @@ let run ?(upload = Http.upload_file) db ~(config : Api.api_config) ~send ~fresh_
       else None) in
     Ok (`Assoc (["route", `String route; "older", `Bool (before <> None);
       "pending", `List drafts; "rejected", `List (List.rev !rejected);
+      "acknowledged", `List (List.rev !acknowledged);
       "feedback", Option.fold ~none:`Null ~some:(fun value -> `String value) !error] @ state))
   | Some _ -> Error "Invalid Bots request"

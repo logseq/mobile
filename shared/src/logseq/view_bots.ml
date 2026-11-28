@@ -211,20 +211,32 @@ let older source send bots =
 let coalesced_view bots =
   Signal.cutoff (fun a b -> a.Chat.view = b.Chat.view) bots
 
-let message_list rows mount =
+let message_view bots =
+  Signal.cutoff (fun a b -> a.Chat.view = b.Chat.view && Chat.unsent a = Chat.unsent b) bots
+
+let message_list bots rows render =
   let message_id (message, _) = Data.string "id" message in
-  let at_end = ref true and target = ref None in
+  let at_end = ref true and target = ref None and last_send = ref None in
   let rows = Signal.cutoff (=) rows in
-  let newest = Signal.map (fun rows ->
+  let sent = Signal.map Chat.latest_send bots |> Signal.cutoff (=) in
+  let newest = Signal.map2 (fun rows sent ->
+    if sent <> !last_send && Option.fold ~none:false
+        ~some:(fun id -> List.exists (fun row -> message_id row = id) rows) sent then (
+      last_send := sent;
+      at_end := true);
     if !at_end || !target = None then
       target := List.fold_left (fun _ row -> Some (message_id row)) None rows;
-    !target) rows |> Signal.cutoff (=) in
-  column ~grow:1.0 ~cross:`stretch [
-    View_rows.windowed_keyed ~scroll_target:newest ~native_scroll_anchor:`bottom ~identifier:"bots.messages" ~item_extent:80 ~style:`plain
-      ~on_visible_range:(fun _ last -> at_end := last >= List.length (Signal.sample rows) - 1)
-      ~source:rows ~key:message_id ~cmp:String.compare
-      ~mount:(fun row -> list_item ~key:(message_id (Signal.sample row)) ~padding:0 ~separator:`hidden [reactive mount row]) ();
-  ]
+    !target) rows sent |> Signal.cutoff (=) in
+  let window = View_rows.windowed_keyed ~scroll_target:newest ~native_scroll_anchor:`bottom
+    ~identifier:"bots.messages" ~item_extent:80 ~style:`plain
+    ~on_visible_range:(fun _ last -> at_end := last >= List.length (Signal.sample rows) - 1)
+    ~source:rows ~key:message_id ~cmp:String.compare
+    ~mount:(fun row -> list_item ~key:(message_id (Signal.sample row)) ~padding:0 ~separator:`hidden [reactive render row]) () in
+  custom (fun context parent ->
+    let content = match Lui_ui.host context with
+      | KotlinHost -> virtual_list ~grow:1.0 ~accessibility_identifier:"bots.message-scroll" [window]
+      | _ -> column ~grow:1.0 ~cross:`stretch [window] in
+    mount context ?parent content)
 
 let composer source send bots ~thread =
   let send_title = Signal.map (fun state ->
@@ -286,7 +298,7 @@ let conversation source send bots bot_id =
     let by_root = Hashtbl.create (List.length sessions) in
     List.iter (fun session -> Hashtbl.replace by_root (Data.string "root_message_id" session) session) sessions;
     List.map (fun message -> message, Hashtbl.find_opt by_root (Data.string "id" message))
-      (Chat.messages state)) (coalesced_view bots) in
+      (Chat.messages state)) (message_view bots) in
   let name = Signal.map (fun state -> Data.string "name" (Chat.selected_bot state)) bots
     |> Signal.cutoff String.equal in
   let needs_you = Signal.map (fun state ->
@@ -308,7 +320,7 @@ let conversation source send bots bot_id =
     overlay ~grow:1.0 ~alignment:`bottom_leading [
       column ~grow:1.0 ~gap:8 [
         older source send bots;
-        message_list rows (fun (message, session) ->
+        message_list bots rows (fun (message, session) ->
           column [
             message_card source ~thread:false message;
             (match session with None -> box [] | Some row -> session_row ~compact:true source send bot_id row);
@@ -338,7 +350,7 @@ let thread source send bots =
   let rows = Signal.map (fun state ->
     let root = Data.field "root" state.Chat.view in
     let entries = if root = `Null then Chat.messages state else root :: Chat.messages state in
-    List.map (fun message -> message, ()) entries) (coalesced_view bots) in
+    List.map (fun message -> message, ()) entries) (message_view bots) in
   let header = Signal.map Chat.session bots |> Signal.cutoff (=) in
   column ~grow:1.0 ~gap:8 [
     reactive (fun session ->
@@ -360,7 +372,7 @@ let thread source send bots =
     overlay ~grow:1.0 ~alignment:`bottom_leading [
       column ~grow:1.0 ~gap:8 [
         older source send bots;
-        message_list rows (fun (message, ()) -> message_card source ~thread:true message);
+        message_list bots rows (fun (message, ()) -> message_card source ~thread:true message);
       ];
       mention_picker source send bots;
     ];

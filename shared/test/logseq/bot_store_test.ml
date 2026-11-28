@@ -114,8 +114,36 @@ let bot_handoff_and_attachment_are_bound_to_the_draft () =
   let back = apply thread Back in
   check_eq [file] (attachments back)
 
+let sending_is_visible_before_acknowledgement () =
+  let main = open_bot () in
+  let modeled, _ = Bot_chat.update main (Bot_chat.Draft "@Codex Check the layout") in
+  let sent, wire = Bot_chat.update modeled Bot_chat.Send in
+  let payload = Option.get wire |> Yojson.Basic.from_string |> Bot_store.field "body" in
+  let id = Bot_store.string "id" payload in
+  check (Ref_text.is_uuid id);
+  check_eq (Some id) (Bot_chat.latest_send sent);
+  check_eq "" (Bot_chat.draft sent);
+  let optimistic = match Bot_chat.messages sent with [row] -> row | _ -> Alcotest.fail "Expected an immediate message" in
+  check_eq id (Bot_store.string "id" optimistic);
+  check_eq "Check the layout" (Bot_store.string "body" optimistic);
+  check_eq (`Bool true) (Bot_store.field "pending" optimistic);
+  let receive state fields =
+    fst (Bot_chat.update state (Bot_chat.Receive (`Assoc (("route", `String route) :: fields)))) in
+  let stale = receive sent ["pending", `List []; "messages", `List []] in
+  check_eq [optimistic] (Bot_chat.messages stale);
+  let persisted = receive stale ["pending", `List [optimistic]] in
+  check_eq [optimistic] (Bot_chat.messages persisted);
+  let confirmed = `Assoc ["id", `String id; "author", `String "user";
+    "body", `String "Check the layout"; "seq", `String "91"] in
+  let ack = receive persisted ["pending", `List [optimistic]; "acknowledged", `List [confirmed]] in
+  check_eq [confirmed] (Bot_chat.messages ack);
+  let thread, _ = Bot_chat.update sent (Bot_chat.Open (Bot_chat.Thread (bot_id, message_id))) in
+  check_eq [] (Bot_chat.messages thread);
+  check_eq None (Bot_chat.latest_send thread)
+
 let cases =
   [case "offline send replays the same ID after reopening SQLite" offline_send_survives_reopen;
    case "dispatch uses an explicit Agent and thread replies use their session" dispatch_requires_an_explicit_agent;
    case "selecting an inline Agent replaces the query and preserves the rest of the draft" mentions_complete_inside_the_draft;
-   case "handoffs and late attachment results stay in their own draft" bot_handoff_and_attachment_are_bound_to_the_draft]
+   case "handoffs and late attachment results stay in their own draft" bot_handoff_and_attachment_are_bound_to_the_draft;
+   case "outgoing messages render immediately and reconcile with a stable ID" sending_is_visible_before_acknowledgement]
