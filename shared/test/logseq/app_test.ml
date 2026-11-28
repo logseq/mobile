@@ -4972,10 +4972,10 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   select_tab 1;
   check_eq (App.model application).destination Model.BotsDestination;
   let bot_chrome = native_bottom_chrome renderer application in
-  let bot_tabs = descendant_with_identifier renderer bot_chrome "group.bottom.tabs" in
-  check (selected (descendant_with_identifier renderer bot_tabs "tab.bottom.bots"));
-  check (descendant_with_identifier renderer bot_tabs "button.search" <> -1);
-  check_eq (descendant_with_identifier renderer bot_chrome "button.composer.expand") (-1);
+  check (selected (tab "bots"));
+  check_eq (descendant_with_identifier renderer bot_chrome "group.bottom.tabs") tabs;
+  check_eq (descendant_with_identifier renderer bot_chrome "group.bottom.actions") actions;
+  check_eq (children renderer actions) [search; capture];
   check (descendant_with_identifier renderer root "bots.screen" <> -1);
   check_eq (tab "flashcards") (-1);
   send application Model.OpenSidebar;
@@ -4985,8 +4985,7 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   check_eq (App.model application).destination Model.FlashcardsDestination;
   check_eq (inbox ()) retained_inbox;
   check (not (selected retained_inbox));
-  check_eq (extension_property application (current_strip ()) "selected-index") (Some (Lui_protocol.IntValue (-1)));
-  let capture = descendant_with_identifier renderer (native_bottom_chrome renderer application) "button.composer.expand" in
+  check_eq (extension_property application strip "selected-index") (Some (Lui_protocol.IntValue (-1)));
   dispatch application (Lui_protocol.Press capture);
   flush application;
   check (App.model application).composer_expanded;

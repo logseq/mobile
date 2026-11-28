@@ -77,7 +77,7 @@ enum LGIconPolicy {
             "tab-home": .systemName("house"),
             "tab-home-selected": .systemName("house.fill"),
             "tab-notifications": .systemName("bell"),
-            "tab-bots": .systemName("cpu"),
+            "tab-bots": .systemName("terminal"),
             "bots-thread": .systemName("bubble.left.and.bubble.right"),
             "bots-sessions": .systemName("list.bullet"),
             "bots-next": .systemName("chevron.forward"),
