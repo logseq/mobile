@@ -45,10 +45,11 @@ summaries, loaded messages and a durable outbox. [Mobile architecture](../../COD
 | --- | --- |
 | `bots` | Owner, name, default Agent and optional graph reference |
 | `sessions` | Bot, root message, primary Agent and thread status |
-| `bot_thread_agents` | Upstream session identity and continuation cursor per Agent in a thread |
+| `bot_thread_agents` | Upstream session identity, continuation cursor and local device per Agent in a thread |
 | `messages` | Bot, optional Session, author, content and ordered ID |
 | `bot_runs` | Durable execution and continuation jobs, with results and failure state |
 | `bot_automations` | Bot, recurrence, time zone, task and Agent override |
+| `bot_runners` | Paired device, account, enabled Agents, workspace selection and last contact |
 
 Use a nullable Session ID for main-conversation messages. Reference the root
 message from the Session so a task has one original message. Store and paginate
@@ -72,24 +73,46 @@ The worker runs independently of the phone. Use Devin Cloud's Normal mode.
 Local development uses a deterministic mock provider. Live Devin requires
 an explicit server setting, a per-session ACU limit and a rolling 24-hour
 limit on starts. Scheduled Devin usage is a separate opt-in.
-Route local Agents to an explicitly configured runner and working directory.
-Codex and Pi can use local command adapters. Circle can use a configured
-adapter with the same input and output contract. Keep provider credentials in
-server or runner configuration. An unavailable Agent leaves a visible status
-and a recoverable task. Apply Graph writes through an authorized Logseq
-client, scoped to the linked graph and block. Write useful outcomes and links
-back to the graph. Graph Sync retains its existing encryption boundary.
+Apply Graph writes through an authorized Logseq client, scoped to the linked
+graph and block. Write outcomes and links back to the graph. Graph Sync retains
+its existing encryption boundary.
 [Graph sync](001-real-time-graph-sync.md)
 
 ## Local delivery
 
-The local Node server is a development setup. The intended product design routes
-cloud work through the hosted Logseq service. Users who enable Pi or Codex can
-pair a desktop Logseq installation to accept assignments in the background.
-Local tasks stay queued while that desktop is offline.
+The Bots worker owns the PostgreSQL queue, workflow order and thread replies.
+The local Node adapter already runs Codex and Pi via command adapters for
+development. Cursor and Devin use cloud APIs. Production can use the same queue
+contract when the hosted Logseq service exposes the Bots routes.
 
-Develop against the Node adapter from the local Logseq mainline and an isolated
-PostgreSQL database. Keep server and mobile commits local. Validate account
+In Desktop Logseq, **Settings → AI → Local Bot Agents** pairs a device through
+its signed-in account. The user selects a workspace and opts in to Codex and
+Pi. The app starts the listener in the background and restores the pairing
+from encrypted local storage. A headless device can pair with
+`logseq agent runner pair` and start the same listener with
+`logseq agent runner listen`. The
+listener uses a revocable device credential and requests assignments from
+Logseq using an outbound connection. The first implementation uses bounded
+polling. The existing DB worker and Agent Bridge keep serving graph access and
+graph events. The Bots queue and thread replies stay in PostgreSQL.
+
+Device capabilities include the enabled Agents and the configured repository, if
+any. Local steps stay queued when an eligible device is offline. The server
+grants a short, exclusive lease and the listener acknowledges start before
+running the command. It renews the lease while working and submits its output
+with the same lease. An unstarted lease can be reclaimed. An expired execution
+requires attention because the command may already have changed the workspace.
+Replies that continue a local Agent session return to the same device.
+Completion and the next workflow step are recorded in one database transaction.
+Paired work can be stopped by revoking the device through its account or by
+unpairing on the device.
+
+Paired devices accept work initiated by their own Logseq account in the first
+version. Shared-graph members can still use providers explicitly enabled for
+them by the server. Keep credentials and filesystem paths on the execution host.
+
+Develop against the Node adapter on `feat/bot` and an isolated PostgreSQL
+database. Keep server and mobile commits local. Validate account
 isolation, duplicate delivery, bounded message paging, worker replies,
 continuation, Automation occurrences, mobile layout and offline outbox replay.
 Use a deterministic execution adapter for repeatable checks.
