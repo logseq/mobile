@@ -340,12 +340,17 @@ internal fun OutlinerEditor(
     val density = LocalDensity.current
     var dismissalEmitted by remember { mutableStateOf(false) }
     val dismissalSignal = LocalImeDismissalSignal.current
+    fun emitImeDismissed() {
+        cancelDebounce()
+        publishInput(value, composing = false)
+        context.emit("ime-dismissed")
+    }
     LaunchedEffect(focusEnabled, dismissalSignal) {
         if (!focusEnabled || dismissalSignal == null) return@LaunchedEffect
         dismissalSignal.started.collect {
             if (!dismissalEmitted) {
                 dismissalEmitted = true
-                context.emit("ime-dismissed")
+                emitImeDismissed()
             }
         }
     }
@@ -372,7 +377,7 @@ internal fun OutlinerEditor(
                     shownBottom = 0
                     if (!dismissalEmitted) {
                         dismissalEmitted = true
-                        context.emit("ime-dismissed")
+                        emitImeDismissed()
                     }
                 }
             }
