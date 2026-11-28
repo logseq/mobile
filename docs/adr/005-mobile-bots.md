@@ -59,6 +59,9 @@ provider's creation result is ambiguous, surface an actionable state and
 reconcile the upstream result before any retry.
 
 The worker runs independently of the phone. Use Devin Cloud's Normal mode.
+Local development uses a deterministic mock provider. Live Devin requires
+an explicit server setting, a per-session ACU limit and a rolling 24-hour
+limit on starts. Scheduled Devin usage is a separate opt-in.
 Route local Agents to an explicitly configured runner and working directory.
 Codex and Pi can use local command adapters. Circle can use a configured
 adapter with the same input and output contract. Keep provider credentials in

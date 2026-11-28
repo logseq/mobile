@@ -26,6 +26,7 @@ val windowed_keyed :
   ?scroll_target:string option Signal.signal ->
   ?first_section:int Signal.signal ->
   ?reset_key:string Signal.signal -> ?window_size:int -> ?identifier:string -> ?item_extent:int ->
+  ?style:Lui_elements.list_style ->
   ?on_visible_range:(int -> int -> unit) -> ?on_window:('a list -> unit) ->
   ?on_prefetch:('a list -> unit) -> ?is_pinned:('a -> bool) ->
   ?item_equal:('a -> 'a -> bool) ->

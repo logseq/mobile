@@ -185,17 +185,23 @@ let search_screen model_source send : t =
 let uses_ios_native_header context =
   Lui_ui.platform context = IOS && Lui_ui.host context = SwiftUIHost
 
-let bottom_tab_row ~android ~tab_width ~action_width model_source send : t =
+let bottom_tab_row ~android ~bots_dock ~tab_width ~action_width model_source send : t =
   let current = Signal.sample model_source in
   let cell = 50 and inset = 4 in
   let destinations = [
-    Model.JournalsDestination, "Home", "home", "tab-home", "tab-home-selected", Model.ShowJournals;
-    Model.TasksDestination, "Tasks", "tasks", "tab-tasks", "tab-tasks-selected", Model.ShowTasks;
-    Model.NotificationsDestination, "Notifications", "notifications", "tab-notifications", "tab-notifications", Model.ShowNotifications;
+    Some Model.JournalsDestination, "Home", "home", "tab-home", "tab-home-selected", Model.ShowJournals;
+    Some Model.BotsDestination, "Bots", "bots", "tab-bots", "tab-bots", Model.ShowBots;
+  ] @ (if bots_dock then [
+    None, "Search", "search", "bottom-search", "bottom-search", Model.OpenSearch;
+  ] else []) @ [
+    Some Model.TasksDestination, "Tasks", "tasks", "tab-tasks", "tab-tasks-selected", Model.ShowTasks;
+    Some Model.NotificationsDestination, "Notifications", "notifications", "tab-notifications", "tab-notifications", Model.ShowNotifications;
   ] in
   let tab_label current name title =
     if name = "notifications" then View_collaboration.notification_label current else View_base.tr current title in
-  let navigate destination action =
+  let navigate destination action = match destination with
+    | None -> ignore (send action)
+    | Some destination ->
     let current : Model.logseq_model = Signal.sample model_source in
     let home = destination = Model.JournalsDestination in
     let at_root = current.destination = destination && current.app_navigation_path = [] in
@@ -204,7 +210,7 @@ let bottom_tab_row ~android ~tab_width ~action_width model_source send : t =
     else if not at_root || (home && current.selected_page <> None)
     then ignore (send action) in
   let tab (destination, title, name, image, selected_image, action) =
-    let selected = Signal.map (fun (current : Model.logseq_model) -> current.destination = destination) model_source in
+    let selected = Signal.map (fun (current : Model.logseq_model) -> Some current.destination = destination) model_source in
     let label current = tab_label current name title in
     let foreground = Signal.map (fun selected -> if selected then "link" else "foreground") selected in
     let on_press _ = navigate destination action in
@@ -222,7 +228,7 @@ let bottom_tab_row ~android ~tab_width ~action_width model_source send : t =
       ~selected_signal:selected ~variant:`ghost ~size:`icon ~width:tab_width ~height:cell
       ~style_class:"system-toolbar-icon"
       ~foreground_signal:foreground
-      ~label:(label current) ~accessibility_identifier:("tab.bottom." ^ name)
+      ~label:(label current) ~accessibility_identifier:(if name = "search" then "button.search" else "tab.bottom." ^ name)
       ~on_press
       []) in
   let action ?on_long_press image title identifier event =
@@ -237,7 +243,7 @@ let bottom_tab_row ~android ~tab_width ~action_width model_source send : t =
   let tabs = custom (fun context parent ->
     let node = Lui_ui.extension context "bottom-tab-strip" in
     let selected = Signal.cutoff Int.equal (Signal.map (fun (current : Model.logseq_model) ->
-      List.find_index (fun (destination, _, _, _, _, _) -> current.destination = destination)
+      List.find_index (fun (destination, _, _, _, _, _) -> Some current.destination = destination)
         destinations |> Option.value ~default:(-1)) model_source) in
     let items_source = Signal.cutoff (fun (a : Model.logseq_model) (b : Model.logseq_model) ->
       a == b
@@ -275,20 +281,22 @@ let bottom_tab_row ~android ~tab_width ~action_width model_source send : t =
   let actions =
     if android then box ~background:"glass" ~border_width:1 ~border_color:"border" ~corner_radius:29 [actions]
     else View_base.with_liquid_glass "bottom-actions" actions in
-  row ~grow:1.0 ~gap:8 ~main:`space_between ~cross:`center
-    ~accessibility_identifier:"row.bottom.capture" [tabs; actions]
+  row ~grow:1.0 ~gap:8 ~main:(if bots_dock then `center else `space_between) ~cross:`center
+    ~accessibility_identifier:"row.bottom.capture" (if bots_dock then [tabs] else [tabs; actions])
 
 let capture_and_search_row (context : Lui_ui.ui_context) model_source send : t =
   let android = Lui_ui.host context = KotlinHost in
   if android || uses_ios_native_header context then
     let layout = Signal.map (fun (current : Model.logseq_model) ->
       let viewport = if current.viewport_width > 0 then current.viewport_width else 390 in
-      let count = 3 in
+      let bots_dock = current.destination = BotsDestination in
+      let count = 4 in
       let action_width = max 44 (min 50 ((viewport - 32 - 8 - 16 - count * 44) / 2)) in
       let tab_width = max 40 (min 58 ((viewport - 32 - 8 - 16 - 2 * action_width) / count)) in
-      tab_width, action_width) model_source in
-    reactive (fun (tab_width, action_width) ->
-      bottom_tab_row ~android ~tab_width ~action_width model_source send) layout
+      let tab_width = if bots_dock then max 44 (min 76 ((viewport - 40) / 5)) else tab_width in
+      bots_dock, tab_width, action_width) model_source in
+    reactive (fun (bots_dock, tab_width, action_width) ->
+      bottom_tab_row ~android ~bots_dock ~tab_width ~action_width model_source send) layout
   else
     row ~grow:1.0 ~gap:10 ~cross:`center
       ~accessibility_identifier:"row.bottom.capture"
@@ -616,6 +624,8 @@ let logseq_main_view (context : Lui_ui.ui_context) model_source send : t
            ~uses_header:(uses_ios_native_header context || Lui_ui.host context = KotlinHost)
            ~bottom_spacing:(if uses_ios_native_header context then 64 else 88)
            shell_model send);
+      if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> current.destination = Model.BotsDestination) shell_model)
+        (View_bots.screen ~bottom_spacing:76 shell_model send);
       View_collaboration.notification_screen
         ~bottom_spacing:(if uses_ios_native_header context then 72 else 80) shell_model send;
       if_
@@ -1079,8 +1089,11 @@ let android_main_header context model_source send =
       ~render:(fun menu add ->
         header [column ~grow:1.0 ~cross:`center [menu]; android_header_action add]) in
   if_ ~test:(Signal.map (fun (current : Model.logseq_model) -> not current.search_open) model_source)
-    (dyn (fun flashcards -> if flashcards then flashcard_header else default_header)
-       (Signal.map View_base.flashcards_destination_ model_source))
+    (dyn (function `Bots -> box [] | `Flashcards -> flashcard_header | `Standard -> default_header)
+       (Signal.map (fun (current : Model.logseq_model) ->
+         if current.destination = BotsDestination then `Bots
+         else if View_base.flashcards_destination_ current then `Flashcards
+         else `Standard) model_source))
 
 let native_navigation_view (_context : Lui_ui.ui_context) model_source send
     : t =
@@ -1118,6 +1131,8 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
      (Signal.map View_base.int_wire_value depth_source);
    Lui_ui.extension_property_signal context node "back-depth"
      (Signal.map View_base.int_wire_value back_depth_source);
+   Lui_ui.extension_property_signal context node "content-header"
+     (Signal.map (fun (current : Model.logseq_model) -> BoolValue (current.destination = BotsDestination)) shell_model);
    Lui_ui.extension_property_signal context node
      "bottom-occupies-layout-space"
      (Signal.map View_base.bool_wire_value bottom_occupies_source);

@@ -141,7 +141,7 @@ let paged_keyed ~identifier ~item_extent ~count ~offset ~on_visible_range ~sourc
         offset source (Signal.value viewport)) ~key ~cmp ~mount]))
 
 let windowed_keyed ?scroll_target ?first_section ?reset_key
-    ?(window_size = 32) ?(identifier = "outliner.window") ?(item_extent = 32)
+    ?(window_size = 32) ?(identifier = "outliner.window") ?(item_extent = 32) ?style
     ?(on_visible_range = fun _ _ -> ()) ?(on_window = fun _ -> ())
     ?(on_prefetch = fun _ -> ()) ?(is_pinned = fun _ -> false)
     ?(item_equal = fun a b -> a == b || a = b) ~source ~key ~cmp ~mount () : Lui_elements.t =
@@ -218,7 +218,7 @@ let windowed_keyed ?scroll_target ?first_section ?reset_key
     ignore (Signal.own context.ui_scope (Signal.observe adjacent on_prefetch));
     let content =
       Lui_elements.if_ ~test:(own (Signal.cutoff Bool.equal (own (Signal.map (fun items -> Array.length items > 0) items))))
-        (Lui_elements.list ~accessibility_identifier:identifier
+        (Lui_elements.list ?style ~accessibility_identifier:identifier
           ~data_attrs_signal:metadata ~track_visible_range:true
           ~on_visible_range:(function
             | Lui_elements.Range { first; last } ->

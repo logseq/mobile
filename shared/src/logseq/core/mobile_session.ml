@@ -249,6 +249,19 @@ let call (host : mobile_session) request =
     Rpc_wire.call (fun () -> Rpc.snapshot_visible session)
       (fun action payload ->
         match action with
+        | "executeEffect" ->
+          (match Core_effect.request ~now:Api.epoch_ms ~fresh_id:Types.fresh_squuid payload with
+          | Ok ("bots", Some command) ->
+            (match !(host.database.catalog), (Types.state session).config with
+            | Some db, Some config ->
+              let args = Yojson.Basic.from_string command in
+              (match Bot_store.run db ~config ~send:Http.send ~fresh_id:Types.fresh_squuid args with
+              | Ok view -> Rpc_wire.success (`Assoc ["bots", view])
+              | Error error -> Rpc_wire.success (`Assoc ["bots", `Assoc
+                  ["route", `String (Bot_store.string "route" args); "feedback", `String error]]))
+            | _ -> Rpc_wire.failure "not_configured" "Open Logseq before using Bots")
+          | Ok (action, payload) -> Rpc.dispatch session action payload
+          | Error message -> Rpc_wire.failure "invalid_effect" message)
         | "shortcutGraphs" | "captureLocalShortcutText" | "captureLocalShortcutPhoto" ->
           shortcut_action host action payload
         | _ -> Rpc.dispatch session action payload)

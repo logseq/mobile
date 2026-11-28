@@ -856,6 +856,7 @@ let outliner_scroll_identity (current : Model.logseq_model) =
 
 let main_title (current : Model.logseq_model) =
   if tasks_destination_ current then tr current "Tasks"
+  else if current.destination = BotsDestination then tr current "Bots"
   else if current.destination = NotificationsDestination && current.app_navigation_path = [] then tr current "Notifications"
   else if current.destination = FlashcardsDestination then tr current "Flashcards"
   else if current.destination = GraphsDestination then tr current "Graphs"

@@ -11,6 +11,7 @@ let () =
       "graph_sqlite", Graph_sqlite_test.cases;
       "http", Http_test.cases;
       "api", Api_test.cases;
+      "bot_store", Bot_store_test.cases;
       "sync_tx", Sync_tx_test.cases;
       "graph_bootstrap", Graph_bootstrap_test.cases;
       "platform_crypto", Platform_crypto_test.cases;

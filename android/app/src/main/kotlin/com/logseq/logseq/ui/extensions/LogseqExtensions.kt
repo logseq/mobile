@@ -86,6 +86,7 @@ private const val NAVIGATION_FINGERPRINT =
     "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin," +
         "ios/swiftui|standard-children:1|children:|" +
         "properties:10:back-depth:int:required:none," +
+        "14:content-header:bool:optional:none," +
         "16:selection-active:bool:optional:none," +
         "26:composer-dismissal-enabled:bool:required:none," +
         "28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none," +
@@ -348,6 +349,7 @@ fun logseqExtensionRegistry(
             LuiExtensionProperty("composer-dismissal-enabled", LuiExtensionValueKind.BOOLEAN),
             LuiExtensionProperty("bottom-occupies-layout-space", LuiExtensionValueKind.BOOLEAN),
             LuiExtensionProperty("back-depth", LuiExtensionValueKind.INTEGER),
+            LuiExtensionProperty("content-header", LuiExtensionValueKind.BOOLEAN, required = false),
             LuiExtensionProperty("selection-active", LuiExtensionValueKind.BOOLEAN, required = false),
             LuiExtensionProperty("depth", LuiExtensionValueKind.INTEGER),
             LuiExtensionProperty("title", LuiExtensionValueKind.STRING),

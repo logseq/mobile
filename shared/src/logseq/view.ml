@@ -81,6 +81,7 @@ let with_ui_state model_source elem =
           else match model.destination with
             | GraphsDestination -> "graphs"
             | NotificationsDestination -> "notifications"
+            | BotsDestination -> "bots"
             | FlashcardsDestination -> "flashcards"
             | TasksDestination -> if model.app_navigation_path = [] then "tasks" else "page"
             | JournalsDestination ->
@@ -242,6 +243,7 @@ let native_navigation_stack_schema () =
     [
       Lui_extension.property "depth" IntScalar true None;
       Lui_extension.property "back-depth" IntScalar true None;
+      Lui_extension.property "content-header" BoolScalar false None;
       Lui_extension.property "selection-active" BoolScalar false None;
       Lui_extension.property "bottom-occupies-layout-space" BoolScalar true
         None;

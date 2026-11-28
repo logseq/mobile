@@ -23,6 +23,7 @@ type primary_destination =
   | JournalsDestination
   | TasksDestination
   | NotificationsDestination
+  | BotsDestination
   | FlashcardsDestination
   | GraphsDestination
 
@@ -338,6 +339,7 @@ type composer_submission =
   }
 
 type logseq_effect =
+  | BotsEffect of int * string
   | PresentAccountProfileEffect of int
   | PushPreferenceEffect of int * push_preferences
   | CollaborationEffect of int * string
@@ -424,6 +426,7 @@ type task_date_editor =
 type logseq_model =
   { selected_graph : string option
   ; selected_graph_id : string option
+  ; bots : Bot_chat.t
   ; journal_title_format : string
   ; graphs : graph list
   ; local_graph_ids : string list
@@ -674,6 +677,8 @@ type logseq_action =
   | SetTasksView of tasks_view
   | SelectTasks
   | ShowNotifications
+  | ShowBots
+  | BotsAction of Bot_chat.action
   | ToggleRecentNotifications
   | SetPushPreference of push_preferences
   | ApplyPushPreference of push_preferences
@@ -876,6 +881,7 @@ let initial () =
     pending_sync_error = None;
     sync_details_open = false;
     destination = JournalsDestination;
+    bots = Bot_chat.empty;
     home_scroll_request = 0;
     tasks_view = default_tasks_view;
     tasks_selection_mode = false;
@@ -1098,6 +1104,7 @@ let effect_id eff =
   | CopyRuntimeLogEffect (id, _) -> id
   | ReportErrorEffect (id, _) -> id
   | SignInEffect (id, _) -> id
+  | BotsEffect (id, _) -> id
   | SignOutEffect id -> id
 
 let effect_with_id effects target =
@@ -2009,6 +2016,7 @@ let resolve_successful_effect (current : logseq_model) eff message =
     {
       current with
       authentication_state = "signedOut";
+      bots = Bot_chat.empty;
       authentication_error = None;
       settings_open = false;
       runtime_log_open = false;
@@ -3147,7 +3155,9 @@ let rec update (current : logseq_model) action =
           remove_node_projection updated.app_navigation_previews uuid;
       }
   | BackAppNavigation count ->
-    if current.outliner_selected_block_ids <> [] then
+    if current.destination = BotsDestination && current.bots.page <> Bot_chat.Index then
+      update current (BotsAction Bot_chat.Back)
+    else if current.outliner_selected_block_ids <> [] then
       let id = current.next_effect_id in
       enqueue_effect current (OutlinerToolbarEffect (id, "unselect"))
     else back_app_navigation current count
@@ -3369,6 +3379,20 @@ let rec update (current : logseq_model) action =
          {next with expanded_discussions = target :: List.filter ((<>) target) next.expanded_discussions}
        else next in
        update next (RequestAppNode target))
+  | ShowBots ->
+    let updated = { (cancel_outliner_editing (return_to_app_root current)) with
+      destination = BotsDestination; sidebar_open = false; graph_menu_open = false;
+      composer_expanded = false; tasks_selection_mode = false } in
+    update updated (BotsAction (Bot_chat.Open Bot_chat.Index))
+  | BotsAction Bot_chat.Refresh when current.destination <> BotsDestination
+      || current.authentication_state <> "signedIn"
+      || List.exists (function BotsEffect _ -> true | _ -> false)
+           (current.pending_effects @ current.in_flight_effects) -> current
+  | BotsAction action ->
+    let bots, request = Bot_chat.update current.bots action in
+    let updated = {current with bots} in
+    Option.fold ~none:updated ~some:(fun payload ->
+      enqueue_effect updated (BotsEffect (updated.next_effect_id, payload))) request
   | ShowJournals | ShowTasks | ShowNotifications ->
     let destination = match action with ShowTasks -> TasksDestination
       | ShowNotifications -> NotificationsDestination | _ -> JournalsDestination in

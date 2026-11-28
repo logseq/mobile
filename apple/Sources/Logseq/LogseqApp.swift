@@ -118,6 +118,15 @@ public struct LogseqRootView : View {
                     do { try await Task.sleep(for: .seconds(30)) } catch { return }
                 }
             }
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                    if runtime.lgRuntime.isStarted {
+                        try? runtime.lgRuntime.applyHostUpdate(kind: "bots-refresh", payload: "null")
+                    }
+                }
+            }
             .onChange(of: runtime.authentication.state) { previousState, state in
                 runtime.publishAuthenticationState()
                 guard state == .signedIn, previousState != .restoring else { return }

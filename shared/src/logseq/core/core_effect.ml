@@ -42,6 +42,7 @@ let request ~now ~fresh_id payload =
     | "flashcard-deck" -> raw "flashcardDeck"
     | "node-property" -> raw "nodeProperty"
     | "collaboration" -> raw "collaboration"
+    | "bots" -> raw "bots"
     | "pdf-annotation" -> raw "pdfAnnotation"
     | "load-property-values" -> raw "propertyValues"
     | "load-result-rows" -> raw "resultRows"

@@ -1,4 +1,5 @@
 ("Api"
+"Bot_store"
 "Core_effect"
 "Created_by"
 "Collaboration"

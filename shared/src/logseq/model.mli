@@ -13,6 +13,7 @@ type primary_destination =
   | JournalsDestination
   | TasksDestination
   | NotificationsDestination
+  | BotsDestination
   | FlashcardsDestination
   | GraphsDestination
 
@@ -323,6 +324,7 @@ type composer_submission =
   }
 
 type logseq_effect =
+  | BotsEffect of int * string
   | PresentAccountProfileEffect of int
   | PushPreferenceEffect of int * push_preferences
   | CollaborationEffect of int * string
@@ -409,6 +411,7 @@ type task_date_editor =
 type logseq_model =
   { selected_graph : string option
   ; selected_graph_id : string option
+  ; bots : Bot_chat.t
   ; journal_title_format : string
   ; graphs : graph list
   ; local_graph_ids : string list
@@ -659,6 +662,8 @@ type logseq_action =
   | SetTasksView of tasks_view
   | SelectTasks
   | ShowNotifications
+  | ShowBots
+  | BotsAction of Bot_chat.action
   | ToggleRecentNotifications
   | SetPushPreference of push_preferences
   | ApplyPushPreference of push_preferences

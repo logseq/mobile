@@ -156,7 +156,7 @@ enum LGNavigationExtension {
     static let flashcardsToolbarIdentifier = "native-flashcards-toolbar"
     static let destinationIdentifier = "native-navigation-title"
     static let destinationFingerprint = "lui-tweak-v1|23:native-navigation-title|profiles:ios/swiftui|properties:5:title:string:required:none"
-    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,16:selection-active:bool:optional:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]"
+    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,14:content-header:bool:optional:none,16:selection-active:bool:optional:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try LGSidebarOverlay.register(in: registry)
@@ -262,6 +262,7 @@ enum LGNavigationExtension {
                 acceptsStandardChildren: true,
                 properties: [
                     .init(name: "back-depth", kind: .int, isRequired: true),
+                    .init(name: "content-header", kind: .bool),
                     .init(name: "depth", kind: .int, isRequired: true),
                     .init(name: "selection-active", kind: .bool),
                     .init(name: "bottom-occupies-layout-space", kind: .bool, isRequired: true),
@@ -767,6 +768,9 @@ private struct LGNavigationContent: View {
         #endif
     }
     private var searchVisible: Bool { search?.isVisible == true }
+    private var showsContentHeader: Bool {
+        context.property("content-header") == .bool(true) && !searchVisible
+    }
     private var verticalToolbar: Bool { verticalToolbarEdge != nil }
     private var searchRoutes: [Int] {
         guard searchVisible, let search else { return [] }
@@ -1034,7 +1038,7 @@ private struct LGNavigationContent: View {
                 .modifier(nativeSearchHost(search))
                 #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbar(toolbarStartIndex == nil ? .hidden : .visible, for: .navigationBar)
+                .toolbar(toolbarStartIndex == nil || showsContentHeader ? .hidden : .visible, for: .navigationBar)
                 #endif
         }
         .frame(
@@ -1045,7 +1049,7 @@ private struct LGNavigationContent: View {
         .background(routeBackground.ignoresSafeArea())
         #if os(iOS)
         .tint(navigationBarTint)
-        .toolbar(.visible, for: .navigationBar)
+        .toolbar(showsContentHeader ? .hidden : .visible, for: .navigationBar)
         #endif
         .onAppear {
             LGInteractionDiagnostics.event("navigation.appear", "node=\(context.nodeID) path=\(path) desired=\(desiredPath)")
@@ -1247,6 +1251,11 @@ private struct LGNavigationContent: View {
 
     private var routeBackground: Color {
         #if os(iOS)
+        if showsContentHeader {
+            return colorScheme == .dark
+                ? Color(red: 21 / 255, green: 25 / 255, blue: 27 / 255)
+                : Color(red: 250 / 255, green: 252 / 255, blue: 251 / 255)
+        }
         if LGNavigationSurfacePolicy.usesSystemGroupedBackground(
             contentPreference: usesSystemGroupedBackground
         ) {

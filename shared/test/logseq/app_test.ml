@@ -1988,7 +1988,7 @@ let native_navigation_stack_extension_contract_is_pinned () =
     ~msg:"native navigation must share one pinned LG and Swift wire contract"
     fingerprint
     (Some
-       "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,16:selection-active:bool:optional:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]")
+       "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,14:content-header:bool:optional:none,16:selection-active:bool:optional:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],16:viewport-changed[5:width:int:required],4:back[5:count:int:required]")
 
 let native_search_presentation_extension_contract_is_pinned () =
   let schema =
@@ -4934,7 +4934,7 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
     dispatch application (Lui_protocol.ExtensionEvent (current_strip (), "bottom-tab-strip", "select",
       Lui_protocol.String_map.singleton "index" (Lui_protocol.IntValue index)));
     flush application in
-  check_eq (children renderer tabs) (List.map tab ["home"; "tasks"; "notifications"]);
+  check_eq (children renderer tabs) (List.map tab ["home"; "bots"; "tasks"; "notifications"]);
   check_eq (children renderer actions) [search; capture];
   List.iter (fun (id, width) ->
     check_eq (property_int renderer id Lui_protocol.WidthValue) width;
@@ -4952,23 +4952,31 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   check ~msg:"holding Capture leaves the text composer collapsed"
     (not (App.model application).composer_expanded);
   check_eq (selected (tab "home")) true;
-  select_tab 1;
+  select_tab 2;
   check_eq (selected (tab "tasks")) true;
-  check_eq (extension_property application strip "selected-index") (Some (Lui_protocol.IntValue 1));
+  check_eq (extension_property application strip "selected-index") (Some (Lui_protocol.IntValue 2));
   check_eq (selected (tab "home")) false;
   check (descendant_with_identifier renderer (Lui_app.root_node application) "tasks.empty" <> -1);
-  select_tab 3;
+  select_tab 4;
   check_eq (App.model application).destination Model.TasksDestination;
   let root = Lui_app.root_node application in
   let inbox () = descendant_with_identifier renderer root "screen.notifications" in
   let retained_inbox = inbox () in
   check_eq (node renderer retained_inbox) (Some Lui_protocol.VirtualList);
   check (not (selected retained_inbox));
-  select_tab 2;
+  select_tab 3;
   check_eq (App.model application).destination Model.NotificationsDestination;
   check (selected (tab "notifications"));
   check_eq (inbox ()) retained_inbox;
   check (selected retained_inbox);
+  select_tab 1;
+  check_eq (App.model application).destination Model.BotsDestination;
+  let bot_chrome = native_bottom_chrome renderer application in
+  let bot_tabs = descendant_with_identifier renderer bot_chrome "group.bottom.tabs" in
+  check (selected (descendant_with_identifier renderer bot_tabs "tab.bottom.bots"));
+  check (descendant_with_identifier renderer bot_tabs "button.search" <> -1);
+  check_eq (descendant_with_identifier renderer bot_chrome "button.composer.expand") (-1);
+  check (descendant_with_identifier renderer root "bots.screen" <> -1);
   check_eq (tab "flashcards") (-1);
   send application Model.OpenSidebar;
   flush application;
@@ -4977,7 +4985,8 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   check_eq (App.model application).destination Model.FlashcardsDestination;
   check_eq (inbox ()) retained_inbox;
   check (not (selected retained_inbox));
-  check_eq (extension_property application strip "selected-index") (Some (Lui_protocol.IntValue (-1)));
+  check_eq (extension_property application (current_strip ()) "selected-index") (Some (Lui_protocol.IntValue (-1)));
+  let capture = descendant_with_identifier renderer (native_bottom_chrome renderer application) "button.composer.expand" in
   dispatch application (Lui_protocol.Press capture);
   flush application;
   check (App.model application).composer_expanded;
@@ -4994,7 +5003,7 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   select_tab 0;
   check_eq ~msg:"a single Home reselect requests a return to the top"
     (App.model application).home_scroll_request 1;
-  select_tab 1;
+  select_tab 2;
   send application Model.ExpandComposer;
   flush application;
   check ~msg:"Capture defaults to a task on Tasks" ((App.model application).selected_task_status <> None);
@@ -6607,10 +6616,10 @@ let kotlin_navigation_and_search_own_composed_standard_children () =
   let tabs = descendant_with_identifier renderer capture_row "group.bottom.tabs" in
   let actions = descendant_with_identifier renderer capture_row "group.bottom.actions" in
   let controls = children renderer actions in
-  check_eq (List.length (children renderer tabs)) 3;
+  check_eq (List.length (children renderer tabs)) 4;
   check_eq (List.length controls) 2;
-  check_eq (property_int renderer tabs Lui_protocol.WidthValue) 170;
-  check_eq (property_int renderer actions Lui_protocol.WidthValue) 108;
+  check_eq (property_int renderer tabs Lui_protocol.WidthValue) 184;
+  check_eq (property_int renderer actions Lui_protocol.WidthValue) 96;
   check_eq (property_string renderer (List.nth controls 1) Lui_protocol.InlineIconName) "app:capture-circle";
   send application Model.ShowTasks;
   flush application;

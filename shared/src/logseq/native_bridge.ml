@@ -97,6 +97,9 @@ let core_response_action encoded =
     let result = member "result" json in
     let rows = member "resultRows" result in
     let values = member "propertyValues" result in
+    match member "bots" result with
+    | `Assoc _ as chat -> Model.BotsAction (Bot_chat.Receive chat)
+    | _ ->
     match rows with
     | `Assoc fields when member "ok" json = `Bool true ->
       (match List.assoc_opt "key" fields, List.assoc_opt "view" fields with
@@ -185,6 +188,7 @@ let host_action (update : Host_update.host_update) =
         destination =
           (match session.destination with
            | "notifications" -> Model.NotificationsDestination
+           | "bots" -> Model.BotsDestination
            | "tasks" -> Model.TasksDestination
            | "flashcards" -> Model.FlashcardsDestination
            | "graphs" -> Model.GraphsDestination
@@ -224,7 +228,8 @@ let host_action (update : Host_update.host_update) =
     Model.ResolveAssetPreview (title, path)
 
 let apply_host_update kind payload =
-  flush_action
+  if kind = "bots-refresh" then flush_action (Model.BotsAction Bot_chat.Refresh)
+  else flush_action
     (match Host_update.decode kind payload with
      | Ok update -> host_action update
      | Error message -> Model.SyncFailed message)
@@ -267,6 +272,7 @@ let encode_ui_session (session : Model.ui_session) =
   ^ Lui_wire.quoted
       (match session.destination with
        | Model.NotificationsDestination -> "notifications"
+       | Model.BotsDestination -> "bots"
        | Model.TasksDestination -> "tasks"
        | Model.FlashcardsDestination -> "flashcards"
        | Model.GraphsDestination -> "graphs"
@@ -397,6 +403,8 @@ let encode_effect ?(model : Model.logseq_model option) (eff : Model.logseq_effec
       "comments", `Bool preferences.comments; "reactions", `Bool preferences.reactions]) in
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "push-preference";
       "text", `String payload])
+  | BotsEffect (id, payload) ->
+    Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "bots"; "text", `String payload])
   | CollaborationEffect (id, payload) ->
     Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "collaboration"; "text", `String payload])
   | PdfAnnotationEffect (id, payload) ->

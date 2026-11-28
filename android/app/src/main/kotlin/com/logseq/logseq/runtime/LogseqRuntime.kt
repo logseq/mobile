@@ -184,6 +184,7 @@ internal class LogseqRuntime(
     private var pendingSyncJob: kotlinx.coroutines.Job? = null
     @Volatile private var graphEventsSync: AndroidGraphEventsSync? = null
     private var journalDayJob: kotlinx.coroutines.Job? = null
+    private var botsRefreshJob: kotlinx.coroutines.Job? = null
     private var refreshedJournalDay: String? = null
     private var audioRecordingJob: kotlinx.coroutines.Job? = null
     private val graphEventsSession = AndroidForegroundSyncSession(scope)
@@ -365,6 +366,13 @@ internal class LogseqRuntime(
                 hostUpdate("push-preference", discussionPush.preferences.json().toString())
             }
         }
+        botsRefreshJob?.cancel()
+        botsRefreshJob = if (resumed) scope.launch {
+            while (isActive) {
+                kotlinx.coroutines.delay(3_000)
+                hostUpdate("bots-refresh", "null")
+            }
+        } else null
         journalDayJob?.cancel()
         journalDayJob = if (resumed) scope.launch {
             while (true) {
