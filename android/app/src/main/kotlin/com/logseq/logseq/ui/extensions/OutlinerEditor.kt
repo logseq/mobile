@@ -9,7 +9,7 @@ import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -53,6 +53,7 @@ import androidx.compose.foundation.text.contextmenu.builder.item
 import androidx.compose.foundation.text.contextmenu.modifier.appendTextContextMenuComponents
 import androidx.compose.foundation.text.contextmenu.modifier.filterTextContextMenuComponents
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.platform.PlatformTextInputInterceptor
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
@@ -328,20 +329,84 @@ internal fun OutlinerEditor(
     }
     // When the system dismisses the IME while this editor still owns focus,
     // end the editing session so the editor toolbar doesn't stay orphaned.
-    // Only fire after the IME was actually shown for this editor — with a
-    // hardware keyboard it is never visible.
-    val imeVisible = WindowInsets.isImeVisible
-    var imeWasVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(focusEnabled, imeVisible) {
-        if (imeVisible) {
-            imeWasVisible = true
-            return@LaunchedEffect
+    // The root host signals IME hide animations as they start. Keep an inset
+    // watcher as a fallback for hosts/tests without that signal: visibility
+    // itself clears too late, while the animated inset starts shrinking in the
+    // first frames. Debounce input-connection flicker briefly, but keep the
+    // bottom chrome transition inside the IME animation. Only fire after the
+    // IME was actually shown for this editor — with a hardware keyboard it is
+    // never visible.
+    val ime = WindowInsets.ime
+    val density = LocalDensity.current
+    var dismissalEmitted by remember { mutableStateOf(false) }
+    var dismissalInProgress by remember { mutableStateOf(false) }
+    val dismissalSignal = LocalImeDismissalSignal.current
+    suspend fun emitImeDismissed(): Boolean {
+        // Structural handoffs buffer typing until the core acknowledges them.
+        // Wait for that reconciliation before flushing; publishing early can
+        // either drop those keystrokes or overwrite the pre-split block.
+        var lastBottom = ime.getBottom(density)
+        while (awaitingHandoff) {
+            delay(16)
+            val bottom = ime.getBottom(density)
+            // A rising inset means the close was canceled or the editor was
+            // reopened; don't emit a stale dismissal after the handoff.
+            if (bottom > lastBottom + 4) return false
+            lastBottom = bottom
         }
-        if (!focusEnabled || !imeWasVisible) return@LaunchedEffect
-        delay(300)
-        if (imeWasVisible) {
-            imeWasVisible = false
-            context.emit("ime-dismissed")
+        NativeEditorInput.flush()
+        context.emit("ime-dismissed")
+        return true
+    }
+    LaunchedEffect(focusEnabled, dismissalSignal) {
+        if (!focusEnabled || dismissalSignal == null) return@LaunchedEffect
+        dismissalSignal.started.collect {
+            if (!dismissalEmitted && !dismissalInProgress) {
+                dismissalInProgress = true
+                try {
+                    dismissalEmitted = emitImeDismissed()
+                } finally {
+                    dismissalInProgress = false
+                }
+            }
+        }
+    }
+    LaunchedEffect(focusEnabled, ime, density) {
+        var imeWasVisible = false
+        var shownBottom = 0
+        var dismissalPending = false
+        snapshotFlow { ime.getBottom(density) }.collect { bottom ->
+            val shrinking = imeWasVisible && bottom < shownBottom - 4
+            if (bottom > 0 && !shrinking) {
+                imeWasVisible = true
+                shownBottom = maxOf(shownBottom, bottom)
+                dismissalPending = false
+                dismissalEmitted = false
+                return@collect
+            }
+            if (!shrinking) return@collect
+            // A predictive Back preview can lower the IME briefly and then
+            // restore it. When the root animation signal is available, this
+            // watcher only cleans up a missed signal after the IME reaches
+            // zero; without that signal, the first shrink is the early path.
+            if (dismissalSignal != null && bottom > 4) return@collect
+            if (dismissalPending) return@collect
+            dismissalPending = true
+            launch {
+                delay(32)
+                if (dismissalPending) {
+                    imeWasVisible = false
+                    shownBottom = 0
+                    if (!dismissalEmitted && !dismissalInProgress) {
+                        dismissalInProgress = true
+                        try {
+                            dismissalEmitted = emitImeDismissed()
+                        } finally {
+                            dismissalInProgress = false
+                        }
+                    }
+                }
+            }
         }
     }
     val inputOwner = remember { Any() }

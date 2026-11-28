@@ -26,6 +26,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -34,6 +35,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import android.content.Context
@@ -59,8 +61,13 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import com.logseq.logseq.applyAndroidSystemBarAppearance
 import androidx.core.content.edit
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsAnimationCompat
+import androidx.core.view.WindowInsetsCompat
 import com.logseq.logseq.runtime.LogseqRuntime
 import com.logseq.logseq.runtime.RecordedAudioAsset
+import com.logseq.logseq.ui.extensions.ImeDismissalSignal
+import com.logseq.logseq.ui.extensions.LocalImeDismissalSignal
 import com.logseq.logseq.ui.extensions.LogseqDialogs
 import kotlinx.coroutines.launch
 
@@ -94,9 +101,36 @@ internal fun LogseqApp(runtime: LogseqRuntime) {
         colorScheme = colorScheme,
         typography = LogseqTheme.typography,
     ) {
+        val imeDismissal = remember { ImeDismissalSignal() }
+        // Compose owns insets callbacks on its owner view, so listen at the
+        // window root where the IME animation callback remains registered.
+        val hostView = LocalView.current.rootView
+        DisposableEffect(hostView, imeDismissal) {
+            val callback = object : WindowInsetsAnimationCompat.Callback(
+                WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE,
+            ) {
+                override fun onPrepare(animation: WindowInsetsAnimationCompat) {
+                    val insets = ViewCompat.getRootWindowInsets(hostView)
+                    val hidingIme = insets != null &&
+                        insets.isVisible(WindowInsetsCompat.Type.ime()) &&
+                        insets.getInsets(WindowInsetsCompat.Type.ime()).bottom > 0
+                    if ((animation.typeMask and WindowInsetsCompat.Type.ime()) != 0 && hidingIme) {
+                        imeDismissal.notifyStarted()
+                    }
+                }
+
+                override fun onProgress(
+                    insets: WindowInsetsCompat,
+                    runningAnimations: MutableList<WindowInsetsAnimationCompat>,
+                ): WindowInsetsCompat = insets
+            }
+            ViewCompat.setWindowInsetsAnimationCallback(hostView, callback)
+            onDispose { ViewCompat.setWindowInsetsAnimationCallback(hostView, null) }
+        }
         androidx.compose.runtime.CompositionLocalProvider(
             dev.lui.LocalLuiThemeDark provides dark,
             dev.lui.LocalLuiSemanticColors provides LogseqTheme.semanticColors(MaterialTheme.colorScheme),
+            LocalImeDismissalSignal provides imeDismissal,
         ) {
             if (BuildConfig.DEBUG) {
                 LaunchedEffect(Unit) {
