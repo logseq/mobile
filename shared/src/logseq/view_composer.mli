@@ -16,6 +16,12 @@ val comment_input :
   Model.logseq_model Signal.signal ->
   autofocus:bool -> text_signal:string Signal.signal -> disabled_signal:bool Signal.signal ->
   on_input:(string -> unit) -> on_submit:(unit -> unit) -> Lui_elements.t
+val bot_input :
+  Model.logseq_model Signal.signal ->
+  placeholder:string Signal.signal -> label:string -> actions:Lui_elements.t list ->
+  text_signal:string Signal.signal -> send_label:string Signal.signal ->
+  disabled_signal:bool Signal.signal -> on_input:(string -> unit) -> on_send:(unit -> unit) ->
+  Lui_elements.t
 val composer_view :
   Lui_ui.ui_context ->
   Model.logseq_model Signal.signal ->

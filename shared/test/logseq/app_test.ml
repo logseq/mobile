@@ -5019,6 +5019,43 @@ let ios_bottom_tabs_and_actions_use_separate_groups () =
   check_eq ~msg:"Dismissing an empty task capture preserves normal capture on Home"
     (App.model application).selected_task_status None
 
+let bot_detail_owns_the_bottom_composer () =
+  List.iter (fun (backend, bottom_slot) ->
+    let application = App.create (backend ()) in
+    start application;
+    let apply action =
+      send application action;
+      flush application in
+    apply (Model.SelectGraph "Work");
+    apply Model.ShowBots;
+    let renderer = Lui_app.runtime application in
+    let root = Lui_app.root_node application in
+    let scoped id name = descendant_with_identifier renderer id name in
+    let navigation = extension_node application "native-navigation-stack" in
+    let chrome = List.nth (children renderer navigation) bottom_slot in
+    let dock () = scoped chrome "row.bottom.capture" in
+    let open_page page = apply (Model.BotsAction (Bot_chat.Open page)) in
+    let check_composer () =
+      check_eq ~msg:"Bot details hide the global bottom dock" (dock ()) (-1);
+      let composer = scoped root "surface.bots.composer" in
+      check ~msg:"the Bot composer uses the shared composer controls"
+        (scoped composer "row.composer.controls" <> -1);
+      check (scoped composer "bots.composer" <> -1);
+      check (scoped composer "bots.send" <> -1) in
+    check ~msg:"the Bots list retains the global bottom dock" (dock () <> -1);
+    open_page (Bot_chat.Main "bot");
+    check_composer ();
+    open_page (Bot_chat.Thread ("bot", "thread"));
+    check_composer ();
+    apply (Model.BackAppNavigation 0);
+    check_eq (App.model application).bots.page (Bot_chat.Main "bot");
+    check_composer ();
+    apply (Model.BotsAction Bot_chat.Back);
+    check_eq (App.model application).bots.page Bot_chat.Index;
+    check ~msg:"returning to the Bots list restores the original dock"
+      (scoped (dock ()) "button.search" <> -1 && scoped (dock ()) "button.composer.expand" <> -1))
+    [ios_backend, 5; kotlin_backend, 1]
+
 let composer_dismissal_preserves_an_unsent_draft () =
   let expanded = Model.update (Model.initial ()) Model.ExpandComposer in
   let drafted =
@@ -11784,6 +11821,7 @@ let cases =
     case "quick-capture-confirms-only-successful-local-saves" quick_capture_confirms_only_successful_local_saves;
     case "quick-capture-restarts-confirmation-for-each-save" quick_capture_restarts_confirmation_for_each_save;
     case "ios-bottom-tabs-and-actions-use-separate-groups" ios_bottom_tabs_and_actions_use_separate_groups;
+    case "bot-detail-owns-the-bottom-composer" bot_detail_owns_the_bottom_composer;
     case "composer-dismissal-preserves-an-unsent-draft" composer_dismissal_preserves_an_unsent_draft;
     case "pending-outliner-text-keeps-the-latest-optimistic-edit" pending_outliner_text_keeps_the_latest_optimistic_edit;
     case "outliner-typing-retains-reference-candidates" outliner_typing_retains_reference_candidates;

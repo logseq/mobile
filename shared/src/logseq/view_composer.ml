@@ -256,11 +256,11 @@ let composer_tag_picker model_source send : t =
             ignore (send (Model.SetComposerTags tags))))))
 
 let composer_surface model_source ?key ?accessibility_identifier ?attachments ?tag_strip
-    ?attachments_visible_signal ?(actions = []) ~placeholder ?label ?text
+    ?attachments_visible_signal ?(actions = []) ~placeholder ?placeholder_signal ?label ?text
     ?text_signal ?(autofocus = false) ?autofocus_signal ?submit_on_enter
     ?send_icon ?send_disabled_signal ?on_input ?on_submit ?on_send ?on_press
     ?(field_identifier = "field.composer") ?(send_identifier = "button.send")
-    ?(send_label = "Send") ?(compact = false) ()
+    ?(send_label = "Send") ?send_label_signal ?(compact = false) ()
     : t =
  custom (fun context parent ->
   (* A tap gesture around the whole capsule competes with its native menus.
@@ -285,7 +285,7 @@ let composer_surface model_source ?key ?accessibility_identifier ?attachments ?t
       ]
   in
   let field =
-    textarea ~min_height:36 ~style_class:"composer-input" ~placeholder
+    textarea ~min_height:36 ~style_class:"composer-input" ~placeholder ?placeholder_signal
       ~label:(match label with Some value -> value | None -> placeholder)
       ?text ?text_signal ~autofocus ?submit_on_enter
       ~accessibility_identifier:field_identifier ?on_input ?on_submit []
@@ -299,8 +299,11 @@ let composer_surface model_source ?key ?accessibility_identifier ?attachments ?t
   let send_button = match on_send with
     | None -> []
     | Some on_send ->
-      [composer_send_button model_source context ?send_icon ~identifier:send_identifier
-        ~label:send_label send_disabled_signal on_send] in
+      let button = composer_send_button model_source context ?send_icon ~identifier:send_identifier
+        ~label:send_label send_disabled_signal on_send in
+      [ match send_label_signal with
+        | None -> button
+        | Some signal_ -> View_base.with_label_signal signal_ button ] in
   let grow = if compact then None else Some 1.0 in
   let surface =
     if Lui_ui.host context = KotlinHost then
@@ -349,6 +352,14 @@ let comment_input model_source ~autofocus ~text_signal ~disabled_signal ~on_inpu
     ~send_identifier:"button.comment.post" ~send_label:"Post comment"
     ~send_disabled_signal:disabled_signal ~on_send:(fun _ -> on_submit ())
     ~on_submit:(fun _ -> on_submit ()) ~compact:true ()
+
+let bot_input model_source ~placeholder ~label ~actions ~text_signal
+    ~send_label ~disabled_signal ~on_input ~on_send =
+  composer_surface model_source ~placeholder:(Signal.sample placeholder)
+    ~placeholder_signal:placeholder ~label ~actions ~text_signal
+    ~accessibility_identifier:"surface.bots.composer" ~field_identifier:"bots.composer"
+    ~send_identifier:"bots.send" ~send_label_signal:send_label
+    ~send_disabled_signal:disabled_signal ~on_input ~on_send ~compact:true ()
 
 let collapsed_composer model_source (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then

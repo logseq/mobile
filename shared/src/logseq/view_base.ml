@@ -771,6 +771,7 @@ let bottom_chrome_presentation ?(primary_tabs = false) (current : Model.logseq_m
   else if outliner_editor_active_ current then "outliner-editor"
   else if
     (journals_destination_ current || (primary_tabs && graph_selected_ current))
+    && not (current.destination = BotsDestination && Bot_chat.is_bot_page current.bots.page)
     && (not current.search_open)
     && (not (graph_loading_visible_ current))
     && not (graph_picker_visible_ current)

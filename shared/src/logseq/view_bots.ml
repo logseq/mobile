@@ -15,11 +15,9 @@ let colors =
     "bots-wall", wall;
     "bots-panel", adaptive "#FFFFFF" "#22282B";
     "bots-chip", adaptive "#EDF3F2" "#292F32";
-    "bots-stroke", adaptive "#DCE6E4" "#FFFFFF19";
     "bots-ink", adaptive "#182524" "#EFF4F2";
     "bots-muted", adaptive "#586C68" "#A6B1AF";
     "bots-accent", adaptive "#236964" "#A5DAD0";
-    "bots-on-accent", adaptive "#FFFFFF" "#162D2A";
     "bots-own", adaptive "#D9EFEC" "#214D4A";
     "bots-own-ink", adaptive "#173B36" "#F2FFFC";
     "bots-warning", adaptive "#91511C" "#F2B77D";
@@ -209,31 +207,20 @@ let composer source send bots ~thread =
     else match Data.string "name" (Chat.selected_bot state) with
       | "" -> tr source "Message Bot"
       | name -> View_base.tr_named (Signal.sample source) "Message {1}" name) bots) in
+  let actions = if thread then [] else [
+    button ~text:"@" ~variant:`ghost ~width:44 ~height:44 ~padding:0
+      ~foreground:"muted-foreground" ~label:(tr source "Choose an Agent")
+      ~accessibility_identifier:"bots.pick-agent" ~on_press:(fun () -> dispatch send Chat.Pick_agent) [];
+  ] in
+  let disabled = Signal.map (fun state ->
+    let body = if thread then String.trim (Chat.draft state) else snd (Chat.mentions state) in
+    body = "") bots in
   column ~gap:7 [
     select;
     mention;
-    row ~cross:`center ~gap:4 ~padding:4 ~min_height:52 ~corner_radius:26
-      ~background:"bots-panel" ~border_color:"bots-stroke" ~border_width:1 [
-      (if thread then box ~width:10 [] else button ~text:"@" ~variant:`ghost ~width:42 ~height:44 ~padding:0
-        ~foreground:"bots-muted" ~label:(tr source "Choose an Agent") ~accessibility_identifier:"bots.pick-agent"
-        ~on_press:(fun () -> dispatch send Chat.Pick_agent) []);
-      textarea ~grow:1.0 ~min_height:38 ~style_class:"composer-input"
-        ~background:"transparent" ~foreground:"bots-ink"
-        ~accessibility_identifier:"bots.composer"
-        ~label:(tr source (if thread then "Reply" else "Message Bot"))
-        ~placeholder_signal:placeholder
-        ~text_signal:(Signal.map Chat.draft bots)
-        ~on_input:(fun value -> dispatch send (Chat.Draft value)) [];
-      View_base.with_label_signal send_title
-        (icon_button ~icon:(`app "comment-send") ~label:(tr source "Send") ~variant:`ghost ~padding:0
-          ~width:44 ~height:44 ~corner_radius:22 ~accessibility_identifier:"bots.send"
-          ~background_signal:(Signal.map (fun state ->
-            if String.trim (Chat.draft state) = "" then "bots-chip" else "bots-accent") bots)
-          ~foreground_signal:(Signal.map (fun state ->
-            if String.trim (Chat.draft state) = "" then "bots-muted" else "bots-on-accent") bots)
-          ~disabled_signal:(Signal.map (fun state -> snd (Chat.mentions state) = "") bots)
-          ~on_press:(fun () -> dispatch send Chat.Send) []);
-    ];
+    View_composer.bot_input source ~placeholder ~label:(tr source (if thread then "Reply" else "Message Bot"))
+      ~actions ~text_signal:(Signal.map Chat.draft bots) ~send_label:send_title ~disabled_signal:disabled
+      ~on_input:(fun value -> dispatch send (Chat.Draft value)) ~on_send:(fun () -> dispatch send Chat.Send);
   ]
 
 let bot_list source send bots =
@@ -407,9 +394,11 @@ let rule_form source send bots =
 let screen ~bottom_spacing source send =
   let bots = chat source in
   let pages = Signal.cutoff (=) (Signal.map (fun state -> state.Chat.page) bots) in
+  let spacing = Signal.map (fun page -> if Chat.is_bot_page page then 8 else bottom_spacing) pages in
   themed ~tokens:colors (
   column ~grow:1.0 ~background:"bots-wall" ~accessibility_identifier:"bots.screen" [
-  column ~grow:1.0 ~gap:8 ~padding_horizontal:18 ~margin_top:6 ~margin_bottom:bottom_spacing [
+  View_base.with_int_prop_signal Lui_protocol.MarginBottom spacing
+  (column ~grow:1.0 ~gap:8 ~padding_horizontal:18 ~margin_top:6 [
     dyn (function
       | Chat.Index -> bot_list source send bots
       | Create -> settings source send bots ~creating:true
@@ -429,4 +418,4 @@ let screen ~bottom_spacing source send =
             else column ~gap:4 (List.map (session_row source send id) sessions)) (coalesced_view bots)];
         ]) pages;
     feedback source send bots;
-  ]])
+  ])])

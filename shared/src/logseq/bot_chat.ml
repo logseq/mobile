@@ -4,6 +4,10 @@ module Data = Bot_store
 type page = Index | Create | Main of string | Sessions of string * bool | Thread of string * string
   | Settings of string | Automation of string
 
+let is_bot_page = function
+  | Index | Create -> false
+  | Main _ | Sessions _ | Thread _ | Settings _ | Automation _ -> true
+
 type t =
   { page : page
   ; view : J.t
