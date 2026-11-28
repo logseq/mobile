@@ -10,10 +10,21 @@ let is_bot_page = function
 
 type mention = { start : int; stop : int; query : string }
 
+type attachment =
+  { uuid : string
+  ; title : string
+  ; local_path : string
+  ; payload : string
+  }
+
 type t =
   { page : page
   ; view : J.t
   ; drafts : (string * string) list
+  ; bot_references : (string * (string * string)) list
+  ; shareable_graphs : string list
+  ; shared_graph : string option
+  ; attachments : (string * attachment list) list
   ; active_mention : mention option
   ; focus_request : bool
   ; name : string
@@ -26,13 +37,15 @@ type t =
 
 type action =
   | Open of page | Back | Refresh | Older | Receive of J.t
-  | Draft of string | Pick_agent | Select_agent of string | Dismiss_mentions
+  | Draft of string | Pick_agent | Select_agent of string | Select_bot of string | Dismiss_mentions
+  | Share_graph of string option
+  | Stage_attachment of string * attachment | Remove_attachment of string
   | Send | Name of string | Repository of string | Graph_target of string | Default_agent of string
   | Save_bot of string option | Edit_automation of J.t | Rule_field of string * J.t
   | Save_automation | Toggle_automation of string * bool
 
-let empty = {page = Index; view = `Null; drafts = []; active_mention = None; focus_request = false;
-  name = ""; repository = ""; graph_target = ""; default_agent = "devin"; proposal = `Null;
+let empty = {page = Index; view = `Null; drafts = []; bot_references = []; shareable_graphs = []; shared_graph = None; attachments = []; active_mention = None; focus_request = false;
+  name = ""; repository = ""; graph_target = ""; default_agent = ""; proposal = `Null;
   thread_origin = None}
 
 let bot_path id = "/bots/" ^ id
@@ -53,13 +66,36 @@ let set_draft text state =
   let key = route state.page in
   {state with drafts = (key, text) :: List.remove_assoc key state.drafts}
 
-let labels = ["devin", "Devin"; "circle", "Circle"; "codex", "Codex"; "pi", "Pi"]
+let attachments_for state key = Option.value ~default:[] (List.assoc_opt key state.attachments)
+let attachments state = attachments_for state (route state.page)
+let set_attachments state key items =
+  let drafts = List.remove_assoc key state.attachments in
+  {state with attachments = if items = [] then drafts else (key, items) :: drafts}
+
+let attachment_json attachment =
+  `Assoc ["id", `String attachment.uuid; "name", `String attachment.title;
+    "localPath", `String attachment.local_path; "payload", `String attachment.payload]
+
+let labels = ["devin", "Devin"; "circle", "Circle"; "cursor", "Cursor"; "codex", "Codex"; "pi", "Pi"]
 let label agent = Option.value ~default:agent (List.assoc_opt agent labels)
 let selected_bot state = Data.field "bot" state.view
 let session state = Data.field "session" state.view
 
+let configured_agents state =
+  Data.list "agents" state.view
+  |> List.filter_map (fun row ->
+    let name = Data.string "name" row in
+    if Data.field "available" row = `Bool true && List.mem_assoc name labels then Some name else None)
+
+let is_configured state name = List.mem name (configured_agents state)
+let bot_default state = Data.string "default_agent" (selected_bot state)
+
+let automation_agent state =
+  match Data.string "agent" state.proposal with "" -> bot_default state | agent -> agent
+
+
 let agent_character = function
-  | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '-' | '_' -> true
+  | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '-' | '_' | '\128' .. '\255' -> true
   | _ -> false
 
 let space = function ' ' | '\t' | '\r' | '\n' -> true | _ -> false
@@ -96,22 +132,68 @@ let edited_caret previous value =
     then suffix (count + 1) else length - count in
   suffix 0
 
-let mentions state =
+let mentionable_bots state =
+  Data.list "mentionableBots" state.view
+  |> List.map (fun bot -> Data.string "id" bot, Data.string "name" bot)
+
+let mention_token text start =
+  let quote = start + 1 in
+  if quote < String.length text && text.[quote] = '"' then
+    let rec closing index =
+      if index >= String.length text then None
+      else match text.[index] with
+        | '"' -> Some (index + 1)
+        | '\\' -> closing (index + 2)
+        | _ -> closing (index + 1) in
+    match closing (quote + 1) with
+    | Some stop ->
+      (try
+         match J.from_string (String.sub text quote (stop - quote)) with
+         | `String token -> stop, token, true
+         | _ -> stop, "", true
+       with Yojson.Json_error _ -> stop, "", true)
+    | None -> quote + 1, "", true
+  else
+    let stop = mention_stop text start in
+    stop, String.sub text quote (stop - quote), false
+
+let recipients state =
   let text = draft state in
-  let rec scan from =
+  let configured = match state.page with Main _ -> configured_agents state | _ -> [] in
+  let candidates = mentionable_bots state in
+  let preferred = List.assoc_opt (route state.page) state.bot_references in
+  let find_bot token =
+    let matches = List.filter (fun (_, name) -> String.lowercase_ascii name = token) candidates in
+    match preferred, matches with
+    | Some (name, id), _ when name = token && List.mem_assoc id matches -> Some id
+    | _, [(id, _)] -> Some id
+    | _ -> None in
+  let rec scan from agent target ranges =
     match String.index_from_opt text from '@' with
-    | None -> None, String.trim text
-    | Some start ->
-      let stop = mention_stop text start in
-      let agent = String.lowercase_ascii (String.sub text (start + 1) (stop - start - 1)) in
-      if mention_boundary text start && List.mem_assoc agent labels then
-        let before = String.sub text 0 start and after = String.sub text stop (String.length text - stop) in
-        let before = if after <> "" && space after.[0] && before <> ""
-          && space before.[String.length before - 1] then String.sub before 0 (String.length before - 1)
-          else before in
-        Some agent, String.trim (before ^ after)
-      else scan stop in
-  scan 0
+    | None -> agent, target, ranges
+    | Some start when mention_boundary text start ->
+      let stop, token, quoted = mention_token text start in
+      let token = String.lowercase_ascii token in
+      if not quoted && List.mem token configured then
+        (match agent with
+        | None -> scan stop (Some token) target ((start, stop) :: ranges)
+        | Some _ -> scan stop agent target ranges)
+      else (match if target = None then find_bot token else None with
+        | Some id -> scan stop agent (Some id) ((start, stop) :: ranges)
+        | None -> scan stop agent target ranges)
+    | Some start -> scan (start + 1) agent target ranges in
+  let agent, target, ranges = scan 0 None None [] in
+  let remove value (start, stop) =
+    let before = String.sub value 0 start and after = String.sub value stop (String.length value - stop) in
+    let before = if after <> "" && space after.[0] && before <> ""
+      && space before.[String.length before - 1] then String.sub before 0 (String.length before - 1)
+      else before in
+    before ^ after in
+  agent, target, String.trim (List.fold_left remove text ranges)
+
+let mentions state =
+  let agent, _, body = recipients state in
+  agent, body
 
 let messages state = Data.list "messages" state.view @ Data.list "pending" state.view
 let seq message = match Data.field "seq" message with
@@ -126,7 +208,7 @@ let merge_messages fresh prior =
 let receive state json =
   if Data.string "route" json <> route state.page then state
   else
-    let current = state.view in
+    let current = if Data.field "unavailable" json = `Bool true then `Null else state.view in
     let fields = match json with `Assoc fields -> fields | _ -> [] in
     let prior = Data.list "messages" current in
     let older = Data.field "older" json = `Bool true in
@@ -137,7 +219,23 @@ let receive state json =
       | fresh -> merge_messages fresh prior in
     let previous = match current with `Assoc fields -> fields | _ -> [] in
     let keep = List.filter (fun (key, _) -> not (List.mem_assoc key fields)) previous in
-    {state with view = `Assoc (["messages", `List merged; "more", more]
+    let state = match Data.list "rejected" json with
+      | [rejected] when draft state = "" && attachments state = [] ->
+        let target = Data.string "targetBotId" rejected in
+        let bot_prefix = match List.assoc_opt target (mentionable_bots state) with
+          | Some name -> "@" ^ J.to_string (`String name) ^ " " | None -> "" in
+        let agent = Data.string "agent" rejected in
+        let agent_prefix = if agent = "" then "" else "@" ^ label agent ^ " " in
+        let files = Data.list "attachments" rejected |> List.map (fun file -> {
+          uuid = Data.string "id" file; title = Data.string "name" file;
+          local_path = Data.string "localPath" file; payload = Data.string "payload" file }) in
+        set_attachments (set_draft (bot_prefix ^ agent_prefix ^ Data.string "body" rejected) state)
+          (route state.page) files
+      | _ -> state in
+    let shareable_graphs = match Data.field "shareableGraphs" json with
+      | `List graphs -> List.filter_map (function `String graph -> Some graph | _ -> None) graphs
+      | _ -> state.shareable_graphs in
+    {state with shareable_graphs; view = `Assoc (["messages", `List merged; "more", more]
       @ List.remove_assoc "messages" (List.remove_assoc "more" (fields @ keep)))}
 
 let update state action =
@@ -148,12 +246,24 @@ let update state action =
     let updated = {state with page; view = (if same then state.view else `Null); thread_origin;
       active_mention = None; focus_request = false} in
     updated, request updated in
+  let select_mention state token =
+    match state.active_mention with
+    | None -> state
+    | Some {start; stop; _} ->
+      let value = draft state in
+      let before = String.sub value 0 start and after = String.sub value stop (String.length value - stop) in
+      let separator = if after = "" || not (space after.[0]) then " " else "" in
+      set_draft (before ^ "@" ^ token ^ separator ^ after) {state with active_mention = None} in
   match action with
-  | Open Create -> stay {state with page = Create; name = ""; repository = "";
-      graph_target = ""; default_agent = "devin"; active_mention = None; focus_request = false}
-  | Open (Settings _ as page) ->
+  | Open Create -> stay {state with page = Create; name = ""; repository = ""; shared_graph = None;
+      graph_target = ""; default_agent = (match configured_agents state with
+        | names when List.mem "devin" names -> "devin"
+        | name :: _ -> name | [] -> ""); active_mention = None; focus_request = false}
+  | Open (Settings _ as page) when Data.field "canManage" state.view = `Bool true ->
     let bot = selected_bot state in
-    stay {state with page; default_agent = Data.string "default_agent" bot; active_mention = None; focus_request = false}
+    let shared_graph = match Data.field "shared_graph_id" bot with `String id -> Some id | _ -> None in
+    stay {state with page; shared_graph; default_agent = Data.string "default_agent" bot; active_mention = None; focus_request = false}
+  | Open (Settings _) -> stay state
   | Open page -> open_page page
   | Back ->
     (match state.page with
@@ -175,7 +285,7 @@ let update state action =
     if previous = value then stay state
     else
       let active_mention = match state.page with
-        | Main _ -> mention_at value (edited_caret previous value)
+        | Main _ | Thread _ -> mention_at value (edited_caret previous value)
         | _ -> None in
       stay (set_draft value {state with active_mention})
   | Pick_agent ->
@@ -190,40 +300,58 @@ let update state action =
       stay (set_draft value {updated with active_mention = mention_at value (String.length value)}))
   | Dismiss_mentions ->
     if state.active_mention = None then stay state else stay {state with active_mention = None}
-  | Select_agent agent ->
-    (match state.active_mention with
-    | None -> stay state
-    | Some {start; stop; _} ->
-      let value = draft state in
-      let before = String.sub value 0 start and after = String.sub value stop (String.length value - stop) in
-      let separator = if after = "" || not (space after.[0]) then " " else "" in
-      stay (set_draft (before ^ "@" ^ label agent ^ separator ^ after) {state with active_mention = None}))
+  | Select_agent agent when is_configured state agent ->
+    stay (select_mention state (label agent))
+  | Select_agent _ -> stay state
+  | Select_bot id ->
+    (match List.assoc_opt id (mentionable_bots state), state.active_mention with
+    | Some name, Some _ ->
+      let key = route state.page in
+      let references = (key, (String.lowercase_ascii name, id)) :: List.remove_assoc key state.bot_references in
+      stay (select_mention {state with bot_references = references} (J.to_string (`String name)))
+    | _ -> stay state)
+  | Share_graph graph when Option.fold ~none:true ~some:(fun id -> List.mem id state.shareable_graphs) graph ->
+    stay {state with shared_graph = graph}
+  | Share_graph _ -> stay state
+  | Stage_attachment (key, attachment) ->
+    let items = attachments_for state key in
+    if List.length items = 4 || List.exists (fun item -> item.uuid = attachment.uuid) items then stay state
+    else stay (set_attachments state key (items @ [attachment]))
+  | Remove_attachment uuid ->
+    stay (set_attachments state (route state.page) (List.filter (fun item -> item.uuid <> uuid) (attachments state)))
   | Send ->
-    let agent, body = match state.page with Main _ -> mentions state | _ -> None, String.trim (draft state) in
-    if body = "" then stay state
+    let agent, target, body = recipients state in
+    let files = attachments state in
+    if body = "" && files = [] then stay state
     else
-      let updated = set_draft "" {state with active_mention = None} in
-      let body = `Assoc ["body", `String body;
+      let key = route state.page in
+      let updated = set_attachments (set_draft "" {state with active_mention = None;
+        bot_references = List.remove_assoc key state.bot_references}) key [] in
+      let body = `Assoc ["targetBotId", Option.fold ~none:`Null ~some:(fun id -> `String id) target; "body", `String body; "attachments", `List (List.map attachment_json files);
         "agent", Option.fold ~none:`Null ~some:(fun name -> `String name) agent] in
       updated, request ~path:(route state.page ^ "/messages") ~method_:"POST" ~body state
   | Name name -> stay {state with name}
   | Repository repository -> stay {state with repository}
   | Graph_target graph_target -> stay {state with graph_target}
-  | Default_agent default_agent -> stay {state with default_agent}
+  | Default_agent default_agent when default_agent = "" || is_configured state default_agent ->
+    stay {state with default_agent}
+  | Default_agent _ -> stay state
   | Save_bot graph ->
+    let shared = "sharedGraphId", Option.fold ~none:`Null ~some:(fun id -> `String id) state.shared_graph in
     (match state.page with
-    | Create when String.trim state.name <> "" ->
+    | Create when String.trim state.name <> ""
+        && (state.default_agent = "" || is_configured state state.default_agent) ->
       let graph_fields = match graph with
         | Some graph when String.trim state.graph_target <> "" ->
           ["graphId", `String graph; "graphBlockId", `String (String.trim state.graph_target)]
         | _ -> [] in
-      let body = `Assoc (["name", `String state.name; "repository", `String state.repository;
+      let body = `Assoc ([shared; "name", `String state.name; "repository", `String state.repository;
         "defaultAgent", `String state.default_agent] @ graph_fields) in
       let index = {state with page = Index} in
       index, request ~method_:"POST" ~body index
-    | Settings id ->
+    | Settings id when state.default_agent = "" || is_configured state state.default_agent ->
       let main = {state with page = Main id} in
-      main, request ~method_:"PATCH" ~body:(`Assoc ["defaultAgent", `String state.default_agent]) main
+      main, request ~method_:"PATCH" ~body:(`Assoc [shared; "defaultAgent", `String state.default_agent]) main
     | _ -> stay state)
   | Edit_automation proposal ->
     (match state.page with Main id -> stay {state with page = Automation id; proposal}
@@ -234,7 +362,7 @@ let update state action =
     | _ -> stay state)
   | Save_automation ->
     (match state.page with
-    | Automation id ->
+    | Automation id when is_configured state (automation_agent state) ->
       let main = {state with page = Main id} in
       main, request ~path:(bot_path id ^ "/automations") ~method_:"POST" ~body:state.proposal main
     | _ -> stay state)

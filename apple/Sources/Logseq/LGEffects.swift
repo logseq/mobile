@@ -119,6 +119,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
     private let graphEffect: (@MainActor (LGEffect) async -> LGEffectResolution)?
     private let presentJournalCalendar: (@MainActor () -> Bool)?
     private let presentAttachment: (@MainActor (String) async -> Bool)?
+    private let presentBotAttachment: (@MainActor (String, String) -> Bool)?
     private let presentAsset: (@MainActor (LGAssetPresentationPayload) async -> URL?)?
     private let presentPageShare: (@MainActor (LGPageSharePayload) async -> Bool)?
     private let syncNow: (@MainActor () -> Void)?
@@ -137,6 +138,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
         graphEffect: (@MainActor (LGEffect) async -> LGEffectResolution)? = nil,
         presentJournalCalendar: (@MainActor () -> Bool)? = nil,
         presentAttachment: (@MainActor (String) async -> Bool)? = nil,
+        presentBotAttachment: (@MainActor (String, String) -> Bool)? = nil,
         presentAsset: (@MainActor (LGAssetPresentationPayload) async -> URL?)? = nil,
         presentPageShare: (@MainActor (LGPageSharePayload) async -> Bool)? = nil,
         syncPending: (@MainActor () -> Void)? = nil,
@@ -154,6 +156,7 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
         self.graphEffect = graphEffect
         self.presentJournalCalendar = presentJournalCalendar
         self.presentAttachment = presentAttachment
+        self.presentBotAttachment = presentBotAttachment
         self.presentAsset = presentAsset
         self.presentPageShare = presentPageShare
         self.syncNow = syncNow
@@ -307,6 +310,10 @@ public final class LGPlatformEffectHandler: LGEffectExecuting {
                     message: succeeded ? "" : "Unknown attachment service: \(effect.text)",
                     output: .discard
                 )
+            case "present-bot-attachment":
+                let succeeded = effect.metadata.map { presentBotAttachment?(effect.text, $0) ?? false } ?? false
+                return LGEffectResolution(succeeded: succeeded,
+                    message: succeeded ? "" : "Attachment presentation is unavailable", output: .discard)
             case "present-asset":
                 guard let presentAsset, let metadata = effect.metadata else {
                     return LGEffectResolution(
@@ -436,7 +443,7 @@ public final class LGCoreEffectExecutor: LGEffectExecuting {
         switch effect.kind {
         case "report-error", "persist-ui-session", "persist-composer-draft", "sign-in", "save-settings", "refresh-runtime-log",
              "copy-runtime-log", "sign-out", "present-account-profile", "push-preference", "export-graph-database", "open-external-url",
-             "present-attachment", "present-journal-calendar", "present-asset", "present-page-share", "sync-now", "sync-pending":
+             "present-attachment", "present-bot-attachment", "present-journal-calendar", "present-asset", "present-page-share", "sync-now", "sync-pending":
             guard let platformEffect else {
                 return LGEffectResolution(succeeded: false, message: "Platform settings handling is unavailable")
             }

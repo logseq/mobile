@@ -4,6 +4,15 @@ let bot_id = "25376367-2819-40cf-b976-f3188018c744"
 let message_id = "62e2997c-b14f-4f7a-9a3a-80238f6cb675"
 let route = "/bots/" ^ bot_id
 
+let agents =
+  `List (List.map (fun (name, available) -> `Assoc ["name", `String name; "available", `Bool available])
+    ["devin", true; "codex", true; "pi", false])
+
+let open_bot () =
+  let main, _ = Bot_chat.update Bot_chat.empty (Bot_chat.Open (Bot_chat.Main bot_id)) in
+  fst (Bot_chat.update main (Bot_chat.Receive (`Assoc ["route", `String route; "agents", agents])))
+
+
 let offline_send_survives_reopen () =
   let store = Filename.temp_file "logseq-bots" ".sqlite" in
   Fun.protect ~finally:(fun () -> Sys.remove store) (fun () ->
@@ -32,12 +41,15 @@ let offline_send_survives_reopen () =
         | Some json ->
           delivered := [Bot_store.string "id" (Yojson.Basic.from_string json)];
           `Assoc ["message", stored]
-        | None -> `Assoc ["messages", `List [stored]; "more", `Bool false] in
+        | None -> `Assoc ["messages", `List [stored]; "more", `Bool false; "agents", agents] in
       Ok (Api.response 200 (Yojson.Basic.to_string body)) in
     let synced = run config "GET" route `Null online in
     check_eq [message_id] !delivered;
     check_eq [] (Bot_store.list "pending" synced);
-    check_eq [stored] (Bot_store.list "messages" (run config "GET" route `Null offline)))
+    let cached = run config "GET" route `Null offline in
+    check_eq agents (Bot_store.field "agents" cached);
+    check_eq [stored] (Bot_store.list "messages" cached);
+    check_eq `Null (Bot_store.field "agents" (run other_server "GET" route `Null offline)))
 
 let dispatch_requires_an_explicit_agent () =
   let send state draft =
@@ -45,10 +57,14 @@ let dispatch_requires_an_explicit_agent () =
     match snd (Bot_chat.update drafted Bot_chat.Send) with
     | Some request -> Yojson.Basic.from_string request
     | None -> Alcotest.fail "Expected a chat request" in
-  let main, _ = Bot_chat.update Bot_chat.empty (Bot_chat.Open (Bot_chat.Main bot_id)) in
+  let main = open_bot () in
   let request = send main "Fix navigation" in
   check_eq `Null (Bot_store.field "agent" (Bot_store.field "body" request));
-  let request = send main "@codex Fix navigation" in
+  let unconfigured = Bot_store.field "body" (send main "@Pi Fix navigation") in
+  check_eq `Null (Bot_store.field "agent" unconfigured);
+  check_eq "@Pi Fix navigation" (Bot_store.string "body" unconfigured);
+  let request = send main "@Pi triage; @codex Fix navigation" in
+  check_eq "@Pi triage; Fix navigation" (Bot_store.string "body" (Bot_store.field "body" request));
   check_eq "codex" (Bot_store.string "agent" (Bot_store.field "body" request));
   let thread, _ = Bot_chat.update main (Bot_chat.Open (Bot_chat.Thread (bot_id, message_id))) in
   let reply = send thread "Check Android as well" in
@@ -57,7 +73,7 @@ let dispatch_requires_an_explicit_agent () =
 
 let mentions_complete_inside_the_draft () =
   let update state action = fst (Bot_chat.update state action) in
-  let main = update Bot_chat.empty (Bot_chat.Open (Bot_chat.Main bot_id)) in
+  let main = open_bot () in
   let typed = update main (Bot_chat.Draft "@") in
   check_eq (Some {Bot_chat.start = 0; stop = 1; query = ""}) typed.active_mention;
   let narrowed = update typed (Bot_chat.Draft "@Co") in
@@ -81,7 +97,25 @@ let mentions_complete_inside_the_draft () =
   check_eq narrowed.active_mention reopened.active_mention;
   check reopened.focus_request
 
+let bot_handoff_and_attachment_are_bound_to_the_draft () =
+  let main_route = route in
+  let open Bot_chat in
+  let apply state action = fst (update state action) in
+  let target = "20926f2b-927d-4ce0-9885-77f09176c9c8" in
+  let main = apply (open_bot ()) (Receive (`Assoc ["route", `String main_route;
+    "mentionableBots", `List [`Assoc ["id", `String target; "name", `String "Logseq QA"]]])) in
+  let main = apply (apply main (Draft "@Log")) (Select_bot target) in
+  let main = apply main (Draft (draft main ^ "@codex Check this file")) in
+  check_eq (Some "codex", Some target, "Check this file") (recipients main);
+  let thread_page = Thread (bot_id, message_id) in
+  let file = {uuid = message_id; title = "demo.txt"; local_path = "/tmp/demo.txt"; payload = "{}"} in
+  let thread = apply (apply main (Open thread_page)) (Stage_attachment (main_route, file)) in
+  check_eq [] (attachments thread);
+  let back = apply thread Back in
+  check_eq [file] (attachments back)
+
 let cases =
   [case "offline send replays the same ID after reopening SQLite" offline_send_survives_reopen;
    case "dispatch uses an explicit Agent and thread replies use their session" dispatch_requires_an_explicit_agent;
-   case "selecting an inline Agent replaces the query and preserves the rest of the draft" mentions_complete_inside_the_draft]
+   case "selecting an inline Agent replaces the query and preserves the rest of the draft" mentions_complete_inside_the_draft;
+   case "handoffs and late attachment results stay in their own draft" bot_handoff_and_attachment_are_bound_to_the_draft]

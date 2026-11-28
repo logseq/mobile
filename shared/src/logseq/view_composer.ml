@@ -1,6 +1,6 @@
 open Lui_elements
 
-let attachment_picker_items item model_source context send =
+let attachment_picker_items ~audio item model_source context send =
   let items = [
       item ~icon:(`app "toolbar-attachment")
         ~accessibility_identifier:"button.attachment.files"
@@ -20,13 +20,14 @@ let attachment_picker_items item model_source context send =
         ~on_press:(fun _ ->
           ignore (send (Model.ChooseAttachment "photos")))
         [];
+    ] @ (if not audio then [] else [
       item ~icon:(`app "toolbar-audio")
         ~accessibility_identifier:"button.attachment.audio"
         ~text:(View_base.tr (Signal.sample model_source) "Audio recording")
         ~on_press:(fun _ ->
           ignore (send (Model.ChooseAttachment "audio")))
         [];
-    ] in
+    ]) in
   if Lui_ui.host context = KotlinHost then items else List.rev items
 
 let composer_default_action_foreground = "border"
@@ -41,7 +42,7 @@ let composer_action_foreground context =
   | _ -> composer_default_action_foreground
 
 let composer_attachment_control ?(width = 32) ?(height = 44) ?size
-    ?(foreground = composer_default_action_foreground) ?(identifier = "button.attachment")
+    ?(foreground = composer_default_action_foreground) ?(identifier = "button.attachment") ?(audio = true)
     model_source (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then
     let item ~icon ~accessibility_identifier ~text ~on_press children =
@@ -49,14 +50,14 @@ let composer_attachment_control ?(width = 32) ?(height = 44) ?size
     menu_trigger ~icon:(`app "composer-add") ~foreground
       ~label:(View_base.tr (Signal.sample model_source) "Add attachment")
       ~accessibility_identifier:identifier
-      (dropdown_menu (attachment_picker_items item model_source context send))
+      (dropdown_menu (attachment_picker_items ~audio item model_source context send))
   else
     let item ~icon ~accessibility_identifier ~text ~on_press _ =
       context_menu_item ~icon ~accessibility_identifier ~text ~on_press () in
     icon_button ~icon:(`app "composer-add") ~variant:`ghost ~width ~height ~foreground
       ?size
       ~label:(View_base.tr (Signal.sample model_source) "Add attachment") ~accessibility_identifier:identifier
-      [context_menu (attachment_picker_items item model_source context send)]
+      [context_menu (attachment_picker_items ~audio item model_source context send)]
 
 let composer_attachment_button model_source context send =
   composer_attachment_control ~foreground:(composer_action_foreground context)
@@ -353,13 +354,23 @@ let comment_input model_source ~autofocus ~text_signal ~disabled_signal ~on_inpu
     ~send_disabled_signal:disabled_signal ~on_send:(fun _ -> on_submit ())
     ~on_submit:(fun _ -> on_submit ()) ~compact:true ()
 
-let bot_input model_source ~placeholder ~label ~actions ~text_signal ~autofocus_signal
-    ~send_label ~disabled_signal ~on_input ~on_send =
-  composer_surface model_source ~placeholder:(Signal.sample placeholder)
-    ~placeholder_signal:placeholder ~label ~actions ~text_signal ~autofocus_signal
-    ~accessibility_identifier:"surface.bots.composer" ~field_identifier:"bots.composer"
-    ~send_identifier:"bots.send" ~send_label_signal:send_label
-    ~send_disabled_signal:disabled_signal ~on_input ~on_send ~compact:true ()
+let bot_input model_source ~placeholder ~label ~actions ~assets ~send
+    ~text_signal ~autofocus_signal ~send_label ~disabled_signal ~on_input ~on_send =
+  custom (fun context parent ->
+    let pick = function Model.ChooseAttachment kind -> send (Model.ChooseBotAttachment kind) | _ -> false in
+    let attachment_button = composer_attachment_control ~audio:false ~width:44
+      ~foreground:(composer_action_foreground context) ~identifier:"bots.add-attachment" model_source context pick in
+    let remove = function Model.RemoveComposerAsset uuid -> send (Model.BotsAction (Bot_chat.Remove_attachment uuid))
+      | _ -> false in
+    let attachments = keyed ~source:assets ~key:View_base.composer_asset_identifier ~cmp:String.compare
+        ~mount:(fun asset -> composer_asset_view model_source context asset remove) in
+    composer_surface model_source ~placeholder:(Signal.sample placeholder)
+      ~placeholder_signal:placeholder ~label ~actions:(attachment_button :: actions) ~text_signal ~autofocus_signal
+      ~attachments ~attachments_visible_signal:(Signal.map ((<>) []) assets)
+      ~accessibility_identifier:"surface.bots.composer" ~field_identifier:"bots.composer"
+      ~send_identifier:"bots.send" ~send_label_signal:send_label
+      ~send_disabled_signal:disabled_signal ~on_input ~on_send ~compact:true ()
+    |> mount context ?parent)
 
 let collapsed_composer model_source (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = KotlinHost then

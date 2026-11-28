@@ -6551,6 +6551,24 @@ let capture_dictionaries = [
     ("Start recording", "Bắt đầu ghi âm");
   ]);
   ("zh-CN", [
+    ("Agents", "执行 Agent");
+    ("No configured agents", "暂无已配置的 Agent");
+    ("Mention a Bot or Agent", "提及 Bot 或 Agent");
+    ("No matches", "没有匹配项");
+    ("Send to {1}", "发送给 {1}");
+    ("From {1}", "来自 {1}");
+    ("To {1}", "发给 {1}");
+    ("Sharing", "共享");
+    ("Share with {1}", "与 {1} 共享");
+    ("Share with the Graph team", "与 Graph 团队共享");
+    ("Graph members can see this Bot and its conversations.", "Graph 成员可以看到这个 Bot 及其对话。");
+    ("This Agent is no longer configured", "这个 Agent 已移除配置");
+    ("This Bot is no longer available", "无法再访问这个 Bot");
+    ("This Graph cannot be shared", "无法共享到这个 Graph");
+    ("The attachment is no longer on this device", "这台设备上已没有该附件");
+    ("Attachments must be between 1 byte and 10 MB", "每个附件大小须在 1 字节到 10 MB 之间");
+    ("Waiting to upload attachments", "等待上传附件");
+    ("The server rejected an attachment", "服务器拒绝了附件");
     ("Camera", "相机");
     ("Take photo", "拍照");
     ("Audio recording", "录音");

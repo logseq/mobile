@@ -60,6 +60,7 @@ type host_update =
   | Restore_ui_session of host_ui_session
   | Composer_draft of string
   | Composer_asset of host_composer_asset
+  | Bot_attachment of string * host_composer_asset
   | Graph_loading of bool
   | Authentication of host_authentication
   | Open_quick_action of string

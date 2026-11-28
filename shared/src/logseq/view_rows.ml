@@ -140,7 +140,7 @@ let paged_keyed ~identifier ~item_extent ~count ~offset ~on_visible_range ~sourc
       [Lui_elements.keyed ~source:(reactive (fun offset rows viewport -> snd (window offset rows viewport))
         offset source (Signal.value viewport)) ~key ~cmp ~mount]))
 
-let windowed_keyed ?scroll_target ?first_section ?reset_key
+let windowed_keyed ?scroll_target ?native_scroll_anchor ?first_section ?reset_key
     ?(window_size = 32) ?(identifier = "outliner.window") ?(item_extent = 32) ?style
     ?(on_visible_range = fun _ _ -> ()) ?(on_window = fun _ -> ())
     ?(on_prefetch = fun _ -> ()) ?(is_pinned = fun _ -> false)
@@ -216,10 +216,19 @@ let windowed_keyed ?scroll_target ?first_section ?reset_key
       let following = Array.sub items after (min 16 (Array.length items - after)) |> Array.to_list in
       preceding @ following) window))) in
     ignore (Signal.own context.ui_scope (Signal.observe adjacent on_prefetch));
+    let scroll_target_signal, scroll_token_signal =
+      match native_scroll_anchor, Lui_ui.host context with
+      | Some _, Lui_protocol.SwiftUIHost ->
+        let token = ref 0 in
+        let native = own (Signal.map (fun item ->
+          incr token; Option.fold ~none:"" ~some:fst item, !token) request) in
+        Some (own (Signal.map fst native)), Some (own (Signal.map snd native))
+      | _ -> None, None in
     let content =
       Lui_elements.if_ ~test:(own (Signal.cutoff Bool.equal (own (Signal.map (fun items -> Array.length items > 0) items))))
         (Lui_elements.list ?style ~accessibility_identifier:identifier
           ~data_attrs_signal:metadata ~track_visible_range:true
+          ?scroll_anchor:native_scroll_anchor ?scroll_target_signal ?scroll_token_signal
           ~on_visible_range:(function
             | Lui_elements.Range { first; last } ->
               (* The editor overlay owns its pinned row outside the window. If

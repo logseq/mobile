@@ -69,23 +69,12 @@ let heading source send title controls =
       ~font_size:"21" ~font_weight:700 ~truncate:true [];
   ] @ controls)
 
-let agent_names ~default =
-  let names = List.map fst Chat.labels in
-  if List.mem default names then default :: List.filter ((<>) default) names else names
-
-let agent_available agents name =
-  match List.find_opt (fun row -> Data.string "name" row = name) agents with
-  | Some row -> Data.field "available" row = `Bool true
-  | None -> true
-
-let agent_row source send ?selected ?caption ~available name event =
-  let title = Chat.label name in
-  let caption = if available then caption else Some (tr source "Offline") in
+let mention_row source send ?selected ?caption ~identifier ~id title event =
   button ~text:"" ~label:title ~variant:`ghost ~padding:0 ~min_height:47
-    ?selected_signal:selected ~accessibility_identifier:("bots.agent." ^ name)
+    ?selected_signal:selected ~accessibility_identifier:identifier
     ~on_press:(fun () -> dispatch send event) [
     row ~grow:1.0 ~min_height:47 ~padding_horizontal:12 ~cross:`center ~gap:10 [
-      avatar 28 ~id:name title;
+      avatar 28 ~id title;
       column ~grow:1.0 ~cross:`stretch [
         text ~value:title ~text_alignment:`start ~style_class:"body" ~foreground:"bots-ink" [];
       ];
@@ -96,39 +85,55 @@ let agent_row source send ?selected ?caption ~available name event =
     ];
   ]
 
-let agent_picker source send bots =
+let agent_row source send ?selected ?caption name event =
+  mention_row source send ?selected ?caption ~identifier:("bots.agent." ^ name) ~id:name (Chat.label name) event
+
+let mention_picker source send bots =
+  let title label = text ~value:(tr source label) ~padding_horizontal:12 ~padding_vertical:6
+    ~font_size:"12" ~font_weight:650 ~foreground:"bots-muted" [] in
+  let matching query name =
+    String.lowercase_ascii name |> String.split_on_char ' ' |> List.exists (String.starts_with ~prefix:query) in
   let request = Signal.map (fun state ->
     Option.map (fun (mention : Chat.mention) ->
-      mention.query, Data.string "default_agent" (Chat.selected_bot state),
-      Data.list "agents" state.Chat.view) state.Chat.active_mention) bots |> Signal.cutoff (=) in
+      let agents = match state.Chat.page with Chat.Main _ -> Chat.configured_agents state | _ -> [] in
+      mention.query, Chat.bot_default state, agents, Chat.mentionable_bots state) state.Chat.active_mention)
+      bots |> Signal.cutoff (=) in
   let visible = Signal.map Option.is_some request in
   if_ ~test:visible (reactive (function
     | None -> box []
-    | Some (query, default, agents) ->
-      let names = agent_names ~default |> List.filter (String.starts_with ~prefix:query) in
-      column ~width:244 ~padding:5 ~corner_radius:20 ~background:"bots-panel"
-        ~border_color:"bots-chip" ~border_width:1 ~accessibility_identifier:"bots.mention-picker" ([
-          text ~value:(tr source "Agents") ~padding_horizontal:12 ~padding_vertical:6
-            ~font_size:"12" ~font_weight:650 ~foreground:"bots-muted" [];
-        ] @ (match names with
-        | [] -> [text ~value:(tr source "No matching agents") ~font_size:"14"
-                  ~padding:12 ~foreground:"bots-muted" []]
-        | _ -> List.map (fun name ->
-            agent_row source send ~available:(agent_available agents name)
-              ?caption:(if name = default then Some (tr source "Default") else None)
-              name (Chat.Select_agent name)) names))) request)
+    | Some (query, default, agents, candidates) ->
+      let names = List.filter (matching query) agents in
+      let names = if List.mem default names then default :: List.filter ((<>) default) names else names in
+      let bots = List.filter (fun (_, name) -> matching query name) candidates in
+      let rows = (match names with [] -> [] | _ -> title "Agents" :: List.map (fun name ->
+        agent_row source send ?caption:(if name = default then Some (tr source "Default") else None)
+          name (Chat.Select_agent name)) names) @
+        (match bots with [] -> [] | _ -> title "Bots" :: List.map (fun (id, name) ->
+          mention_row source send ~identifier:("bots.mention." ^ id) ~id name (Chat.Select_bot id)) bots) in
+      let rows = if rows = [] then
+        [text ~value:(tr source "No matches") ~font_size:"14" ~padding:12 ~foreground:"bots-muted" []]
+        else rows in
+      column ~width:260 ~padding:5 ~corner_radius:20 ~background:"bots-panel"
+        ~border_color:"bots-chip" ~border_width:1 ~accessibility_identifier:"bots.mention-picker"
+        (if List.length rows <= 5 then rows else [scroll ~height:230 [column rows]])) request)
 
 let message_card source ~thread message =
   let sender = Data.string "author" message in
   let outgoing = sender = "user" in
+  let handoff = Data.field "handoff" message in
+  let format label name = View_base.tr_named (Signal.sample source) label name in
   let status =
-    if Data.field "pending" message = `Bool true then Some (tr source "Pending")
+    if Data.string "source_name" handoff <> "" then Some (format "From {1}" (Data.string "source_name" handoff))
+    else if Data.string "target_name" handoff <> "" then Some (format "To {1}" (Data.string "target_name" handoff))
+    else if Data.field "pending" message = `Bool true then Some (tr source "Pending")
     else if thread && not outgoing && sender <> "bot" then Some (Chat.label sender)
     else None in
   let width = (Signal.sample source : Model.logseq_model).viewport_width in
   let width = if width <= 0 then 390 else width in
   let max_bubble = max 180 (min 500 ((width - 36) * 82 / 100)) in
   let body = Data.string "body" message in
+  let files = List.map (Data.string "name") (Data.list "attachments" message) in
+  let body = String.concat "\n" (if body = "" then files else body :: files) in
   let units line =
     String.fold_left (fun total character ->
       match Char.code character with
@@ -215,33 +220,34 @@ let message_list rows mount =
       target := List.fold_left (fun _ row -> Some (message_id row)) None rows;
     !target) rows |> Signal.cutoff (=) in
   column ~grow:1.0 ~cross:`stretch [
-    View_rows.windowed_keyed ~scroll_target:newest ~identifier:"bots.messages" ~item_extent:80 ~style:`plain
+    View_rows.windowed_keyed ~scroll_target:newest ~native_scroll_anchor:`bottom ~identifier:"bots.messages" ~item_extent:80 ~style:`plain
       ~on_visible_range:(fun _ last -> at_end := last >= List.length (Signal.sample rows) - 1)
       ~source:rows ~key:message_id ~cmp:String.compare
-      ~mount:(fun row -> list_item ~padding:0 ~separator:`hidden [reactive mount row]) ();
+      ~mount:(fun row -> list_item ~key:(message_id (Signal.sample row)) ~padding:0 ~separator:`hidden [reactive mount row]) ();
   ]
 
 let composer source send bots ~thread =
   let send_title = Signal.map (fun state ->
-    if thread then tr source "Reply"
-    else match fst (Chat.mentions state) with
-    | Some agent -> Printf.sprintf "%s %s" (tr source "Send to") (Chat.label agent)
-    | None -> tr source "Send") bots in
+    let agent, target, _ = Chat.recipients state in
+    match Option.bind target (fun id -> List.assoc_opt id (Chat.mentionable_bots state)), agent with
+    | Some name, _ -> View_base.tr_named (Signal.sample source) "Send to {1}" name
+    | None, Some name -> View_base.tr_named (Signal.sample source) "Send to {1}" (Chat.label name)
+    | None, None -> tr source (if thread then "Reply" else "Send")) bots in
   let placeholder = Signal.cutoff String.equal (Signal.map (fun state ->
     if thread then tr source "Reply in thread"
     else match Data.string "name" (Chat.selected_bot state) with
       | "" -> tr source "Message Bot"
       | name -> View_base.tr_named (Signal.sample source) "Message {1}" name) bots) in
-  let actions = if thread then [] else [
+  let actions = [
     button ~text:"@" ~variant:`ghost ~width:44 ~height:44 ~padding:0
-      ~foreground:"muted-foreground" ~label:(tr source "Choose an Agent")
+      ~foreground:"muted-foreground" ~label:(tr source "Mention a Bot or Agent")
       ~accessibility_identifier:"bots.pick-agent" ~on_press:(fun () -> dispatch send Chat.Pick_agent) [];
   ] in
   let disabled = Signal.map (fun state ->
-    let body = if thread then String.trim (Chat.draft state) else snd (Chat.mentions state) in
-    body = "" || (not thread && state.Chat.active_mention <> None)) bots in
+    let _, _, body = Chat.recipients state in
+    (body = "" && Chat.attachments state = []) || state.Chat.active_mention <> None) bots in
   View_composer.bot_input source ~placeholder ~label:(tr source (if thread then "Reply" else "Message Bot"))
-    ~actions ~text_signal:(Signal.map Chat.draft bots) ~send_label:send_title ~disabled_signal:disabled
+    ~actions ~assets:(Signal.map Chat.attachments bots |> Signal.cutoff (=)) ~send ~text_signal:(Signal.map Chat.draft bots) ~send_label:send_title ~disabled_signal:disabled
     ~autofocus_signal:(Signal.map (fun state -> state.Chat.focus_request) bots)
     ~on_input:(fun value -> dispatch send (Chat.Draft value)) ~on_send:(fun () -> dispatch send Chat.Send)
 
@@ -296,7 +302,8 @@ let conversation source send bots bot_id =
           text ~value:(if name = "" then tr source "Bot" else name) ~font_size:"17"
             ~font_weight:700 ~foreground:"bots-ink" ~truncate:true [];
         ]) name;
-      icon_control source send "more-horiz" "Bot settings" "bots.settings" (Chat.Open (Chat.Settings bot_id));
+      if_ ~test:(Signal.map (fun state -> Data.field "canManage" state.Chat.view = `Bool true) bots)
+        (icon_control source send "more-horiz" "Bot settings" "bots.settings" (Chat.Open (Chat.Settings bot_id)));
     ];
     overlay ~grow:1.0 ~alignment:`bottom_leading [
       column ~grow:1.0 ~gap:8 [
@@ -322,7 +329,7 @@ let conversation source send bots bot_id =
             (Chat.Open (Chat.Sessions (bot_id, false)));
         ];
       ];
-      agent_picker source send bots;
+      mention_picker source send bots;
     ];
     composer source send bots ~thread:false;
   ]
@@ -350,8 +357,13 @@ let thread source send bots =
             ~on_press:(fun () -> ignore (send (Model.OpenExternalURL url))) []
          else box []);
       ]) header;
-    older source send bots;
-    message_list rows (fun (message, ()) -> message_card source ~thread:true message);
+    overlay ~grow:1.0 ~alignment:`bottom_leading [
+      column ~grow:1.0 ~gap:8 [
+        older source send bots;
+        message_list rows (fun (message, ()) -> message_card source ~thread:true message);
+      ];
+      mention_picker source send bots;
+    ];
     composer source send bots ~thread:true;
   ]
 
@@ -385,12 +397,11 @@ let form_footer source send ~disabled label id event =
   ]
 
 let agent_list source send bots ~selected choose =
-  let agents = Signal.map (fun state -> Data.list "agents" state.Chat.view) bots |> Signal.cutoff (=) in
-  reactive (fun agents ->
-    column ~cross:`stretch (List.map (fun name ->
-      agent_row source send ~selected:(Signal.map (String.equal name) selected)
-        ~available:(agent_available agents name) name (choose name))
-      (agent_names ~default:""))) agents
+  let agents = Signal.map Chat.configured_agents bots |> Signal.cutoff (=) in
+  reactive (function
+    | [] -> text ~value:(tr source "No configured agents") ~padding:14 ~foreground:"bots-muted" []
+    | names -> column ~cross:`stretch (List.map (fun name ->
+        agent_row source send ~selected:(Signal.map (String.equal name) selected) name (choose name)) names)) agents
 
 let weekdays = [|"Sunday"; "Monday"; "Tuesday"; "Wednesday"; "Thursday"; "Friday"; "Saturday"|]
 let weekday source index =
@@ -434,11 +445,38 @@ let automation_list source send bots =
             ~on_press:(fun () -> dispatch send (Chat.Toggle_automation (id, not enabled))) [];
         ]) rules)) rules
 
+let share_bot source send bots graph =
+  let graph_id = Option.map (fun (graph : Model.graph) -> graph.id) graph in
+  let enabled = Signal.map (fun state -> state.Chat.shared_graph <> None) bots in
+  let can_share = Signal.map (fun state ->
+    state.Chat.shared_graph <> None ||
+    Option.fold ~none:false ~some:(fun id -> List.mem id state.Chat.shareable_graphs) graph_id) bots in
+  if_ ~test:can_share (form_section (tr source "Sharing") [
+    custom (fun context parent ->
+      let text = match graph with
+        | Some graph -> View_base.tr_named (Signal.sample source) "Share with {1}" graph.Model.name
+        | None -> tr source "Share with the Graph team" in
+      let on_toggle checked = dispatch send (Chat.Share_graph (if checked then graph_id else None)) in
+      let id = "bots.share" in
+      let control = if Lui_ui.host context = KotlinHost
+        then switch_ ~text ~checked_signal:enabled ~on_toggle ~accessibility_identifier:id ~min_height:48 []
+        else toggle ~text ~checked_signal:enabled ~on_toggle ~accessibility_identifier:id ~min_height:48 [] in
+      mount context ?parent (column ~padding_horizontal:12 [control]));
+    text ~value:(tr source "Graph members can see this Bot and its conversations.")
+      ~font_size:"13" ~padding_horizontal:12 ~padding_vertical:8 ~foreground:"bots-muted" [];
+  ])
+
 let settings source send bots ~creating =
   let form ?placeholder id label get action_ =
     form_field source ~bots ?placeholder id label get (fun value -> dispatch send (action_ value)) in
-  let graph = (Signal.sample source : Model.logseq_model).selected_graph_id in
-  let name_is_empty = Signal.map (fun state -> creating && String.trim state.Chat.name = "") bots in
+  let model = (Signal.sample source : Model.logseq_model) in
+  let graph = model.selected_graph_id in
+  let shared = (Signal.sample bots).Chat.shared_graph in
+  let share_graph = Option.bind (Option.fold ~none:graph ~some:Option.some shared)
+    (fun id -> List.find_opt (fun (graph : Model.graph) -> graph.id = id) model.graphs) in
+  let disabled = Signal.map (fun state ->
+    (creating && String.trim state.Chat.name = "")
+    || (state.Chat.default_agent <> "" && not (Chat.is_configured state state.Chat.default_agent))) bots in
   column ~grow:1.0 ~gap:10 ~cross:`stretch [
     heading source send (tr source (if creating then "New Bot" else "Bot Settings")) [];
     scroll ~grow:1.0 [column ~gap:20 ~cross:`stretch [
@@ -450,12 +488,16 @@ let settings source send bots ~creating =
            (fun state -> state.Chat.graph_target) (fun target -> Chat.Graph_target target));
        ] else box []);
       form_section (tr source "Default Agent") [
+        button ~text:(tr source "None") ~variant:`ghost ~min_height:44
+          ~selected_signal:(Signal.map (fun state -> state.Chat.default_agent = "") bots)
+          ~on_press:(fun () -> dispatch send (Chat.Default_agent "")) [];
         agent_list source send bots ~selected:(Signal.map (fun state -> state.Chat.default_agent) bots)
           (fun agent -> Chat.Default_agent agent);
       ];
+      share_bot source send bots share_graph;
       (if creating then box [] else automation_list source send bots);
     ]];
-    form_footer source send ~disabled:name_is_empty (if creating then "Create Bot" else "Save")
+    form_footer source send ~disabled (if creating then "Create Bot" else "Save")
       "bots.save" (Chat.Save_bot graph);
   ]
 
@@ -474,6 +516,7 @@ let rule_form source send bots =
   let disabled = Signal.map (fun state ->
     let valid key max = match number_field key (rule state) with Some n -> n >= 0 && n <= max | None -> false in
     String.trim (string "prompt" state) = "" || String.trim (string "timeZone" state) = ""
+    || not (Chat.is_configured state (Chat.automation_agent state))
     || not (valid "weekday" 6 && valid "hour" 23 && valid "minute" 59)) bots in
   column ~grow:1.0 ~gap:10 ~cross:`stretch [
     heading source send (tr source "New Automation") [];
@@ -504,7 +547,8 @@ let rule_form source send bots =
         edit "bots.rule.zone" "Time zone" (string "timeZone") "timeZone" (fun value -> `String value);
       ];
       form_section (tr source "Agent") [
-        button ~text:"" ~label:(tr source "Follow Bot default") ~variant:`ghost ~padding:0 ~min_height:47
+        if_ ~test:(Signal.map (fun state -> Chat.is_configured state (Chat.bot_default state)) bots)
+        (button ~text:"" ~label:(tr source "Follow Bot default") ~variant:`ghost ~padding:0 ~min_height:47
           ~selected_signal:follow_default ~accessibility_identifier:"bots.rule.default"
           ~on_press:(fun () -> dispatch send (Chat.Rule_field ("agent", `Null))) [
           row ~grow:1.0 ~min_height:47 ~padding_horizontal:12 ~cross:`center ~gap:10 [
@@ -516,7 +560,7 @@ let rule_form source send bots =
             if_ ~test:follow_default
               (icon ~name:(`app "selection-done") ~width:18 ~height:18 ~foreground:"bots-accent" []);
           ];
-        ];
+        ]);
         agent_list source send bots ~selected (fun agent -> Chat.Rule_field ("agent", `String agent));
       ];
     ]];

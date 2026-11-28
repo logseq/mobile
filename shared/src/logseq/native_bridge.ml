@@ -181,6 +181,8 @@ let host_action (update : Host_update.host_update) =
     Model.ApplyRuntimeLog (List.map convert records, Option.map convert last_error)
   | Local_graph_ids ids -> Model.ApplyLocalGraphIds ids
   | Composer_asset asset -> Model.StageComposerAsset (session_asset asset)
+  | Bot_attachment (route, asset) ->
+    Model.BotsAction (Bot_chat.Stage_attachment (route, session_asset asset))
   | Save_ui_session -> Model.SaveUISession
   | Restore_ui_session session ->
     Model.RestoreUISession
@@ -376,6 +378,9 @@ let encode_effect ?(model : Model.logseq_model option) (eff : Model.logseq_effec
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"present-attachment\",\"text\":" ^ Lui_wire.quoted kind
     ^ "}"
+  | PresentBotAttachmentEffect (id, kind, route) ->
+    Yojson.Basic.to_string (`Assoc ["id", `Int id; "kind", `String "present-bot-attachment";
+      "text", `String kind; "metadata", `String route])
   | PresentAssetEffect (id, title, asset_type, local_path) ->
     "{\"id\":" ^ string_of_int id
     ^ ",\"kind\":\"present-asset\",\"text\":\"\",\"metadata\":"

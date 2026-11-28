@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS messages (
   scope TEXT NOT NULL, bot_id TEXT NOT NULL, thread TEXT NOT NULL, id TEXT NOT NULL,
   seq INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(scope,id));
 CREATE INDEX IF NOT EXISTS bot_message_window ON messages(scope,bot_id,thread,seq);
+CREATE TABLE IF NOT EXISTS bot_route_config (
+  scope TEXT NOT NULL, route TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(scope,route));
 CREATE TABLE IF NOT EXISTS bot_outbox (
   scope TEXT NOT NULL, id TEXT NOT NULL, method TEXT NOT NULL, path TEXT NOT NULL,
   body TEXT NOT NULL, PRIMARY KEY(scope,id));
@@ -57,11 +59,25 @@ let save_message db scope message =
     [text scope; text (string "bot_id" message); text (string "session_id" message);
      text (string "id" message); Sqlite3.Data.INT seq; text (to_json message)]
 
+let purge_bot db scope bot =
+  let args = [text scope; text bot] in
+  exec db "DELETE FROM bots WHERE scope=? AND id=?" args;
+  exec db "DELETE FROM sessions WHERE scope=? AND bot_id=?" args;
+  exec db "DELETE FROM messages WHERE scope=? AND bot_id=?" args;
+  exec db "DELETE FROM bot_route_config WHERE scope=? AND (route=? OR route LIKE ?)"
+    [text scope; text ("/bots/" ^ bot); text ("/bots/" ^ bot ^ "/%")]
+
 let cache db scope view =
   let save_one name save = match field name view with
     | `Assoc _ as value -> save db scope value | _ -> () in
   Sqlite.transaction db (fun () ->
-    List.iter (save_bot db scope) (list "bots" view);
+    (match field "bots" view with
+    | `List bots ->
+      let visible = Hashtbl.create (List.length bots) in
+      List.iter (fun bot -> Hashtbl.replace visible (string "id" bot) (); save_bot db scope bot) bots;
+      query db "SELECT id FROM bots WHERE scope=?" [text scope] (fun stmt -> Sqlite3.column_text stmt 0)
+      |> List.iter (fun id -> if not (Hashtbl.mem visible id) then purge_bot db scope id)
+    | _ -> ());
     List.iter (save_session db scope) (list "sessions" view);
     List.iter (save_message db scope) (list "messages" view);
     save_one "bot" save_bot;
@@ -87,20 +103,22 @@ let view_cached db scope route before =
       | item :: rest when count > 0 -> item :: take (count - 1) rest
       | _ -> [] in
     ["messages", `List (List.rev (take 40 rows)); "more", `Bool (List.length rows > 40)] in
+  let config = match row "SELECT value FROM bot_route_config WHERE scope=? AND route=?" [text scope; text route] with
+    | [`Assoc fields] -> fields | _ -> [] in
   match String.split_on_char '/' route with
   | [""; "bots"] ->
-    `Assoc ["bots", `List (row "SELECT value FROM bots WHERE scope=? ORDER BY rowid DESC" [text scope])]
+    `Assoc (("bots", `List (row "SELECT value FROM bots WHERE scope=? ORDER BY rowid DESC" [text scope])) :: config)
   | [""; "bots"; id] ->
     let bot = row "SELECT value FROM bots WHERE scope=? AND id=?" [text scope; text id] |> first in
     let sessions = row "SELECT value FROM sessions WHERE scope=? AND bot_id=? ORDER BY json_extract(value,'$.updated_at') DESC LIMIT 100"
       [text scope; text id] in
-    `Assoc (["bot", bot; "sessions", `List sessions] @ window id "")
+    `Assoc (["bot", bot; "sessions", `List sessions] @ config @ window id "")
   | [""; "bots"; id; "sessions"; thread] ->
     let session = row "SELECT value FROM sessions WHERE scope=? AND id=? AND bot_id=?"
       [text scope; text thread; text id] |> first in
     let root = row "SELECT value FROM messages WHERE scope=? AND id=? AND bot_id=?"
       [text scope; text (string "root_message_id" session); text id] |> first in
-    `Assoc (["session", session; "root", root] @ window id thread)
+    `Assoc (["session", session; "root", root] @ config @ window id thread)
   | _ -> `Assoc []
 
 let allowed path =
@@ -108,7 +126,7 @@ let allowed path =
   && not (String.split_on_char '/' path |> List.exists (fun part -> part = "." || part = ".."))
   && String.for_all (function 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '/' | '-' -> true | _ -> false) path
 
-let run db ~(config : Api.api_config) ~send ~fresh_id command =
+let run ?(upload = Http.upload_file) db ~(config : Api.api_config) ~send ~fresh_id command =
   let identity = Created_by.of_token config.token in
   let route = string "route" command and path = string "path" command in
   let method_ = string "method" command in
@@ -139,17 +157,48 @@ let run db ~(config : Api.api_config) ~send ~fresh_id command =
            else Error (true, match string "error" result with "" -> "Bots request rejected" | error -> error)
          with Yojson.Json_error _ ->
            Error (response.status >= 400, "Bots is unavailable on this server")) in
+    let upload_attachments path raw =
+      let latest = J.from_string raw in
+      match list "attachments" latest with
+      | [] -> Ok raw
+      | files ->
+        let ( let* ) = Result.bind in
+        let bot = List.nth (String.split_on_char '/' path) 2 in
+        let upload_one attachment =
+          let id = string "id" attachment in
+          let location = string "localPath" attachment in
+          let filename = string "name" attachment in
+          let file_size = try Ok (Unix.stat location).st_size with Unix.Unix_error _ ->
+            Error (true, "The attachment is no longer on this device") in
+          let* size = file_size in
+          if not (Ref_text.is_uuid id) || size < 1 || size > 10 * 1024 * 1024
+          then Error (true, "Attachments must be between 1 byte and 10 MB")
+          else
+            let request = Api.request config "PUT" ("/bots/" ^ bot ^ "/uploads/" ^ id) None in
+            match upload {Api.request; file_path = location; content_type = "application/octet-stream"; headers = []} with
+            | Ok response when response.status >= 200 && response.status < 300 ->
+              Ok (`Assoc ["id", `String id; "name", `String filename])
+            | Ok response when response.status = 401 || response.status = 429 || response.status >= 500 ->
+              Error (false, "Waiting to upload attachments")
+            | Ok _ -> Error (true, "The server rejected an attachment")
+            | Error _ -> Error (false, "Waiting to upload attachments") in
+        let* uploaded = List.fold_left (fun acc file ->
+          let* items = acc in let* item = upload_one file in Ok (item :: items)) (Ok []) files in
+        let fields = match latest with `Assoc fields -> fields | _ -> [] in
+        Ok (to_json (`Assoc (("attachments", `List (List.rev uploaded)) :: List.remove_assoc "attachments" fields))) in
     let error = ref None in
+    let rejected = ref [] in
     let rec flush = function
       | [] -> ()
       | (id, method_, path, body) :: rest ->
-        (match call method_ path (Some body) with
+        (match Result.bind (upload_attachments path body) (fun body -> call method_ path (Some body)) with
         | Ok result ->
           cache db scope result;
           (match field "message" result with `Assoc _ as message -> save_message db scope message | _ -> ());
           exec db "DELETE FROM bot_outbox WHERE scope=? AND id=?" [text scope; text id];
           flush rest
         | Error (true, message) ->
+          if path = route ^ "/messages" then rejected := J.from_string body :: !rejected;
           exec db "DELETE FROM bot_outbox WHERE scope=? AND id=?" [text scope; text id];
           error := Some message;
           flush rest
@@ -162,19 +211,40 @@ let run db ~(config : Api.api_config) ~send ~fresh_id command =
       | None, Some seq -> "?after=" ^ Int64.to_string seq
       | None, None -> "" in
     let view = match call "GET" (route ^ suffix) None with
-      | Ok view -> cache db scope view; view
-      | Error (_, message) ->
+      | Ok view ->
+        cache db scope view;
+        (match field "agents" view with
+        | `List _ ->
+          let config = List.map (fun key -> key, field key view) ["agents"; "shareableGraphs"; "canManage"] in
+          exec db "INSERT INTO bot_route_config VALUES(?,?,?) ON CONFLICT(scope,route) DO UPDATE SET value=excluded.value"
+            [text scope; text route; text (to_json (`Assoc config))]
+        | _ -> ());
+        view
+      | Error (permanent, message) ->
         if !error = None then error := Some message;
-        (match after with
+        if permanent then (
+          (match String.split_on_char '/' route with
+          | [""; "bots"; bot] -> Sqlite.transaction db (fun () -> purge_bot db scope bot)
+          | [""; "bots"; _; "sessions"; thread] ->
+            let args = [text scope; text thread] in
+            Sqlite.transaction db (fun () ->
+              exec db "DELETE FROM sessions WHERE scope=? AND id=?" args;
+              exec db "DELETE FROM messages WHERE scope=? AND thread=?" args;
+              exec db "DELETE FROM bot_route_config WHERE scope=? AND route=?" [text scope; text route])
+          | _ -> ());
+          `Assoc ["unavailable", `Bool true])
+        else (match after with
         | Some _ -> `Assoc []
         | None -> view_cached db scope route (Option.value ~default:Int64.max_int before)) in
     let state = match view with `Assoc fields -> fields | _ -> [] in
     let drafts = pending db scope |> List.filter_map (fun (id, _, path, body) ->
       if path = route ^ "/messages" then
         Some (`Assoc ["id", `String id; "author", `String "user"; "pending", `Bool true;
-          "body", field "body" (J.from_string body)])
+          "body", field "body" (J.from_string body);
+          "attachments", `List (List.map (fun file -> `Assoc ["name", field "name" file])
+            (list "attachments" (J.from_string body)))])
       else None) in
     Ok (`Assoc (["route", `String route; "older", `Bool (before <> None);
-      "pending", `List drafts;
+      "pending", `List drafts; "rejected", `List (List.rev !rejected);
       "feedback", Option.fold ~none:`Null ~some:(fun value -> `String value) !error] @ state))
   | Some _ -> Error "Invalid Bots request"

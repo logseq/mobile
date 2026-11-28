@@ -345,6 +345,9 @@ public struct LogseqRootView : View {
             presentAttachment: { kind in
                 presentationCoordinator.presentAttachment(kind)
             },
+            presentBotAttachment: { kind, route in
+                presentationCoordinator.presentAttachment(kind, targetBlockID: route)
+            },
             // Asset preview is presented by the file-preview node on iOS; the
             // effect reports the resolved file URL back to the core so the
             // preview only mounts for a path that exists on disk.

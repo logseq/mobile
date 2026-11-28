@@ -27,7 +27,7 @@ type primary_destination =
   | FlashcardsDestination
   | GraphsDestination
 
-type composer_asset =
+type composer_asset = Bot_chat.attachment =
   { uuid : string
   ; title : string
   ; local_path : string
@@ -359,6 +359,7 @@ type logseq_effect =
   | PersistUISessionEffect of int * ui_session
   | PresentJournalCalendarEffect of int
   | PresentAttachmentEffect of int * string
+  | PresentBotAttachmentEffect of int * string * string
   | PresentAssetEffect of int * string * string * string
   | PresentPageShareEffect of int * string * string list
   | SetPageFavoriteEffect of int * string * bool
@@ -678,6 +679,7 @@ type logseq_action =
   | SelectTasks
   | ShowNotifications
   | ShowBots
+  | ChooseBotAttachment of string
   | BotsAction of Bot_chat.action
   | ToggleRecentNotifications
   | SetPushPreference of push_preferences
@@ -1053,7 +1055,7 @@ let effect_id eff =
   | PersistComposerDraftEffect (id, _) -> id
   | PersistUISessionEffect (id, _) -> id
   | PresentJournalCalendarEffect id -> id
-  | PresentAttachmentEffect (id, _) -> id
+  | PresentAttachmentEffect (id, _) | PresentBotAttachmentEffect (id, _, _) -> id
   | PresentAssetEffect (id, _, _, _) -> id
   | PresentPageShareEffect (id, _, _) -> id
   | SetPageFavoriteEffect (id, _, _) -> id
@@ -3090,6 +3092,13 @@ let rec update (current : logseq_model) action =
     { current with attachment_picker_open = true }
   | CloseAttachmentPicker ->
     { current with attachment_picker_open = false }
+  | ChooseBotAttachment kind ->
+    (match current.bots.page with
+    | (Bot_chat.Main _ | Bot_chat.Thread _) as page
+      when current.destination = BotsDestination && List.mem kind ["camera"; "photos"; "files"] ->
+      enqueue_effect current (PresentBotAttachmentEffect
+        (current.next_effect_id, kind, Bot_chat.route page))
+    | _ -> current)
   | ChooseAttachment kind ->
     if valid_attachment_kind_ kind then begin
       let updated = { current with attachment_picker_open = false } in

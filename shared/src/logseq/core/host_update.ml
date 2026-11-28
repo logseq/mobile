@@ -60,6 +60,7 @@ type host_update =
   | Restore_ui_session of host_ui_session
   | Composer_draft of string
   | Composer_asset of host_composer_asset
+  | Bot_attachment of string * host_composer_asset
   | Graph_loading of bool
   | Authentication of host_authentication
   | Open_quick_action of string
@@ -157,7 +158,11 @@ let decode kind payload =
          Ok (Runtime_log (records, last))
        | _ -> Error "runtime log must contain records")
     | "local-graph-ids" -> Ok (Local_graph_ids (string_vector value))
-    | "composer-asset" -> Ok (Composer_asset (composer_asset value payload))
+    | "composer-asset" ->
+      let asset = composer_asset value payload in
+      (match Util.member "targetBlockId" value with
+       | `String route when String.starts_with ~prefix:"/bots/" route -> Ok (Bot_attachment (route, asset))
+       | _ -> Ok (Composer_asset asset))
     | "save-ui-session" -> Ok Save_ui_session
     | "restore-ui-session" -> Ok (Restore_ui_session (ui_session value))
     | "composer-draft" -> Ok (Composer_draft (Util.to_string value))

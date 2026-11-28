@@ -17,7 +17,7 @@ type primary_destination =
   | FlashcardsDestination
   | GraphsDestination
 
-type composer_asset =
+type composer_asset = Bot_chat.attachment =
   { uuid : string
   ; title : string
   ; local_path : string
@@ -344,6 +344,7 @@ type logseq_effect =
   | PersistUISessionEffect of int * ui_session
   | PresentJournalCalendarEffect of int
   | PresentAttachmentEffect of int * string
+  | PresentBotAttachmentEffect of int * string * string
   | PresentAssetEffect of int * string * string * string
   | PresentPageShareEffect of int * string * string list
   | SetPageFavoriteEffect of int * string * bool
@@ -663,6 +664,7 @@ type logseq_action =
   | SelectTasks
   | ShowNotifications
   | ShowBots
+  | ChooseBotAttachment of string
   | BotsAction of Bot_chat.action
   | ToggleRecentNotifications
   | SetPushPreference of push_preferences

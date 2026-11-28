@@ -719,6 +719,7 @@ internal class LogseqRuntime(
     private val mainThreadEffectKinds = setOf(
         "present-account-profile",
         "present-attachment",
+        "present-bot-attachment",
         "delete-local-graph",
         "save-settings",
         "sign-in",
@@ -746,12 +747,12 @@ internal class LogseqRuntime(
             accountProfileOpen = true
             return NativeEffectResolution.Discard()
         }
-        if (effect.kind == "present-attachment") {
+        if (effect.kind == "present-attachment" || effect.kind == "present-bot-attachment") {
             return try {
                 if (effect.text == "audio") {
                     presentAudioRecording(null)
                 } else {
-                    presentAttachment(effect.text, null)
+                    presentAttachment(effect.text, effect.metadata)
                 }
                 NativeEffectResolution.Discard()
             } catch (error: Throwable) {
@@ -1073,6 +1074,10 @@ internal class LogseqRuntime(
     }
 
     private suspend fun addImportedAsset(asset: AndroidImportedAsset, targetBlockId: String?) {
+        if (targetBlockId?.startsWith("/bots/") == true) {
+            hostUpdate("composer-asset", asset.payload().put("targetBlockId", targetBlockId).toString())
+            return
+        }
         val response = bridge.callCore(asset.coreRequest(targetBlockId))
         asset.requireAccepted(response)
         logRuntime("info", "core", "Added attachment ${asset.title}")
