@@ -55,6 +55,33 @@ let dispatch_requires_an_explicit_agent () =
   check_eq (route ^ "/sessions/" ^ message_id ^ "/messages") (Bot_store.string "path" reply);
   check_eq `Null (Bot_store.field "agent" (Bot_store.field "body" reply))
 
+let mentions_complete_inside_the_draft () =
+  let update state action = fst (Bot_chat.update state action) in
+  let main = update Bot_chat.empty (Bot_chat.Open (Bot_chat.Main bot_id)) in
+  let typed = update main (Bot_chat.Draft "@") in
+  check_eq (Some {Bot_chat.start = 0; stop = 1; query = ""}) typed.active_mention;
+  let narrowed = update typed (Bot_chat.Draft "@Co") in
+  check_eq (Some {Bot_chat.start = 0; stop = 3; query = "co"}) narrowed.active_mention;
+  let selected = update narrowed (Bot_chat.Select_agent "codex") in
+  check_eq "@Codex " (Bot_chat.draft selected);
+  check_eq None selected.active_mention;
+  check_eq (Some "codex", "") (Bot_chat.mentions selected);
+  let before = update main (Bot_chat.Draft "Fix the navigation") in
+  let editing = update before (Bot_chat.Draft "Fix @dthe navigation") in
+  let completed = update editing (Bot_chat.Select_agent "devin") in
+  check_eq "Fix @Devin the navigation" (Bot_chat.draft completed);
+  check_eq (Some "devin", "Fix the navigation") (Bot_chat.mentions completed);
+  let inside_email = update main (Bot_chat.Draft "name@devin") in
+  check_eq None inside_email.active_mention;
+  check_eq (None, "name@devin") (Bot_chat.mentions inside_email);
+  let dismissed = update narrowed Bot_chat.Dismiss_mentions in
+  check_eq "@Co" (Bot_chat.draft dismissed);
+  check_eq None dismissed.active_mention;
+  let reopened = update dismissed Bot_chat.Pick_agent in
+  check_eq narrowed.active_mention reopened.active_mention;
+  check reopened.focus_request
+
 let cases =
   [case "offline send replays the same ID after reopening SQLite" offline_send_survives_reopen;
-   case "dispatch uses an explicit Agent and thread replies use their session" dispatch_requires_an_explicit_agent]
+   case "dispatch uses an explicit Agent and thread replies use their session" dispatch_requires_an_explicit_agent;
+   case "selecting an inline Agent replaces the query and preserves the rest of the draft" mentions_complete_inside_the_draft]

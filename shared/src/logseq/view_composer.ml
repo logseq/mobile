@@ -353,10 +353,10 @@ let comment_input model_source ~autofocus ~text_signal ~disabled_signal ~on_inpu
     ~send_disabled_signal:disabled_signal ~on_send:(fun _ -> on_submit ())
     ~on_submit:(fun _ -> on_submit ()) ~compact:true ()
 
-let bot_input model_source ~placeholder ~label ~actions ~text_signal
+let bot_input model_source ~placeholder ~label ~actions ~text_signal ~autofocus_signal
     ~send_label ~disabled_signal ~on_input ~on_send =
   composer_surface model_source ~placeholder:(Signal.sample placeholder)
-    ~placeholder_signal:placeholder ~label ~actions ~text_signal
+    ~placeholder_signal:placeholder ~label ~actions ~text_signal ~autofocus_signal
     ~accessibility_identifier:"surface.bots.composer" ~field_identifier:"bots.composer"
     ~send_identifier:"bots.send" ~send_label_signal:send_label
     ~send_disabled_signal:disabled_signal ~on_input ~on_send ~compact:true ()

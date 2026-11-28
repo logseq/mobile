@@ -9,9 +9,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
@@ -403,6 +406,7 @@ fun logseqExtensionRegistry(
 // Android hardware-back routing, mirroring the former PopScope semantics:
 // composer dismissal takes precedence, then nav-stack back, then the
 // system.
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun NavigationBoundary(context: LuiExtensionContext) {
     val depth = context.int("depth") ?: 0
@@ -412,6 +416,16 @@ private fun NavigationBoundary(context: LuiExtensionContext) {
     val backDepth = context.int("back-depth") ?: depth
     val dismissesComposer = context.flag("composer-dismissal-enabled")
     val occupies = context.flag("bottom-occupies-layout-space")
+    if (context.flag("content-header")) {
+        val imeVisible = WindowInsets.isImeVisible
+        var previousImeVisible by remember { mutableStateOf(false) }
+        LaunchedEffect(imeVisible) {
+            if (previousImeVisible && !imeVisible && !dismissesComposer) {
+                context.emit("dismiss-composer")
+            }
+            previousImeVisible = imeVisible
+        }
+    }
     BackHandler(enabled = !LocalSidebarBlocksMain.current && (backDepth > 0 || dismissesComposer)) {
         if (dismissesComposer) {
             context.emit("dismiss-composer")

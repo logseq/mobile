@@ -1050,6 +1050,12 @@ private struct LGNavigationContent: View {
         #if os(iOS)
         .tint(navigationBarTint)
         .toolbar(showsContentHeader ? .hidden : .visible, for: .navigationBar)
+        .scrollDismissesKeyboard(showsContentHeader ? .interactively : .automatic)
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
+            if showsContentHeader && !composerDismissalEnabled {
+                try? context.emit(name: "dismiss-composer", values: [:])
+            }
+        }
         #endif
         .onAppear {
             LGInteractionDiagnostics.event("navigation.appear", "node=\(context.nodeID) path=\(path) desired=\(desiredPath)")

@@ -2859,6 +2859,8 @@ let rec update (current : logseq_model) action =
   | DismissComposerReference ->
     {current with composer_reference_query = None; composer_reference_candidates = []}
   | DismissComposer when current.discussion_composition <> None -> update current CloseDiscussion
+  | DismissComposer when current.destination = BotsDestination && Bot_chat.is_bot_page current.bots.page ->
+    update current (BotsAction Bot_chat.Dismiss_mentions)
   | DismissComposer ->
     let closed = { current with composer_expanded = false; composer_autofocus = false } in
     if current.composer_task_defaulted && String_kit.is_blank current.composer_draft

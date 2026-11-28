@@ -84,6 +84,8 @@ enum LGIconPolicy {
             "bots-history": .systemName("clock"),
             "bots-attention": .systemName("exclamationmark.triangle"),
             "bots-external": .systemName("arrow.up.right"),
+            "bots-pause": .systemName("pause.fill"),
+            "bots-resume": .systemName("play.fill"),
             "tab-notifications-selected": .systemName("bell.fill"),
             "discussion-comment": .systemName("bubble.left"),
             "reaction-add": .systemName("face.smiling"),

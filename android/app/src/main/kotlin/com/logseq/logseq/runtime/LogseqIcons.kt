@@ -227,6 +227,8 @@ internal val logseqAppIcons: Map<String, ImageVector> = mapOf(
     "bots-history" to Icons.Outlined.History,
     "bots-attention" to Icons.Outlined.WarningAmber,
     "bots-external" to Icons.AutoMirrored.Outlined.OpenInNew,
+    "bots-pause" to Icons.Filled.Pause,
+    "bots-resume" to Icons.Filled.PlayArrow,
     "tab-notifications-selected" to Icons.Filled.Notifications,
     "discussion-comment" to Icons.Outlined.ChatBubbleOutline,
     "reaction-add" to Icons.Outlined.AddReaction,

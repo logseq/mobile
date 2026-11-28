@@ -8,12 +8,14 @@ let is_bot_page = function
   | Index | Create -> false
   | Main _ | Sessions _ | Thread _ | Settings _ | Automation _ -> true
 
+type mention = { start : int; stop : int; query : string }
+
 type t =
   { page : page
   ; view : J.t
   ; drafts : (string * string) list
-  ; agent : string option
-  ; show_agents : bool
+  ; active_mention : mention option
+  ; focus_request : bool
   ; name : string
   ; repository : string
   ; graph_target : string
@@ -24,12 +26,12 @@ type t =
 
 type action =
   | Open of page | Back | Refresh | Older | Receive of J.t
-  | Draft of string | Pick_agent | Select_agent of string | Stop_picking
+  | Draft of string | Pick_agent | Select_agent of string | Dismiss_mentions
   | Send | Name of string | Repository of string | Graph_target of string | Default_agent of string
   | Save_bot of string option | Edit_automation of J.t | Rule_field of string * J.t
   | Save_automation | Toggle_automation of string * bool
 
-let empty = {page = Index; view = `Null; drafts = []; agent = None; show_agents = false;
+let empty = {page = Index; view = `Null; drafts = []; active_mention = None; focus_request = false;
   name = ""; repository = ""; graph_target = ""; default_agent = "devin"; proposal = `Null;
   thread_origin = None}
 
@@ -56,35 +58,60 @@ let label agent = Option.value ~default:agent (List.assoc_opt agent labels)
 let selected_bot state = Data.field "bot" state.view
 let session state = Data.field "session" state.view
 
-let pasted_mention input =
-  let input = String.trim input in
-  match String.index_opt input ' ' with
-  | Some stop when stop > 1 && input.[0] = '@' ->
-    let agent = String.lowercase_ascii (String.sub input 1 (stop - 1)) in
-    if List.mem_assoc agent labels then Some (agent, String.trim (String.sub input stop (String.length input - stop)))
-    else None
-  | _ -> None
-
-let mentions state =
-  match state.agent with
-  | Some selected -> Some selected, String.trim (draft state)
-  | None ->
-    match pasted_mention (draft state) with Some (agent, body) -> Some agent, body
-      | None -> None, String.trim (draft state)
-
-let has_mention_start value =
-  match String.split_on_char ' ' value |> List.rev with
-  | ("@" as query) :: _ -> query = "@"
-  | query :: _ when String.starts_with ~prefix:"@" query ->
-    let query = String.lowercase_ascii (String.sub query 1 (String.length query - 1)) in
-    List.exists (fun (agent, _) -> String.starts_with ~prefix:query agent) labels
+let agent_character = function
+  | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '-' | '_' -> true
   | _ -> false
 
-let remove_mention value =
-  if not (has_mention_start value) then value
-  else match String.rindex_opt value ' ' with
-  | None -> ""
-  | Some index -> String.sub value 0 index
+let space = function ' ' | '\t' | '\r' | '\n' -> true | _ -> false
+
+let mention_boundary text start =
+  start = 0 || space text.[start - 1] || List.mem text.[start - 1] ['('; '['; '{']
+
+let mention_stop text start =
+  let rec loop index =
+    if index < String.length text && agent_character text.[index] then loop (index + 1)
+    else index in
+  loop (start + 1)
+
+let mention_at text caret =
+  let rec find_start index =
+    if index < 0 then None
+    else if agent_character text.[index] then find_start (index - 1)
+    else if text.[index] = '@' && mention_boundary text index then Some index
+    else None in
+  Option.map (fun start ->
+    {start; stop = caret;
+     query = String.lowercase_ascii (String.sub text (start + 1) (caret - start - 1))})
+    (find_start (caret - 1))
+
+let edited_caret previous value =
+  let old_length = String.length previous and length = String.length value in
+  let rec prefix index =
+    if index < min old_length length && previous.[index] = value.[index]
+    then prefix (index + 1) else index in
+  let start = prefix 0 in
+  let rec suffix count =
+    if count < min old_length length - start
+       && previous.[old_length - count - 1] = value.[length - count - 1]
+    then suffix (count + 1) else length - count in
+  suffix 0
+
+let mentions state =
+  let text = draft state in
+  let rec scan from =
+    match String.index_from_opt text from '@' with
+    | None -> None, String.trim text
+    | Some start ->
+      let stop = mention_stop text start in
+      let agent = String.lowercase_ascii (String.sub text (start + 1) (stop - start - 1)) in
+      if mention_boundary text start && List.mem_assoc agent labels then
+        let before = String.sub text 0 start and after = String.sub text stop (String.length text - stop) in
+        let before = if after <> "" && space after.[0] && before <> ""
+          && space before.[String.length before - 1] then String.sub before 0 (String.length before - 1)
+          else before in
+        Some agent, String.trim (before ^ after)
+      else scan stop in
+  scan 0
 
 let messages state = Data.list "messages" state.view @ Data.list "pending" state.view
 let seq message = match Data.field "seq" message with
@@ -119,14 +146,14 @@ let update state action =
     let same = route state.page = route page in
     let thread_origin = match page with Thread _ -> Some state.page | _ -> None in
     let updated = {state with page; view = (if same then state.view else `Null); thread_origin;
-      agent = None; show_agents = false} in
+      active_mention = None; focus_request = false} in
     updated, request updated in
   match action with
   | Open Create -> stay {state with page = Create; name = ""; repository = "";
-      graph_target = ""; default_agent = "devin"; show_agents = false}
+      graph_target = ""; default_agent = "devin"; active_mention = None; focus_request = false}
   | Open (Settings _ as page) ->
     let bot = selected_bot state in
-    stay {state with page; default_agent = Data.string "default_agent" bot; show_agents = false}
+    stay {state with page; default_agent = Data.string "default_agent" bot; active_mention = None; focus_request = false}
   | Open page -> open_page page
   | Back ->
     (match state.page with
@@ -144,17 +171,38 @@ let update state action =
     | None -> stay state)
   | Receive json -> stay (receive state json)
   | Draft value ->
-    let show_agents = (match state.page with Main _ -> has_mention_start value | _ -> false) in
-    stay (set_draft value {state with show_agents})
-  | Pick_agent -> stay {state with show_agents = not state.show_agents}
-  | Stop_picking -> stay {state with show_agents = false; agent = None}
+    let previous = draft state in
+    if previous = value then stay state
+    else
+      let active_mention = match state.page with
+        | Main _ -> mention_at value (edited_caret previous value)
+        | _ -> None in
+      stay (set_draft value {state with active_mention})
+  | Pick_agent ->
+    let value = draft state in
+    let length = String.length value in
+    let updated = {state with focus_request = not state.focus_request} in
+    (match state.active_mention, mention_at value length with
+    | Some _, _ -> stay {state with active_mention = None}
+    | None, Some mention -> stay {updated with active_mention = Some mention}
+    | None, None ->
+      let value = value ^ (if length = 0 || space value.[length - 1] then "@" else " @") in
+      stay (set_draft value {updated with active_mention = mention_at value (String.length value)}))
+  | Dismiss_mentions ->
+    if state.active_mention = None then stay state else stay {state with active_mention = None}
   | Select_agent agent ->
-    stay (set_draft (remove_mention (draft state)) {state with agent = Some agent; show_agents = false})
+    (match state.active_mention with
+    | None -> stay state
+    | Some {start; stop; _} ->
+      let value = draft state in
+      let before = String.sub value 0 start and after = String.sub value stop (String.length value - stop) in
+      let separator = if after = "" || not (space after.[0]) then " " else "" in
+      stay (set_draft (before ^ "@" ^ label agent ^ separator ^ after) {state with active_mention = None}))
   | Send ->
     let agent, body = match state.page with Main _ -> mentions state | _ -> None, String.trim (draft state) in
     if body = "" then stay state
     else
-      let updated = set_draft "" {state with agent = None; show_agents = false} in
+      let updated = set_draft "" {state with active_mention = None} in
       let body = `Assoc ["body", `String body;
         "agent", Option.fold ~none:`Null ~some:(fun name -> `String name) agent] in
       updated, request ~path:(route state.page ^ "/messages") ~method_:"POST" ~body state
