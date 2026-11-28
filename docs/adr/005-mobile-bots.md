@@ -87,12 +87,22 @@ its own PostgreSQL database. Both entrypoints share the routes, Graph access
 checks, queue transitions, provider adapters and device leases. Cursor and
 Devin use their cloud APIs.
 
-The Node adapter runs a background loop. The Worker uses an invocation-scoped
-PostgreSQL connection, starts a short job after a dispatch when possible
-and processes due work with a one-minute Cron Trigger. The hosted database
-schema is applied before deployment. If a server invocation loses its lease,
-a provider status poll can be repeated. An unconfirmed start is marked for
-attention to avoid spawning a second upstream session.
+The Node adapter runs a background loop. The Worker uses invocation-scoped
+PostgreSQL connections and one scheduler Durable Object per environment.
+The scheduler keeps a single alarm for the nearest eligible provider poll,
+Automation, lease expiry or Graph export. Concurrent signals preserve the
+earliest wakeup. An idle queue has no alarm, and empty device claims leave the
+scheduler idle. The hourly Cron Trigger repairs missed wakeups for overdue
+work. The hosted database schema is applied before deployment. If a server
+invocation loses its lease, a provider status poll can be repeated. An
+unconfirmed start is marked for attention to avoid spawning a second upstream
+session.
+
+The scheduler uses short internal calls and persisted alarms. Graph Sync uses
+hibernatable WebSockets in its own Durable Objects. Connection attachments
+restore the graph ID and presence, and automatic ping/pong allows idle
+connections to stay asleep. Future Bots push connections should use the
+WebSocket Hibernation API.
 
 In Desktop Logseq, **Settings → AI → Local Bot Agents** pairs a device through
 its signed-in account. The user selects a workspace and opts in to Codex and
@@ -102,8 +112,9 @@ from encrypted local storage. A headless device can pair with
 `logseq agent runner listen`. The
 listener uses a revocable device credential and requests assignments from
 Logseq using an outbound connection. The first implementation uses bounded
-polling. The existing DB worker and Agent Bridge keep serving graph access and
-graph events. The Bots queue and thread replies stay in PostgreSQL.
+polling with up to 30 seconds between empty claims. Activity restores the
+shorter interval. The existing DB worker and Agent Bridge keep serving graph
+access and graph events. The Bots queue and thread replies stay in PostgreSQL.
 
 Device capabilities include the enabled Agents and the configured repository, if
 any. Local steps stay queued when an eligible device is offline. The server
