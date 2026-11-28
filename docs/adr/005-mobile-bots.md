@@ -80,10 +80,19 @@ its existing encryption boundary.
 
 ## Local delivery
 
-The Bots worker owns the PostgreSQL queue, workflow order and thread replies.
-The local Node adapter already runs Codex and Pi via command adapters for
-development. Cursor and Devin use cloud APIs. Production can use the same queue
-contract when the hosted Logseq service exposes the Bots routes.
+The Bots runtime owns the PostgreSQL queue, workflow order and thread replies.
+The Node adapter is the self-hosted entrypoint and can also run local command
+adapters. The Cloudflare Worker is the hosted entrypoint. Each deployment has
+its own PostgreSQL database. Both entrypoints share the routes, Graph access
+checks, queue transitions, provider adapters and device leases. Cursor and
+Devin use their cloud APIs.
+
+The Node adapter runs a background loop. The Worker uses an invocation-scoped
+PostgreSQL connection, starts a short job after a dispatch when possible
+and processes due work with a one-minute Cron Trigger. The hosted database
+schema is applied before deployment. If a server invocation loses its lease,
+a provider status poll can be repeated. An unconfirmed start is marked for
+attention to avoid spawning a second upstream session.
 
 In Desktop Logseq, **Settings → AI → Local Bot Agents** pairs a device through
 its signed-in account. The user selects a workspace and opts in to Codex and
