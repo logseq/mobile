@@ -340,10 +340,17 @@ internal fun OutlinerEditor(
     val density = LocalDensity.current
     var dismissalEmitted by remember { mutableStateOf(false) }
     val dismissalSignal = LocalImeDismissalSignal.current
-    fun emitImeDismissed() {
-        // Use the same guarded flush as toolbar presses: while a split handoff
-        // is awaiting acknowledgement, the visible suffix must not overwrite
-        // the pre-split block in the core.
+    suspend fun emitImeDismissed() {
+        // Structural handoffs buffer typing until the core acknowledges them.
+        // Wait for that reconciliation before flushing; publishing early can
+        // either drop those keystrokes or overwrite the pre-split block.
+        val bottomAtDismissal = ime.getBottom(density)
+        while (awaitingHandoff) {
+            delay(16)
+            // A rising inset means the close was canceled or the editor was
+            // reopened; don't emit a stale dismissal after the handoff.
+            if (ime.getBottom(density) > bottomAtDismissal + 4) return
+        }
         NativeEditorInput.flush()
         context.emit("ime-dismissed")
     }
